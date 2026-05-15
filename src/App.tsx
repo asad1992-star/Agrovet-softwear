@@ -200,6 +200,7 @@ function MainApp({ user, onLogout }: any) {
   const [isHealthFormOpen, setIsHealthFormOpen] = useState(false);
   const [isEnrollmentFormOpen, setIsEnrollmentFormOpen] = useState(false);
   const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
+  const [selectedEnrollmentDetail, setSelectedEnrollmentDetail] = useState<ProtocolEnrollment | null>(null);
   const [isVaccinationFormOpen, setIsVaccinationFormOpen] = useState(false);
   const [isPregnancyCheckOpen, setIsPregnancyCheckOpen] = useState(false);
   const [pregnancyCheckAnimal, setPregnancyCheckAnimal] = useState<Animal | null>(null);
@@ -2165,7 +2166,7 @@ function MainApp({ user, onLogout }: any) {
                         const nextStepDate = nextStep ? dateUtils.addDays(batch.startDate, nextStep.dayOffset) : null;
 
                         return (
-                          <div key={batch.id} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 flex flex-col group relative overflow-hidden">
+                          <div key={batch.id} onClick={() => setSelectedEnrollmentDetail(batch)} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 flex flex-col group relative overflow-hidden cursor-pointer">
                             <div className="flex items-start justify-between mb-8">
                               <div className="flex items-center gap-5">
                                 <div className="w-16 h-16 bg-amber-50 rounded-[1.75rem] flex items-center justify-center text-amber-600 shadow-inner group-hover:bg-amber-500 group-hover:text-white transition-all duration-500">
@@ -2181,11 +2182,12 @@ function MainApp({ user, onLogout }: any) {
                                 </div>
                               </div>
                               <div className="flex gap-2">
-                                <button onClick={() => {
+                                <button onClick={(e) => {
+                                  e.stopPropagation();
                                   // Generic report for entire batch
                                   generateProtocolListReport([batch], protocols, animals, settings);
                                 }} className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-400 rounded-2xl transition-all"><Printer className="w-5 h-5" /></button>
-                                <button onClick={() => setConfirmDialog({ isOpen: true, message: `Delete this batch of ${(batch.animalIds || []).length} animals?`, onConfirm: () => { deleteEnrollment(batch.id); setConfirmDialog(d => ({ ...d, isOpen: false })); } })} className="p-3 bg-rose-50 hover:bg-rose-100 text-rose-400 rounded-2xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                                <button onClick={(e) => { e.stopPropagation(); setConfirmDialog({ isOpen: true, message: `Delete this batch of ${(batch.animalIds || []).length} animals?`, onConfirm: () => { deleteEnrollment(batch.id); setConfirmDialog(d => ({ ...d, isOpen: false })); } }); }} className="p-3 bg-rose-50 hover:bg-rose-100 text-rose-400 rounded-2xl transition-all"><Trash2 className="w-5 h-5" /></button>
                               </div>
                             </div>
 
@@ -2364,17 +2366,17 @@ function MainApp({ user, onLogout }: any) {
 
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {protocolEnrollments.map(enrollment => {
-                              const animal = animals.find(a => a.id === enrollment.animalId);
+                              const animal = animals.find(a => a.id === (enrollment as any).animalId || enrollment.animalIds?.[0]);
                               const progress = (enrollment.completedStepIndices.length / template.steps.length) * 100;
                               return (
-                                <div key={enrollment.id} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300">
+                                <div key={enrollment.id} onClick={() => setSelectedEnrollmentDetail(enrollment)} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer">
                                   <div className="flex items-start justify-between mb-6">
                                     <div className="flex items-center gap-4">
                                       <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-black text-lg border border-slate-100">
                                         {(animal?.tag || '??').slice(-2)}
                                       </div>
                                       <div>
-                                        <h5 className="font-black text-slate-800 text-xl">{animal?.tag || 'Unknown'}</h5>
+                                        <h5 className="font-black text-slate-800 text-xl">{(enrollment.animalIds?.length > 1) ? `Batch (${enrollment.animalIds.length})` : animal?.tag || 'Unknown'}</h5>
                                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Started: {enrollment.startDate}</p>
                                       </div>
                                     </div>
@@ -3079,6 +3081,85 @@ function MainApp({ user, onLogout }: any) {
             {editingAnimalId ? "Save Changes" : "Complete Registration"}
           </button>
         </form>
+      </FormModal>
+      
+      {/* Protocol Detail Modal */}
+      <FormModal
+        title="Protocol Batch Details"
+        isOpen={!!selectedEnrollmentDetail}
+        onClose={() => setSelectedEnrollmentDetail(null)}
+      >
+        {selectedEnrollmentDetail && (() => {
+          const template = protocols.find(t => t.id === selectedEnrollmentDetail.templateId);
+          const batchAnimals = selectedEnrollmentDetail.animalIds.map(id => animals.find(a => a.id === id)).filter(Boolean) as Animal[];
+          return (
+            <div className="space-y-8">
+              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xl font-black text-slate-800 tracking-tight">{template?.name || 'Protocol Batch'}</h4>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${selectedEnrollmentDetail.status === 'Active' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                      {selectedEnrollmentDetail.status}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Started {selectedEnrollmentDetail.startDate}</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => generateProtocolListReport([selectedEnrollmentDetail], protocols, animals, settings)}
+                  className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all shadow-sm"
+                  title="Print Detailed Status Report"
+                >
+                  <Printer className="w-5 h-5 text-blue-600" />
+                </button>
+              </div>
+
+              <div>
+                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Enrolled Animals ({batchAnimals.length})</h5>
+                <div className="flex flex-wrap gap-2">
+                  {batchAnimals.map(a => (
+                    <span key={a.id} className="px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-xs font-black text-slate-600">
+                      {a.tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Timeline & Status</h5>
+                <div className="space-y-3">
+                  {template?.steps.map((step, idx) => {
+                    const isDone = selectedEnrollmentDetail.completedStepIndices.includes(idx);
+                    const stepDate = dateUtils.addDays(selectedEnrollmentDetail.startDate, step.dayOffset);
+                    return (
+                      <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${isDone ? 'bg-emerald-50/50 border-emerald-100 opacity-60' : 'bg-white border-slate-100'}`}>
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${isDone ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                            D{step.dayOffset}
+                          </div>
+                          <div>
+                            <p className="font-black text-slate-800 text-sm">{step.action}</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{stepDate} {step.time ? `@ ${step.time}` : ''}</p>
+                          </div>
+                        </div>
+                        {isDone ? (
+                          <div className="flex items-center gap-2 text-emerald-600">
+                            <CheckCircle2 className="w-5 h-5" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Done</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-slate-300">
+                            <Clock className="w-5 h-5" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Planned</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </FormModal>
 
       <FormModal title={editingReproId ? "Modify Repro Record" : "Log Repro Event"} isOpen={isReproFormOpen} onClose={() => { setIsReproFormOpen(false); setReproAnimalSearch(''); }}>

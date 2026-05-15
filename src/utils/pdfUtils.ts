@@ -278,17 +278,49 @@ export const generateProtocolListReport = (
   filterLabel: string = 'Active Protocols'
 ) => {
   const doc = new jsPDF();
-  addHeader(doc, `Protocol Enrollments | ${filterLabel}`, settings);
-  autoTable(doc, {
-    startY: 45,
-    head: [['Animal', 'Protocol', 'Start Date', 'Status', 'Progress']],
-    body: enrollments.map(e => {
-      const animal = animals.find(a => a.id === e.animalIds[0]);
-      const template = protocols.find(p => p.id === e.templateId);
-      const progress = template ? `${e.completedStepIndices.length}/${template.steps.length}` : '-';
-      return [animal?.tag || 'Unk', template?.name || 'Unk', e.startDate, e.status, progress];
-    }),
-    headStyles: { fillColor: [245, 158, 11] }
+  
+  enrollments.forEach((enrollment, index) => {
+    if (index > 0) doc.addPage();
+    addHeader(doc, `Protocol Batch Report | ${filterLabel}`, settings);
+    
+    const template = protocols.find(p => p.id === enrollment.templateId);
+    const batchAnimals = enrollment.animalIds.map(id => animals.find(a => a.id === id)).filter(Boolean) as Animal[];
+    const animalTags = batchAnimals.map(a => a.tag).join(', ');
+
+    autoTable(doc, {
+      startY: 45,
+      head: [['Batch Attribute', 'Details']],
+      body: [
+        ['Protocol Name', template?.name || 'Unknown'],
+        ['Enrolled Cows', animalTags || 'None'],
+        ['Start Date', enrollment.startDate],
+        ['Status', enrollment.status],
+        ['Progress', template ? `${enrollment.completedStepIndices.length}/${template.steps.length}` : '-']
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [245, 158, 11] }
+    });
+
+    const stepsY = (doc as any).lastAutoTable.finalY + 15;
+    
+    if (template) {
+      doc.setFontSize(14);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Protocol Timeline', 14, stepsY);
+
+      autoTable(doc, {
+        startY: stepsY + 5,
+        head: [['Day', 'Planned Date', 'Action Step', 'Status']],
+        body: template.steps.map((step, idx) => [
+          `Day ${step.dayOffset}`,
+          dateUtils.addDays(enrollment.startDate, step.dayOffset),
+          step.action,
+          enrollment.completedStepIndices.includes(idx) ? 'Completed' : 'Pending'
+        ]),
+        headStyles: { fillColor: [59, 130, 246] }
+      });
+    }
   });
-  doc.save('Protocol_Enrollments_Report.pdf');
+
+  doc.save(`Protocol_Batch_Report_${new Date().toISOString().split('T')[0]}.pdf`);
 };
