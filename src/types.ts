@@ -6,7 +6,8 @@ export enum AnimalStatus {
   PREGNANT = 'Pregnant',
   CLOSEUP = 'Closeup',
   DRY = 'Dry',
-  SICK = 'Sick'
+  SICK = 'Sick',
+  OBSERVATION = 'Observation'
 }
 
 export enum ReproEventType {
@@ -20,11 +21,11 @@ export enum ReproEventType {
 }
 
 export enum HealthEventType {
-  VACCINATION = 'Vaccination',
   ILLNESS = 'Illness',
   TREATMENT = 'Treatment',
   RECOVERY = 'Recovery',
-  CHECKUP = 'Checkup'
+  CHECKUP = 'Checkup',
+  OBSERVATION = 'Observation'
 }
 
 export interface ProtocolStep {
@@ -61,6 +62,7 @@ export interface StatusColors {
   closeup: string;
   inProtocol: string;
   inseminated: string;
+  observation: string;
 }
 
 export interface FarmSettings {
@@ -89,6 +91,7 @@ export interface Animal {
   motherId?: string;
   fatherId?: string;
   isCalf?: boolean;
+  notes?: string;
 }
 
 export interface ReproductionEvent {
@@ -125,21 +128,9 @@ export interface HealthEvent {
   technician?: string;
 }
 
-export interface VaccinationRecord {
-  id: string;
-  animalId: string;
-  vaccineName: string;
-  date: string;
-  nextDueDate?: string;
-  dosage?: string;
-  technician?: string;
-  notes?: string;
-  batchNumber?: string;
-}
-
 export interface Alert {
   id: string;
-  type: 'Repro' | 'Health' | 'System' | 'Protocol' | 'Vaccination';
+  type: 'Repro' | 'Health' | 'System' | 'Protocol';
   title: string;
   description: string;
   dueDate: string;

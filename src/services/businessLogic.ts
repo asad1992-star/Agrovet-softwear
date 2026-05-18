@@ -9,8 +9,7 @@ import {
   Alert,
   FarmSettings,
   ProtocolEnrollment,
-  ProtocolTemplate,
-  VaccinationRecord
+  ProtocolTemplate
 } from '../types';
 
 export const dateUtils = {
@@ -82,6 +81,10 @@ export const computeAnimalStatus = (
     }
   }
 
+  if (latestHealth && latestHealth.type === HealthEventType.OBSERVATION) {
+    return { status: AnimalStatus.OBSERVATION };
+  }
+
   // 2. Check Active Protocols (Overrides standard repro status)
   const activeEnrollment = enrollments.find(e => e.animalIds?.includes(animal.id) && e.status === 'Active');
   if (activeEnrollment) {
@@ -110,6 +113,7 @@ export const computeAnimalStatus = (
         if (expectedCalving) {
           const daysToCalving = dateUtils.diffDays(expectedCalving, today);
           if (daysToCalving <= settings.closeupDays) return { status: AnimalStatus.CLOSEUP, expectedCalving };
+          if (daysToCalving <= settings.dryPeriodDays) return { status: AnimalStatus.DRY, expectedCalving };
         }
         return { status: AnimalStatus.PREGNANT, expectedCalving };
       }
@@ -135,8 +139,7 @@ export const generateAlerts = (
   healthEvents: HealthEvent[],
   enrollments: ProtocolEnrollment[],
   templates: ProtocolTemplate[],
-  settings: FarmSettings,
-  vaccinations: VaccinationRecord[] = []
+  settings: FarmSettings
 ): Alert[] => {
   const alerts: Alert[] = [];
   const today = dateUtils.today();
@@ -264,24 +267,6 @@ export const generateAlerts = (
     });
   });
 
-
-  // Vaccination Due Alerts
-  vaccinations.forEach(vac => {
-    if (!vac.nextDueDate) return;
-    const daysUntil = dateUtils.diffDays(vac.nextDueDate, today);
-    if (daysUntil >= 0 && daysUntil <= 14) {
-      const animal = animals.find(a => a.id === vac.animalId);
-      alerts.push({
-        id: `vac-due-${vac.id}`,
-        type: 'Vaccination',
-        title: daysUntil === 0 ? 'Vaccination Due TODAY' : `Vaccination Due in ${daysUntil} Days`,
-        description: `${animal?.tag || 'Unknown'}: ${vac.vaccineName} booster due on ${vac.nextDueDate}`,
-        dueDate: vac.nextDueDate,
-        animalId: vac.animalId,
-        priority: daysUntil <= 3 ? 'High' : 'Medium'
-      });
-    }
-  });
 
   return alerts.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 };

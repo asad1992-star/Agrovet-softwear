@@ -1,4 +1,4 @@
-import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, VaccinationRecord } from '../types';
+import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate } from '../types';
 import { MOCK_ANIMALS, MOCK_REPRO_EVENTS, MOCK_HEALTH_EVENTS, PREDEFINED_PROTOCOLS } from '../data';
 import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -9,8 +9,7 @@ const KEYS = {
   HEALTH: 'agrovet_health',
   SETTINGS: 'asad_settings',
   ENROLLMENTS: 'agrovet_enrollments',
-  PROTOCOLS: 'agrovet_protocols',
-  VACCINATIONS: 'agrovet_vaccinations'
+  PROTOCOLS: 'agrovet_protocols'
 };
 
 export const DEFAULT_SETTINGS: FarmSettings = {
@@ -28,7 +27,8 @@ export const DEFAULT_SETTINGS: FarmSettings = {
     dry: '#64748B',
     closeup: '#8B5CF6',
     inProtocol: '#F59E0B',
-    inseminated: '#06B6D4'
+    inseminated: '#06B6D4',
+    observation: '#94A3B8'
   },
   customGroups: ['Main Herd', 'Elite', 'High Group', 'Medium Group', 'Heifers', 'Breeding']
 };
@@ -90,8 +90,5 @@ export const storageService = {
       return DEFAULT_SETTINGS;
     }
   },
-  saveSettings: (data: FarmSettings) => saveToFirebase(KEYS.SETTINGS, data),
-
-  getVaccinations: () => getFromFirebase<VaccinationRecord[]>(KEYS.VACCINATIONS, []),
-  saveVaccinations: (data: VaccinationRecord[]) => saveToFirebase(KEYS.VACCINATIONS, data),
+  saveSettings: (data: FarmSettings) => saveToFirebase(KEYS.SETTINGS, data)
 };

@@ -80,10 +80,8 @@ export const MOCK_REPRO_EVENTS: ReproductionEvent[] = [
 
 export const MOCK_HEALTH_EVENTS: HealthEvent[] = [
   { id: 'h1', animalId: '3', type: HealthEventType.ILLNESS, date: '2024-01-10', details: 'Mastitis detected in rear quarter', medication: 'Masti-Clear', dosage: '1 tube daily' },
-  { id: 'h2', animalId: '1', type: HealthEventType.VACCINATION, date: '2023-09-01', details: 'Standard viral panel', nextDue: '2024-09-01' },
 ];
 
 export const MOCK_ALERTS: Alert[] = [
   { id: 'a1', type: 'Repro', title: 'Pregnancy Check Due', description: 'Daisy (TAG-002) is due for 30-day ultrasound.', dueDate: '2024-01-20', animalId: '2', isRead: false, priority: 'High' },
-  { id: 'a2', type: 'Health', title: 'Vaccination Overdue', description: 'Herd B needs annual boosters.', dueDate: '2024-01-15', isRead: false, priority: 'Medium' },
 ];

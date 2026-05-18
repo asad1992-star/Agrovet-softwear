@@ -1,7 +1,16 @@
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, ReproEventType, AnimalStatus } from '../types';
+import { 
+  Animal, 
+  ReproductionEvent, 
+  HealthEvent, 
+  FarmSettings, 
+  ProtocolEnrollment, 
+  ProtocolTemplate, 
+  ReproEventType, 
+  AnimalStatus
+} from '../types';
 import { dateUtils } from '../services/businessLogic';
 
 const getThemeColors = (template: string): { 
@@ -162,21 +171,36 @@ doc.save(`Protocol_${animal.tag}.pdf`);
 };
 
 export const generateDashboardPDF = (stats: any, animals: Animal[], settings?: FarmSettings) => {
-const doc = new jsPDF();
-addHeader(doc, 'Farm Summary', settings);
+  const doc = new jsPDF();
+  addHeader(doc, 'Livestock Analytics Summary', settings);
 
-autoTable(doc, {
-  startY: 45,
-  head: [['KPI', 'Value']],
-  body: [
-    ['Total Head Count', stats.total.toString()],
-    ['Pregnant', stats.pregnant.toString()],
-    ['Sick Animals', stats.sick.toString()],
-  ],
-  theme: 'striped'
-});
+  autoTable(doc, {
+    startY: 45,
+    head: [['Key Performance Indicator', 'Current Value']],
+    body: [
+      ['Total Herd Count (Excl. Calves)', stats.total.toString()],
+      ['Pregnant Animals', stats.pregnant.toString()],
+      ['Open Animals', stats.open.toString()],
+      ['Animals in Heat', stats.inHeat.toString()],
+      ['Repeat Breeders (>3 Insems)', stats.repeatBreeders.toString()],
+      ['Conception Rate (%)', `${stats.conceptionRate}%`],
+      ['Sick Animals (Active Cases)', stats.sick.toString()],
+      ['Recently Treated (7 Days)', stats.recentlyTreated.toString()],
+      ['Dry Period Animals', stats.dry.toString()],
+      ['Calving Due (Upcoming)', stats.calvingDue.toString()],
+      ['Calving Overdue', stats.overdueCalving.toString()],
+      ['Total Calf Population', stats.calves.toString()],
+    ],
+    theme: 'striped',
+    headStyles: { fillColor: [59, 130, 246] }
+  });
 
-doc.save('Farm_Dashboard.pdf');
+  const nextY = (doc as any).lastAutoTable.finalY + 15;
+  doc.setFontSize(10);
+  doc.setTextColor(148, 163, 184);
+  doc.text('Confidential Livestock Report - Automated Insight', 14, nextY);
+
+  doc.save('Farm_Analytics_Dashboard.pdf');
 };
 
 export const generateReproSectionReport = (

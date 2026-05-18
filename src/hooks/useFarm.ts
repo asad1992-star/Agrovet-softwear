@@ -1,8 +1,8 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Animal, ReproductionEvent, HealthEvent, Alert, FarmSettings, ProtocolEnrollment, ProtocolTemplate, ReproEventType, VaccinationRecord } from '../types';
+import { Animal, ReproductionEvent, HealthEvent, Alert, FarmSettings, ProtocolEnrollment, ProtocolTemplate, ReproEventType, AnimalStatus } from '../types';
 import { storageService, DEFAULT_SETTINGS } from '../services/storage';
-import { computeAnimalStatus, generateAlerts } from '../services/businessLogic';
+import { computeAnimalStatus, generateAlerts, dateUtils } from '../services/businessLogic';
 import { PREDEFINED_PROTOCOLS } from '../data';
 
 export const useFarm = () => {
@@ -11,7 +11,6 @@ export const useFarm = () => {
   const [healthEvents, setHealthEvents] = useState<HealthEvent[]>([]);
   const [enrollments, setEnrollments] = useState<ProtocolEnrollment[]>([]);
   const [customProtocols, setCustomProtocols] = useState<ProtocolTemplate[]>([]);
-  const [vaccinations, setVaccinations] = useState<VaccinationRecord[]>([]);
   const [settings, setSettings] = useState<FarmSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
@@ -29,7 +28,6 @@ export const useFarm = () => {
         const fetchedHealthEvents = await storageService.getHealthEvents();
         const fetchedEnrollments = await storageService.getEnrollments();
         const fetchedCustomProtocols = await storageService.getCustomProtocols();
-        const fetchedVaccinations = await storageService.getVaccinations();
         const fetchedSettings = await storageService.getSettings();
 
         setAnimals(fetchedAnimals);
@@ -37,7 +35,6 @@ export const useFarm = () => {
         setHealthEvents(fetchedHealthEvents);
         setEnrollments(fetchedEnrollments);
         setCustomProtocols(fetchedCustomProtocols);
-        setVaccinations(fetchedVaccinations);
         setSettings(fetchedSettings);
       } catch (error) {
         console.error("Error loading farm data", error);
@@ -71,10 +68,6 @@ export const useFarm = () => {
   }, [customProtocols, loading]);
 
   useEffect(() => {
-    if (!loading) storageService.saveVaccinations(vaccinations);
-  }, [vaccinations, loading]);
-
-  useEffect(() => {
     if (!loading) storageService.saveSettings(settings);
   }, [settings, loading]);
 
@@ -87,22 +80,55 @@ export const useFarm = () => {
   }, [animals, reproEvents, healthEvents, enrollments, settings]);
 
   const alerts = useMemo(() => {
-    return generateAlerts(animals, reproEvents, healthEvents, enrollments, allTemplates, settings, vaccinations);
-  }, [animals, reproEvents, healthEvents, enrollments, allTemplates, settings, vaccinations]);
+    return generateAlerts(animals, reproEvents, healthEvents, enrollments, allTemplates, settings);
+  }, [animals, reproEvents, healthEvents, enrollments, allTemplates, settings]);
 
   const stats = useMemo(() => {
     const statuses = animalsWithStatus.map(a => a.status);
+    const today = dateUtils.today();
+    
+    // Conception Rate Calculation
+    // We need "Total Bred Animals" vs "Pregnant Animals"
+    // For simplicity, let's count animals that have at least one insemination record since their last calving (or ever if no calving)
+    const bredAnimalIds = new Set(reproEvents.filter(e => e.type === ReproEventType.INSEMINATION).map(e => e.animalId));
+    const totalBred = bredAnimalIds.size;
+    const pregnant = statuses.filter(s => s === AnimalStatus.PREGNANT || s === AnimalStatus.CLOSEUP).length;
+    const conceptionRate = totalBred > 0 ? Math.round((pregnant / totalBred) * 100) : 0;
+
+    // Repeat Breeders: Animals with > 2 inseminations in the current cycle
+    const repeatBreeders = animalsWithStatus.filter(a => {
+      const insemCount = reproEvents.filter(e => e.animalId === a.id && e.type === ReproEventType.INSEMINATION).length;
+      return insemCount >= 3 && a.status !== AnimalStatus.PREGNANT;
+    }).length;
+
+    // Heat Due & Calving Due from alerts
+    const heatDueCount = alerts.filter(al => al.title.includes('Heat Check')).length;
+    const calvingDueCount = alerts.filter(al => al.title.includes('Calving') && !al.title.includes('OVERDUE')).length;
+    const overdueCalvingCount = alerts.filter(al => al.title.includes('Calving OVERDUE')).length;
+    
+    // Recently Treated (last 7 days)
+    const sevenDaysAgo = dateUtils.addDays(today, -7);
+    const recentlyTreated = Array.from(new Set(healthEvents.filter(e => e.date >= sevenDaysAgo).map(e => e.animalId))).length;
+
     return {
       total: animals.filter(a => !a.isCalf).length,
-      pregnant: statuses.filter(s => s === 'Pregnant').length,
-      closeup: statuses.filter(s => s === 'Closeup').length,
-      sick: statuses.filter(s => s === 'Sick').length,
-      active: statuses.filter(s => s === 'Active').length,
+      pregnant,
+      open: statuses.filter(s => s === AnimalStatus.ACTIVE || s === AnimalStatus.IN_PROTOCOL).length,
+      repeatBreeders,
+      inHeat: statuses.filter(s => s === AnimalStatus.ACTIVE).length, // Simplified
+      heatDue: heatDueCount,
+      dry: statuses.filter(s => s === AnimalStatus.DRY).length,
+      calvingDue: calvingDueCount,
+      overdueCalving: overdueCalvingCount,
+      sick: statuses.filter(s => s === AnimalStatus.SICK).length,
+      recentlyTreated,
+      conceptionRate,
+      active: statuses.filter(s => s === AnimalStatus.ACTIVE).length,
       calves: animals.filter(a => a.isCalf).length,
-      inProtocol: statuses.filter(s => s === 'In Protocol').length,
-      inseminated: statuses.filter(s => s === 'Inseminated').length
+      inProtocol: statuses.filter(s => s === AnimalStatus.IN_PROTOCOL).length,
+      inseminated: statuses.filter(s => s === AnimalStatus.INSEMINATED).length
     };
-  }, [animalsWithStatus, animals]);
+  }, [animalsWithStatus, animals, reproEvents, healthEvents, alerts]);
 
   // Actions
   const addAnimal = (a: Animal) => setAnimals(prev => [a, ...prev]);
@@ -129,10 +155,6 @@ export const useFarm = () => {
   const addCustomProtocol = (p: ProtocolTemplate) => setCustomProtocols(prev => [p, ...prev]);
   const deleteProtocolTemplate = (id: string) => setCustomProtocols(prev => prev.filter(p => p.id !== id));
 
-  const addVaccination = (v: VaccinationRecord) => setVaccinations(prev => [v, ...prev]);
-  const updateVaccination = (updated: VaccinationRecord) => setVaccinations(prev => prev.map(v => v.id === updated.id ? updated : v));
-  const deleteVaccination = (id: string) => setVaccinations(prev => prev.filter(v => v.id !== id));
-
   const updateSettings = (s: FarmSettings) => setSettings(s);
 
   return {
@@ -143,7 +165,6 @@ export const useFarm = () => {
     enrollments,
     protocols: allTemplates,
     customProtocols,
-    vaccinations,
     alerts,
     stats,
     settings,
@@ -161,9 +182,6 @@ export const useFarm = () => {
     deleteEnrollment,
     addCustomProtocol,
     deleteProtocolTemplate,
-    addVaccination,
-    updateVaccination,
-    deleteVaccination,
     updateSettings
   };
 };

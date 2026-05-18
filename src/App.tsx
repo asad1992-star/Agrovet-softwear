@@ -14,6 +14,7 @@ import {
   Settings as SettingsIcon,
   Clock,
   Save,
+  MessageCircle,
   Menu,
   Baby,
   Tag,
@@ -36,22 +37,26 @@ import {
   LayoutGrid,
   Grid2X2,
   Square,
+  RotateCcw,
   Edit2,
   Filter,
   Check,
-  Zap,
   MoreVertical,
   FileText,
-  BarChart2,
+  BarChart3,
   PieChart as PieChartIcon,
   ShieldCheck,
+  Target,
   Palette,
   HeartPulse,
   AlertTriangle,
   BabyIcon,
   ChevronDown,
   Droplets,
-  Upload
+  Share2,
+  Upload,
+  Zap,
+  Eye
 } from 'lucide-react';
 import {
   BarChart,
@@ -76,8 +81,7 @@ import {
   HealthEvent,
   ProtocolEnrollment,
   ProtocolTemplate,
-  ProtocolStep,
-  VaccinationRecord,
+  ProtocolStep
 } from './types';
 import { validations, dateUtils } from './services/businessLogic';
 import {
@@ -89,6 +93,13 @@ import {
   generateAnimalListReport,
   generateProtocolListReport
 } from './utils/pdfUtils';
+import {
+  shareToWhatsApp,
+  generateAnimalShareText,
+  generateReproEventShareText,
+  generateHealthEventShareText,
+  generateListShareText
+} from './utils/shareUtils';
 import { auth } from './services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 
@@ -142,11 +153,12 @@ const getStatusColor = (status?: AnimalStatus) => {
     case AnimalStatus.INSEMINATED: return 'bg-blue-50 text-blue-700 border-blue-200';
     case AnimalStatus.DRY: return 'bg-slate-100 text-slate-700 border-slate-300';
     case AnimalStatus.CLOSEUP: return 'bg-purple-50 text-purple-700 border-purple-200';
+    case AnimalStatus.OBSERVATION: return 'bg-slate-50 text-slate-500 border-slate-200 dashed';
     default: return 'bg-slate-50 text-slate-700 border-slate-200';
   }
 };
 
-type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'reports' | 'settings' | 'vaccination';
+type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'reports' | 'settings';
 type HerdViewMode = 'list' | 'small' | 'medium' | 'large';
 type ReportType = 'summary' | 'repro' | 'health' | 'individual';
 type HerdTab = 'adults' | 'calves';
@@ -160,7 +172,6 @@ function MainApp({ user, onLogout }: any) {
     enrollments,
     protocols,
     customProtocols,
-    vaccinations,
     alerts,
     stats,
     settings,
@@ -178,9 +189,6 @@ function MainApp({ user, onLogout }: any) {
     deleteEnrollment,
     addCustomProtocol,
     deleteProtocolTemplate,
-    addVaccination,
-    updateVaccination,
-    deleteVaccination,
     updateSettings
   } = useFarm();
 
@@ -201,17 +209,15 @@ function MainApp({ user, onLogout }: any) {
   const [isEnrollmentFormOpen, setIsEnrollmentFormOpen] = useState(false);
   const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
   const [selectedEnrollmentDetail, setSelectedEnrollmentDetail] = useState<ProtocolEnrollment | null>(null);
-  const [isVaccinationFormOpen, setIsVaccinationFormOpen] = useState(false);
   const [isPregnancyCheckOpen, setIsPregnancyCheckOpen] = useState(false);
   const [pregnancyCheckAnimal, setPregnancyCheckAnimal] = useState<Animal | null>(null);
   const [calfFormAnimal, setCalfFormAnimal] = useState<Animal | null>(null);
-
+  
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [protocolAnimalSearch, setProtocolAnimalSearch] = useState('');
   const [healthPatientSearch, setHealthPatientSearch] = useState('');
-  const [vaccinationAnimalSearch, setVaccinationAnimalSearch] = useState('');
 
   // Repro Filters & Sorts
   const [reproTagSearch, setReproTagSearch] = useState('');
@@ -257,6 +263,65 @@ function MainApp({ user, onLogout }: any) {
   const [protocolTagSearch, setProtocolTagSearch] = useState('');
   // Protocol view mode: 'active' | 'history'
   const [protocolView, setProtocolView] = useState<'active' | 'history'>('active');
+
+  const [dashboardFilter, setDashboardFilter] = useState<{
+    dateRange: string;
+    breed: string;
+    category: string;
+  }>({
+    dateRange: 'All',
+    breed: 'All',
+    category: 'All'
+  });
+
+  const handleMetricClick = (metric: string) => {
+    setSearchTerm('');
+    setStatusFilter('All');
+    
+    if (metric === 'Pregnant') {
+      setView('animals');
+      setStatusFilter('Pregnant');
+    } else if (metric === 'Sick') {
+      setView('animals');
+      setStatusFilter('Sick');
+    } else if (metric === 'Open') {
+      setView('animals');
+      setStatusFilter('Active');
+    } else if (metric === 'In Lab' || metric === 'Protocol') {
+      setProtocolView('active');
+      setView('protocols');
+    } else if (metric === 'Heat Due') {
+      setView('repro');
+      setReproTagSearch('');
+    } else if (metric === 'Calving Due') {
+      setView('animals');
+      setStatusFilter('Closeup');
+    } else if (metric === 'Repeat Breeders') {
+      setView('animals');
+      setStatusFilter('All');
+      setSearchTerm('Repeat');
+    } else if (metric === 'Heat') {
+      setView('animals');
+      setStatusFilter('All');
+      setSearchTerm('Heat');
+    } else if (metric === 'Treated') {
+      setView('animals');
+      // I don't have a "Treated" status, but I can filter by "Recently Treated" in searchTerm if I add it
+      setSearchTerm('Recently treated');
+    } else if (metric === 'Dry') {
+      setView('animals');
+      setStatusFilter('Dry');
+    } else if (metric === 'Observation') {
+      setView('animals');
+      setStatusFilter('Observation');
+    } else if (metric === 'Overdue') {
+      setView('animals');
+      setStatusFilter('Closeup');
+      setSearchTerm('Overdue');
+    } else {
+      setView('animals');
+    }
+  };
   // History date filter
   const [historyMonth, setHistoryMonth] = useState('');
   // Selected protocol for drill-down view (protocol list -> protocol detail)
@@ -281,8 +346,6 @@ function MainApp({ user, onLogout }: any) {
   const [newHealth, setNewHealth] = useState<Partial<HealthEvent>>({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0] });
   const [newEnrollment, setNewEnrollment] = useState<Partial<ProtocolEnrollment> & { animalIds?: string[] }>({ startDate: new Date().toISOString().split('T')[0], animalIds: [] });
   const [newTemplate, setNewTemplate] = useState<Partial<ProtocolTemplate>>({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false });
-  const [newVaccination, setNewVaccination] = useState<Partial<VaccinationRecord>>({ date: new Date().toISOString().split('T')[0] });
-  const [editingVaccinationId, setEditingVaccinationId] = useState<string | null>(null);
 
   // Protocol Grouping & AI Workflow State
   const [protocolDateStart, setProtocolDateStart] = useState<string>('');
@@ -306,22 +369,59 @@ function MainApp({ user, onLogout }: any) {
       setIsReproFormOpen(false);
       setIsHealthFormOpen(false);
       setIsEnrollmentFormOpen(false);
-      setIsVaccinationFormOpen(false);
     }
   }, [selectedAnimal]);
 
   const filteredAnimals = useMemo(() => {
     return animals.filter(a => {
       const term = searchTerm.toLowerCase();
+      
+      // Handle special metric searches from dashboard
+      const isRepeatBreeder = term === 'repeat' || term === 'repeat breeders';
+      const isInHeat = term === 'heat' || term === 'in heat';
+      const isRecentlyTreated = term === 'recently treated';
+      const isOverdue = term === 'overdue';
+
+      if (isRepeatBreeder) {
+        const insemCount = reproEvents.filter(e => e.animalId === a.id && e.type === ReproEventType.INSEMINATION).length;
+        return insemCount >= 3 && a.status !== AnimalStatus.PREGNANT;
+      }
+
+      if (isInHeat) {
+        const today = new Date().toISOString().split('T')[0];
+        const animalEvents = reproEvents.filter(e => e.animalId === a.id);
+        const latestHeat = animalEvents
+          .filter(e => e.type === ReproEventType.ESTRUS)
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
+        return latestHeat && latestHeat.date === today;
+      }
+
+      if (isRecentlyTreated) {
+        const today = new Date().toISOString().split('T')[0];
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+        return healthEvents.some(e => e.animalId === a.id && e.date >= sevenDaysAgoStr);
+      }
+
+      if (isOverdue) {
+        return alerts.some(al => al.animalId === a.id && al.title.includes('OVERDUE'));
+      }
+
       const matchesSearch =
         a.tag.toLowerCase().includes(term) ||
         (a.name?.toLowerCase().includes(term)) ||
         (a.herd.toLowerCase().includes(term)) ||
         (a.status?.toLowerCase().includes(term));
       const matchesStatus = statusFilter === 'All' || a.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      
+      // Breed filter from dashboard
+      const matchesDashboardBreed = dashboardFilter.breed === 'All' || a.breed === dashboardFilter.breed;
+      const matchesDashboardCategory = dashboardFilter.category === 'All' || (dashboardFilter.category === 'Calf' ? a.isCalf : !a.isCalf);
+
+      return matchesSearch && matchesStatus && matchesDashboardBreed && matchesDashboardCategory;
     }).sort((a, b) => (a.dob || '').localeCompare(b.dob || ''));
-  }, [animals, searchTerm, statusFilter]);
+  }, [animals, searchTerm, statusFilter, reproEvents, dashboardFilter, healthEvents, alerts]);
 
   const protocolEligibleAnimals = useMemo(() => {
     return animals
@@ -389,15 +489,6 @@ function MainApp({ user, onLogout }: any) {
     ).slice(0, 6);
   }, [animals, healthPatientSearch]);
 
-  // Vaccination animal search autocomplete
-  const vaccinationSearchResults = useMemo(() => {
-    if (!vaccinationAnimalSearch || vaccinationAnimalSearch.length < 1) return [];
-    return animals.filter(a =>
-      a.tag.toLowerCase().includes(vaccinationAnimalSearch.toLowerCase()) ||
-      (a.name?.toLowerCase().includes(vaccinationAnimalSearch.toLowerCase()))
-    ).slice(0, 6);
-  }, [animals, vaccinationAnimalSearch]);
-
   // Adults and Calves separation
   const adultAnimals = useMemo(() => filteredAnimals.filter(a => !a.isCalf), [filteredAnimals]);
   const calfAnimals = useMemo(() => animals.filter(a => a.isCalf && (
@@ -413,6 +504,145 @@ function MainApp({ user, onLogout }: any) {
     ].sort((a, b) => b.date.localeCompare(a.date));
     return combined.slice(0, 10);
   }, [reproEvents, healthEvents]);
+
+  // --- Analytics Data Processing ---
+  const reproductionTrends = useMemo(() => {
+    const monthlyData: Record<string, { month: string, inseminations: number, pregnancies: number, calvings: number }> = {};
+    const last6Months = Array.from({ length: 6 }).map((_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (5 - i));
+      return d.toISOString().slice(0, 7);
+    });
+
+    last6Months.forEach(m => {
+      monthlyData[m] = { month: m, inseminations: 0, pregnancies: 0, calvings: 0 };
+    });
+
+    reproEvents.forEach(e => {
+      const m = e.date.slice(0, 7);
+      if (monthlyData[m]) {
+        if (e.type === ReproEventType.INSEMINATION) monthlyData[m].inseminations++;
+        if (e.type === ReproEventType.PREGNANCY_CHECK && e.success) monthlyData[m].pregnancies++;
+        if (e.type === ReproEventType.CALVING) monthlyData[m].calvings++;
+      }
+    });
+
+    return Object.values(monthlyData);
+  }, [reproEvents]);
+
+  const healthTrends = useMemo(() => {
+    const monthlyData: Record<string, { month: string, treatments: number, cases: number }> = {};
+    const last6Months = Array.from({ length: 6 }).map((_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (5 - i));
+      return d.toISOString().slice(0, 7);
+    });
+
+    last6Months.forEach(m => {
+      monthlyData[m] = { month: m, treatments: 0, cases: 0 };
+    });
+
+    healthEvents.forEach(e => {
+      const m = e.date.slice(0, 7);
+      if (monthlyData[m]) {
+        monthlyData[m].treatments++;
+        if (e.type === HealthEventType.ILLNESS) monthlyData[m].cases++;
+      }
+    });
+
+    return Object.values(monthlyData);
+  }, [healthEvents]);
+
+  const diseaseFrequency = useMemo(() => {
+    const counts: Record<string, number> = {};
+    healthEvents.filter(e => e.type === HealthEventType.ILLNESS).forEach(e => {
+      const name = e.details || 'Unknown';
+      counts[name] = (counts[name] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  }, [healthEvents]);
+
+  const conceptionRateTrends = useMemo(() => {
+    const monthlyData: Record<string, { month: string, rate: number }> = {};
+    const last6Months = Array.from({ length: 6 }).map((_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (5 - i));
+      return d.toISOString().slice(0, 7);
+    });
+
+    last6Months.forEach(m => {
+      const insemThisMonth = reproEvents.filter(e => e.type === ReproEventType.INSEMINATION && e.date.slice(0, 7) === m).length;
+      const pregFromThisMonth = reproEvents.filter(e => e.type === ReproEventType.PREGNANCY_CHECK && e.success && e.date.slice(0, 7) === m).length;
+      const rate = insemThisMonth > 0 ? Math.round((pregFromThisMonth / insemThisMonth) * 100) : 0;
+      monthlyData[m] = { month: m, rate };
+    });
+
+    return Object.values(monthlyData);
+  }, [reproEvents]);
+
+  const recentAnalyticsActivities = useMemo(() => {
+    const combined = [
+      ...reproEvents.map(e => ({ ...e, logType: 'Repro' as const })),
+      ...healthEvents.map(e => ({ ...e, logType: 'Health' as const }))
+    ].sort((a, b) => b.date.localeCompare(a.date));
+    return combined.slice(0, 10);
+  }, [reproEvents, healthEvents]);
+
+  const dashboardStats = useMemo(() => {
+    const filtered = animals.filter(a => {
+      const matchesBreed = dashboardFilter.breed === 'All' || a.breed === dashboardFilter.breed;
+      const matchesCategory = dashboardFilter.category === 'All' || (dashboardFilter.category === 'Calf' ? a.isCalf : !a.isCalf);
+      return matchesBreed && matchesCategory;
+    });
+
+    const statuses = filtered.map(a => a.status);
+    const today = dateUtils.today();
+    
+    const bredAnimalIds = new Set(reproEvents.filter(e => e.type === ReproEventType.INSEMINATION).map(e => e.animalId));
+    const pregnant = statuses.filter(s => s === AnimalStatus.PREGNANT || s === AnimalStatus.CLOSEUP).length;
+    const totalBredAcrossFiltered = filtered.filter(a => bredAnimalIds.has(a.id)).length;
+    const conceptionRate = totalBredAcrossFiltered > 0 ? Math.round((pregnant / totalBredAcrossFiltered) * 100) : 0;
+
+    const repeatBreeders = filtered.filter(a => {
+      const insemCount = reproEvents.filter(e => e.animalId === a.id && e.type === ReproEventType.INSEMINATION).length;
+      return insemCount >= 3 && a.status !== AnimalStatus.PREGNANT;
+    }).length;
+
+    const sevenDaysAgo = dateUtils.addDays(today, -7);
+    const recentlyTreated = Array.from(new Set(healthEvents.filter(e => e.date >= sevenDaysAgo && filtered.some(a => a.id === e.animalId)).map(e => e.animalId))).length;
+
+    const inHeatCount = filtered.filter(a => {
+      const animalEvents = reproEvents.filter(e => e.animalId === a.id);
+      const latestHeat = animalEvents
+        .filter(e => e.type === ReproEventType.ESTRUS)
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+      return latestHeat && latestHeat.date === today;
+    }).length;
+
+    const relevantAlerts = alerts.filter(al => al.animalId ? filtered.some(a => a.id === al.animalId) : true);
+
+    return {
+      total: filtered.filter(a => !a.isCalf).length,
+      pregnant,
+      open: statuses.filter(s => s === AnimalStatus.ACTIVE || s === AnimalStatus.IN_PROTOCOL || s === AnimalStatus.INSEMINATED).length,
+      repeatBreeders,
+      inHeat: inHeatCount,
+      heatDue: relevantAlerts.filter(al => al.title.includes('Heat Check')).length,
+      dry: statuses.filter(s => s === AnimalStatus.DRY).length,
+      calvingDue: relevantAlerts.filter(al => al.title.includes('Calving') && !al.title.includes('OVERDUE')).length,
+      overdueCalving: relevantAlerts.filter(al => al.title.includes('Calving OVERDUE')).length,
+      sick: statuses.filter(s => s === AnimalStatus.SICK).length,
+      underObservation: statuses.filter(s => s === AnimalStatus.OBSERVATION).length,
+      recentlyTreated,
+      conceptionRate,
+      calves: filtered.filter(a => a.isCalf).length,
+      inProtocol: statuses.filter(s => s === AnimalStatus.IN_PROTOCOL).length,
+      totalFemales: filtered.filter(a => a.sex === 'Female').length,
+    };
+  }, [animals, reproEvents, healthEvents, alerts, dashboardFilter]);
 
   // Auto Backup System
   useEffect(() => {
@@ -508,6 +738,7 @@ function MainApp({ user, onLogout }: any) {
         technician: newHealth.technician ? dateUtils.normalizeName(newHealth.technician) : '',
         medication: newHealth.medication ? dateUtils.normalizeName(newHealth.medication) : ''
       };
+
       if (editingHealthId) {
         updateHealthEvent(normalizedHealth as HealthEvent);
         setEditingHealthId(null);
@@ -519,7 +750,7 @@ function MainApp({ user, onLogout }: any) {
         } as HealthEvent);
       }
       setIsHealthFormOpen(false);
-      setSelectedAnimal(null); // Auto-close animal profile when health form is submitted
+      setSelectedAnimal(null);
       setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0] });
       setHealthAnimalSearch('');
     }
@@ -648,7 +879,6 @@ function MainApp({ user, onLogout }: any) {
       healthEvents,
       enrollments,
       customProtocols,
-      vaccinations,
       settings,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -982,192 +1212,290 @@ function MainApp({ user, onLogout }: any) {
 
         <div className="flex-1 overflow-y-auto p-6 md:p-10 scroll-smooth">
           {view === 'dashboard' && (
-            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-                <StatCard title="Total Herd" value={stats.total} icon={Users} colorClass="bg-blue-500" onClick={() => { setView('animals'); setStatusFilter('All'); }} />
-
-                <StatCard title="Pregnant" value={stats.pregnant} icon={Baby} colorClass="bg-emerald-500" trend={stats.total > 0 ? `${Math.round((stats.pregnant / stats.total) * 100)}% Herd` : '0% Herd'} onClick={() => { setView('animals'); setStatusFilter('Pregnant'); }} />
-                <StatCard title="In Lab" value={stats.inProtocol} icon={FlaskConical} colorClass="bg-amber-500" onClick={() => { setView('protocols'); }} />
-                <StatCard title="Sick Bay" value={stats.sick} icon={Stethoscope} colorClass="bg-rose-500" onClick={() => { setView('animals'); setStatusFilter('Sick'); }} />
+            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-20">
+              {/* Dashboard Filters */}
+              <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-xl">
+                  <Filter className="w-4 h-4 text-blue-600" />
+                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Advanced Filters</span>
+                </div>
+                <select 
+                  className="bg-slate-50 border-none rounded-xl text-[10px] font-black uppercase tracking-widest py-2.5 px-4 outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+                  value={dashboardFilter.dateRange}
+                  onChange={(e) => setDashboardFilter({ ...dashboardFilter, dateRange: e.target.value })}
+                >
+                  <option value="All">All Time</option>
+                  <option value="7d">Last 7 Days</option>
+                  <option value="30d">Last 30 Days</option>
+                </select>
+                <select 
+                  className="bg-slate-50 border-none rounded-xl text-[10px] font-black uppercase tracking-widest py-2.5 px-4 outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+                  value={dashboardFilter.breed}
+                  onChange={(e) => setDashboardFilter({ ...dashboardFilter, breed: e.target.value })}
+                >
+                  <option value="All">All Breeds</option>
+                  {Array.from(new Set(animals.map(a => a.breed))).map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                <select 
+                  className="bg-slate-50 border-none rounded-xl text-[10px] font-black uppercase tracking-widest py-2.5 px-4 outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+                  value={dashboardFilter.category}
+                  onChange={(e) => setDashboardFilter({ ...dashboardFilter, category: e.target.value })}
+                >
+                  <option value="All">All Categories</option>
+                  <option value="Adult">Adult Cows</option>
+                  <option value="Calf">Calves Only</option>
+                </select>
+                <div className="ml-auto flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      const label = 'Farm Dashboard Report';
+                      const items = [
+                        { tag: 'Conception Rate', value: `${dashboardStats.conceptionRate}%` },
+                        { tag: 'Total Females', value: `${dashboardStats.totalFemales}` },
+                        { tag: 'Pregnant', value: `${dashboardStats.pregnant}` },
+                        { tag: 'Open (Ready)', value: `${dashboardStats.open}` },
+                        { tag: 'Due for Heat', value: `${dashboardStats.heatDue}` },
+                        { tag: 'Due for Calving', value: `${dashboardStats.calvingDue}` },
+                        { tag: 'Sick Animals', value: `${dashboardStats.sick}` },
+                        { tag: 'Under Observation', value: `${dashboardStats.underObservation}` }
+                      ];
+                      const text = generateListShareText(label, items);
+                      shareToWhatsApp(text);
+                    }}
+                    className="flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-100 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 transition-all shadow-sm"
+                  >
+                    <MessageCircle className="w-4 h-4" /> Share Dashboard
+                  </button>
+                  <button 
+                    onClick={() => generateDashboardPDF(dashboardStats, animals, settings)}
+                    className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                  >
+                    <Download className="w-4 h-4" /> Export Analytics
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                {/* Main Distribution Chart */}
+              {/* 1. Reproduction Summary */}
+              <section className="space-y-6">
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-600 rounded-xl">
+                      <CalendarRange className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-800 tracking-tight">Reproduction Summary</h3>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                  <StatCard title="Pregnant" value={dashboardStats.pregnant} icon={Baby} colorClass="bg-emerald-500" trend={`${Math.round((dashboardStats.pregnant / (dashboardStats.total || 1)) * 100)}% Herd`} onClick={() => handleMetricClick('Pregnant')} />
+                  <StatCard title="Open Animals" value={dashboardStats.open} icon={Square} colorClass="bg-blue-500" trend="Awaiting Insem" onClick={() => handleMetricClick('Open')} />
+                  <StatCard title="Repeat Breeders" value={dashboardStats.repeatBreeders} icon={RotateCcw} colorClass="bg-rose-500" trend="> 3 Insems" onClick={() => handleMetricClick('Repeat Breeders')} />
+                  <StatCard title="Animals in Heat" value={dashboardStats.inHeat} icon={Zap} colorClass="bg-amber-500" trend="Active Cycle" onClick={() => handleMetricClick('Heat')} />
+                  <StatCard title="Heat Due" value={dashboardStats.heatDue} icon={Clock} colorClass="bg-blue-400" trend="Next Check" onClick={() => handleMetricClick('Heat Due')} />
+                </div>
+              </section>
+
+              {/* 2. Fertility Performance */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                 <div className="lg:col-span-8 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm">
                   <div className="flex items-center justify-between mb-10">
                     <div>
-                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Live Analysis</h3>
-                      <p className="text-3xl font-black text-slate-800">Herd Lifecycle</p>
+                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Efficiency Analysis</h3>
+                      <p className="text-3xl font-black text-slate-800">Reproduction Trends</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => generateDashboardPDF(stats, animals, settings)} className="p-4 text-blue-600 bg-blue-50 rounded-[1.5rem] hover:bg-blue-100 transition-all shadow-sm" title="Print Dashboard">
-                        <Printer className="w-6 h-6" />
-                      </button>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Avg Conception</p>
+                        <p className="text-xl font-black text-blue-600">{dashboardStats.conceptionRate}%</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="h-[400px] w-full">
+                  <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[
-                        { name: 'Active', val: stats.active },
-                        { name: 'Pregnant', val: stats.pregnant },
-                        { name: 'Lab', val: stats.inProtocol },
-                        { name: 'Sick', val: stats.sick },
-                        { name: 'Dry', val: (stats.total - stats.active - stats.pregnant - stats.sick) > 0 ? (stats.total - stats.active - stats.pregnant - stats.sick) : 0 }
-                      ]}>
+                      <BarChart data={reproductionTrends}>
                         <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="#F1F5F9" />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94A3B8', fontWeight: 800 }} dy={15} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94A3B8', fontWeight: 600 }} />
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 800 }} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} />
                         <Tooltip
                           cursor={{ fill: '#F8FAFC' }}
                           contentStyle={{ borderRadius: '24px', border: 'none', padding: '16px', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.15)' }}
                         />
-                        <Bar dataKey="val" radius={[16, 16, 0, 0]} barSize={56}>
-                          {[0, 1, 2, 3, 4].map((_, i) => (
-                            <Cell key={`c-${i}`} fill={['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#64748B'][i]} />
-                          ))}
-                        </Bar>
+                        <Bar dataKey="inseminations" name="Inseminations" fill="#3B82F6" radius={[8, 8, 0, 0]} />
+                        <Bar dataKey="pregnancies" name="Pregnancies" fill="#10B981" radius={[8, 8, 0, 0]} />
+                        <Bar dataKey="calvings" name="Calvings" fill="#F59E0B" radius={[8, 8, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
-
-                {/* Priority Alerts */}
-                <div className="lg:col-span-4 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col">
-                  <div className="flex items-center justify-between mb-8">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Critical Tasks</h3>
-                    <TrendingUp className="w-5 h-5 text-blue-500" />
+                <div className="lg:col-span-4 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col justify-center text-center">
+                  <div className={`p-8 rounded-[2.5rem] bg-blue-50 border border-blue-100 mb-6 mx-auto w-fit`}>
+                    <Target className="w-12 h-12 text-blue-600" />
                   </div>
-                  <div className="space-y-5 flex-1 overflow-y-auto max-h-[400px] pr-2 scrollbar-hide">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Overall Performance</h3>
+                  <p className="text-5xl font-black text-slate-800 mb-4">{dashboardStats.conceptionRate}%</p>
+                  <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Conception Rate</p>
+                  <div className="mt-8 pt-8 border-t border-slate-50 space-y-4">
+                    <div className="flex items-center justify-between text-xs font-black uppercase tracking-widest">
+                      <span className="text-slate-400">Trend Monthly</span>
+                      <span className="text-emerald-500 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> +5%</span>
+                    </div>
+                    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                      <div className="h-full bg-blue-600 rounded-full" style={{ width: `${dashboardStats.conceptionRate}%` }}></div>
+                    </div>
+                  </div>
+                  <button onClick={() => handleMetricClick('Conception Rate')} className="mt-8 text-xs font-black text-blue-600 uppercase tracking-[0.2em] hover:underline cursor-pointer">
+                    Detailed Breakdown →
+                  </button>
+                </div>
+              </section>
+
+              {/* 3. Health Summary */}
+              <section className="space-y-6">
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-rose-600 rounded-xl">
+                      <HeartPulse className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-800 tracking-tight">Health Summary</h3>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8">
+                  <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <StatCard title="Sick Animals" value={dashboardStats.sick} icon={Stethoscope} colorClass="bg-rose-500" trend="Active Cases" onClick={() => handleMetricClick('Sick')} />
+                    <StatCard title="Recently Treated" value={dashboardStats.recentlyTreated} icon={Activity} colorClass="bg-amber-500" trend="Last 7 Days" onClick={() => handleMetricClick('Treated')} />
+                    <StatCard title="In Lab / Support" value={dashboardStats.inProtocol} icon={FlaskConical} colorClass="bg-blue-500" trend="Under Protocol" onClick={() => handleMetricClick('Protocol')} />
+                    <StatCard title="Under Observation" value={dashboardStats.underObservation} icon={Eye} colorClass="bg-slate-400" trend="Monitoring" onClick={() => handleMetricClick('Observation')} />
+                  </div>
+                  <div className="lg:col-span-7 bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                    <div className="flex items-center justify-between mb-8 px-2">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Disease Frequency</h4>
+                      <BarChart3 className="w-4 h-4 text-rose-400" />
+                    </div>
+                    <div className="space-y-5">
+                      {diseaseFrequency.length > 0 ? diseaseFrequency.map((disease, i) => (
+                        <div key={i} className="flex items-center gap-6">
+                          <span className="text-[10px] font-black text-slate-300 w-4">0{i+1}</span>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-black text-slate-700">{disease.name}</span>
+                              <span className="text-xs font-black text-slate-400">{disease.value} cases</span>
+                            </div>
+                            <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden">
+                              <div className="h-full bg-rose-500" style={{ width: `${(disease.value / (healthEvents.length || 1)) * 100}%` }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      )) : (
+                        <div className="py-10 text-center opacity-30 italic text-sm">No health cases logged recently</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* 4. Calving & Dry Summary */}
+              <section className="space-y-6">
+                <div className="flex items-center gap-3 px-2">
+                  <div className="p-2 bg-emerald-600 rounded-xl">
+                    <BabyIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Calving & Dry Management</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <StatCard title="Dry Animals" value={dashboardStats.dry} icon={Droplets} colorClass="bg-slate-500" trend="Rest Period" onClick={() => handleMetricClick('Dry')} />
+                  <StatCard title="Calving Due" value={dashboardStats.calvingDue} icon={Clock} colorClass="bg-emerald-500" trend="Next 7 Days" onClick={() => handleMetricClick('Calving Due')} />
+                  <StatCard title="Overdue Calving" value={dashboardStats.overdueCalving} icon={AlertTriangle} colorClass="bg-rose-500" trend="Urgent Action" onClick={() => handleMetricClick('Overdue')} />
+                  <StatCard title="Calf Population" value={dashboardStats.calves} icon={BabyIcon} colorClass="bg-amber-500" trend="Health Support" onClick={() => { setView('animals'); setHerdTab('calves'); }} />
+                </div>
+              </section>
+
+              {/* 5 & 6. Activities & Alerts */}
+              <section className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                {/* Upcoming Alerts Section */}
+                <div className="lg:col-span-5 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col">
+                  <div className="flex items-center justify-between mb-8">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                      <Bell className="w-5 h-5 text-amber-500" /> Upcoming Alerts
+                    </h3>
+                    <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[10px] font-black border border-amber-100">{alerts.length} Tasks</span>
+                  </div>
+                  <div className="space-y-5 flex-1 overflow-y-auto max-h-[500px] pr-2 scrollbar-hide">
                     {alerts.length > 0 ? alerts.map(alert => (
-                      <div key={alert.id} className="group flex items-start gap-5 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white transition-all border border-transparent hover:border-slate-100 hover:shadow-lg">
-                        <div className={`mt-1 p-3 rounded-2xl shadow-sm ${alert.priority === 'High' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
-                          <AlertCircle className="w-5 h-5" />
+                      <div 
+                        key={alert.id} 
+                        className="group flex items-start gap-4 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white transition-all border border-transparent hover:border-slate-100 hover:shadow-lg cursor-pointer"
+                        onClick={() => {
+                          const animal = animals.find(a => a.id === alert.animalId);
+                          if (animal) setSelectedAnimal(animal);
+                        }}
+                      >
+                        <div className={`mt-0.5 p-3 rounded-2xl shadow-sm ${alert.priority === 'High' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
+                          <AlertCircle className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-black text-slate-800 truncate leading-tight mb-1">{alert.title}</p>
-                          <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed font-medium mb-3">{alert.description}</p>
-                          <div className="flex items-center gap-3">
+                          <p className="text-[10px] text-slate-500 line-clamp-1 leading-relaxed font-bold mb-3 uppercase tracking-wider">{alert.description}</p>
+                          <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-lg border border-slate-100 shadow-sm">
-                              <Clock className="w-3 h-3 text-slate-400" />
+                              <CalendarIcon className="w-3 h-3 text-slate-400" />
                               <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">{alert.dueDate}</span>
                             </div>
-                            {alert.animalId && (
-                              <button
-                                onClick={() => setSelectedAnimal(animals.find(a => a.id === alert.animalId) || null)}
-                                className="text-[10px] font-black text-blue-600 hover:underline underline-offset-4"
-                              >
-                                View Cow
-                              </button>
-                            )}
+                            <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${alert.priority === 'High' ? 'text-rose-600' : 'text-blue-500'}`}>{alert.priority}</span>
                           </div>
                         </div>
                       </div>
                     )) : (
                       <div className="flex flex-col items-center justify-center h-full py-10 opacity-40">
-                        <CheckCircle2 className="w-20 h-20 text-slate-100 mb-4" />
-                        <p className="text-sm text-slate-400 font-black tracking-widest uppercase">System Clear</p>
+                        <CheckCircle2 className="w-16 h-16 text-slate-200 mb-4" />
+                        <p className="text-xs text-slate-400 font-black tracking-widest uppercase">No pending alerts</p>
                       </div>
                     )}
                   </div>
                 </div>
-              </div>
 
-              {/* Activity & Funnel */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 pb-10">
-                <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm">
+                {/* Recent Activities Section */}
+                <div className="lg:col-span-7 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col">
                   <div className="flex items-center justify-between mb-10">
                     <div className="flex items-center gap-4">
                       <div className="p-3 bg-blue-50 rounded-2xl">
-                        <History className="w-7 h-7 text-blue-600" />
+                        <History className="w-6 h-6 text-blue-600" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-black text-slate-800">Activity Stream</h3>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Real-time entries</p>
+                        <h3 className="text-xl font-black text-slate-800 tracking-tight">Recent Activities</h3>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Latest farm updates</p>
                       </div>
                     </div>
+                    <button onClick={() => setView('reports')} className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline px-4 py-2 bg-blue-50 rounded-xl">View All Log</button>
                   </div>
                   <div className="space-y-4">
-                    {recentLogs.map((log: any, index: number) => {
+                    {recentAnalyticsActivities.map((log: any, index: number) => {
                       const animal = animals.find(a => a.id === log.animalId);
                       return (
-                        <div key={`${log.id}-${index}`} className="flex items-center gap-6 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white border border-transparent hover:border-slate-100 transition-all cursor-pointer group" onClick={() => setSelectedAnimal(animal || null)}>
-                          <span className="text-[10px] font-black text-slate-300 w-4">#{index + 1}</span>
-                          <div className={`p-3 rounded-2xl shadow-sm ${log.logType === 'Repro' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'}`}>
+                        <div key={`${log.id}-${index}`} className="flex items-center gap-5 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white border border-transparent hover:border-slate-100 transition-all cursor-pointer group" onClick={() => setSelectedAnimal(animal || null)}>
+                          <div className={`p-4 rounded-xl shadow-sm ${log.logType === 'Repro' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'}`}>
                             {log.logType === 'Repro' ? <Baby className="w-5 h-5" /> : <Stethoscope className="w-5 h-5" />}
                           </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className="text-sm font-black text-slate-800 group-hover:text-blue-600">{animal?.tag || 'Unk'}</span>
-                              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter ${log.logType === 'Repro' ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-black text-slate-800 group-hover:text-blue-600 transition-colors uppercase">{animal?.tag || 'Unknown'}</span>
+                              <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-tighter ${log.logType === 'Repro' ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
                                 {log.type}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-500 font-medium truncate max-w-[200px]">{log.details}</p>
+                            <p className="text-[11px] text-slate-500 font-bold truncate pr-4">{log.details}</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{log.date}</p>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">{log.date}</p>
+                            <div className="flex items-center justify-end gap-1">
+                              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
+                              <span className="text-[9px] text-emerald-600 font-black uppercase">Confirmed</span>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
-
-                <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm">
-                  <div className="flex items-center justify-between mb-10">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-emerald-50 rounded-2xl">
-                        <TrendingUp className="w-7 h-7 text-emerald-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-black text-slate-800">Herd Composition</h3>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Health & Repro Ratio</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-col md:flex-row items-center gap-10">
-                    <div className="w-64 h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: 'Healthy', value: stats.active + stats.pregnant },
-                              { name: 'Under Treatment', value: stats.sick },
-                              { name: 'Protocol', value: stats.inProtocol },
-                            ]}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            paddingAngle={8}
-                            dataKey="value"
-                          >
-                            {[0, 1, 2].map((_, i) => (
-                              <Cell key={`p-${i}`} fill={['#10B981', '#EF4444', '#F59E0B'][i]} stroke="none" />
-                            ))}
-                          </Pie>
-                          <Tooltip contentStyle={{ borderRadius: '16px', border: 'none' }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="flex-1 space-y-6">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                            <span className="text-sm font-black text-slate-600 uppercase tracking-wider">Health Stability</span>
-                          </div>
-                          <span className="text-sm font-black text-slate-800">{Math.round(((stats.active + stats.pregnant) / stats.total) * 100)}%</span>
-                        </div>
-                        <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                          <div className="h-full bg-emerald-500" style={{ width: `${Math.round(((stats.active + stats.pregnant) / stats.total) * 100)}%` }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </section>
             </div>
           )}
 
@@ -1223,9 +1551,21 @@ function MainApp({ user, onLogout }: any) {
                         const label = statusFilter === 'All' ? 'All Status' : statusFilter;
                         generateAnimalListReport(filteredAnimals, settings, label);
                       }}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-emerald-600 text-white border-2 border-emerald-600 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100"
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-white text-slate-700 border-2 border-slate-100 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-50 transition-all border-slate-200"
                     >
                       <Download className="w-6 h-6" /> Export PDF
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const label = (statusFilter === 'All' ? 'Livestock' : statusFilter) + ' List';
+                        const items = filteredAnimals.map(a => ({ tag: a.tag, value: a.status || 'Active' }));
+                        const text = generateListShareText(label, items);
+                        shareToWhatsApp(text);
+                      }}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-emerald-50 text-emerald-700 border-2 border-emerald-100 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                    >
+                      <MessageCircle className="w-6 h-6" /> Share List
                     </button>
 
                     <button
@@ -1337,6 +1677,17 @@ function MainApp({ user, onLogout }: any) {
                               {animal.status}
                             </span>
                             <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const text = generateAnimalShareText(animal, reproEvents, healthEvents);
+                                  shareToWhatsApp(text);
+                                }}
+                                className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-all"
+                                title="Share on WhatsApp"
+                              >
+                                <MessageCircle className="w-4 h-4" />
+                              </button>
                               <EditButton />
                               <button onClick={(e) => handleDeleteAnimal(animal, e)} className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all" title="Delete">
                                 <Trash2 className="w-4 h-4" />
@@ -1433,7 +1784,20 @@ function MainApp({ user, onLogout }: any) {
                             <span className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter border shadow-sm ${getStatusColor(animal.status)}`}>
                               {animal.status}
                             </span>
-                            <EditButton />
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const text = generateAnimalShareText(animal, reproEvents, healthEvents);
+                                  shareToWhatsApp(text);
+                                }}
+                                className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-all opacity-0 group-hover:opacity-100"
+                                title="Share on WhatsApp"
+                              >
+                                <MessageCircle className="w-4 h-4" />
+                              </button>
+                              <EditButton />
+                            </div>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-8">
@@ -1472,9 +1836,23 @@ function MainApp({ user, onLogout }: any) {
                       const label = (reproDateStart || reproDateEnd) ? `${reproDateStart || 'Start'} to ${reproDateEnd || 'End'}` : 'Full History';
                       generateReproSectionReport(filteredReproEvents, animals, settings, reproEvents, label);
                     }}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-white text-slate-700 border-2 border-slate-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-white text-slate-700 border-2 border-slate-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all border-slate-200"
                   >
                     <Printer className="w-5 h-5" /> Print PDF
+                  </button>
+                  <button
+                    onClick={() => {
+                      const label = (reproDateStart || reproDateEnd) ? `${reproDateStart || 'Start'} to ${reproDateEnd || 'End'}` : 'Reproduction History';
+                      const items = filteredReproEvents.map(e => {
+                        const animal = animals.find(a => a.id === e.animalId);
+                        return { tag: animal?.tag || 'Unk', value: `${e.type} on ${e.date}` };
+                      });
+                      const text = generateListShareText(label, items);
+                      shareToWhatsApp(text);
+                    }}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-emerald-50 text-emerald-700 border-2 border-emerald-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                  >
+                    <MessageCircle className="w-5 h-5" /> Share List
                   </button>
                   <button
                     onClick={() => { setEditingReproId(null); setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0] }); setIsReproFormOpen(true); }}
@@ -1684,6 +2062,16 @@ function MainApp({ user, onLogout }: any) {
                           <td className="px-8 py-6">
                             <div className="flex items-center gap-2">
                               <button
+                                onClick={() => {
+                                  const text = generateReproEventShareText(event, animal?.tag || 'Unknown');
+                                  shareToWhatsApp(text);
+                                }}
+                                className="p-3 bg-slate-50 hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 rounded-xl transition-all"
+                                title="Share on WhatsApp"
+                              >
+                                <MessageCircle className="w-4 h-4" />
+                              </button>
+                              <button
                                 onClick={(e) => handleEditRepro(event, e)}
                                 className="p-3 bg-slate-50 hover:bg-blue-50 text-slate-400 hover:text-blue-600 rounded-xl transition-all"
                                 title="Edit Details"
@@ -1721,9 +2109,23 @@ function MainApp({ user, onLogout }: any) {
                       const label = (healthDateStart || healthDateEnd) ? `${healthDateStart || 'Start'} to ${healthDateEnd || 'End'}` : 'Full History';
                       generateHealthSectionReport(filteredHealthEvents, animals, settings, label);
                     }}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-white text-slate-700 border-2 border-slate-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-white text-slate-700 border-2 border-slate-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all border-slate-200"
                   >
                     <Printer className="w-5 h-5" /> Print PDF
+                  </button>
+                  <button
+                    onClick={() => {
+                      const label = (healthDateStart || healthDateEnd) ? `${healthDateStart || 'Start'} to ${healthDateEnd || 'End'}` : 'Clinical History';
+                      const items = filteredHealthEvents.map(e => {
+                        const animal = animals.find(a => a.id === e.animalId);
+                        return { tag: animal?.tag || 'Unk', value: `${e.type} - ${e.details || 'Checkup'}` };
+                      });
+                      const text = generateListShareText(label, items);
+                      shareToWhatsApp(text);
+                    }}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-emerald-50 text-emerald-700 border-2 border-emerald-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                  >
+                    <MessageCircle className="w-5 h-5" /> Share List
                   </button>
                   <button
                     onClick={() => { setEditingHealthId(null); setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0], treatments: [{ name: '', dose: '' }] }); setIsHealthFormOpen(true); }}
@@ -1870,7 +2272,6 @@ function MainApp({ user, onLogout }: any) {
                             <td className="px-8 py-6">
                               <div className="flex flex-col">
                                 <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tighter shadow-sm border inline-block w-fit ${event.type === HealthEventType.ILLNESS ? 'bg-rose-50 text-rose-600 border-rose-100' :
-                                  event.type === HealthEventType.VACCINATION ? 'bg-blue-50 text-blue-600 border-blue-100' :
                                     'bg-emerald-50 text-emerald-600 border-emerald-100'
                                   }`}>
                                   {event.type}
@@ -1924,6 +2325,16 @@ function MainApp({ user, onLogout }: any) {
                             </td>
                             <td className="px-8 py-6">
                               <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    const text = generateHealthEventShareText(event, animal?.tag || 'Unknown');
+                                    shareToWhatsApp(text);
+                                  }}
+                                  className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-colors"
+                                  title="Share on WhatsApp"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                </button>
                                 <button
                                   onClick={() => { setEditingHealthId(event.id); const toEdit = { ...event }; if (!toEdit.treatments) { if (toEdit.medication || toEdit.dosage) { toEdit.treatments = [{ name: toEdit.medication || '', dose: toEdit.dosage || '' }]; } else { toEdit.treatments = [{ name: '', dose: '' }]; } } setNewHealth(toEdit); const anim = animals.find((x: any) => x.id === event.animalId); if (anim) setHealthAnimalSearch(anim.tag); setIsHealthFormOpen(true); }}
                                   className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
@@ -2465,122 +2876,133 @@ function MainApp({ user, onLogout }: any) {
 
           {view === 'reports' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-12">
-              <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm">
-                <div className="flex items-center gap-6 mb-12">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-center gap-6">
                   <div className="bg-blue-600 p-4 rounded-[1.5rem] shadow-xl shadow-blue-100">
-                    <FileText className="w-8 h-8 text-white" />
+                    <BarChart3 className="w-8 h-8 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-3xl font-black text-slate-800 tracking-tight">Report Center</h3>
-                    <p className="text-xs text-slate-400 font-black uppercase tracking-[0.2em]">Generate comprehensive analytics & records</p>
+                    <h3 className="text-3xl font-black text-slate-800 tracking-tight leading-none">Intelligence Hub</h3>
+                    <p className="text-xs text-slate-400 font-black uppercase tracking-[0.2em] mt-2">Professional Data Exports & Analytics</p>
                   </div>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-                  <div className="lg:col-span-5 space-y-6">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] px-2">Select Report Format</h4>
-                    <div className="grid grid-cols-1 gap-4">
-                      {[
-                        { id: 'summary', label: 'Dashboard Summary', icon: BarChart2, desc: 'Overview of herd metrics and counts' },
-                        { id: 'repro', label: 'Reproduction History', icon: Baby, desc: 'Logs of all breeding and fertility events' },
-                        { id: 'health', label: 'Health Activity Log', icon: Stethoscope, desc: 'Treatment history and clinical findings' },
-                        { id: 'individual', label: 'Individual Cow Dossier', icon: Users, desc: 'Detailed combined history for one animal' }
-                      ].map((type) => (
-                        <button
-                          key={type.id}
-                          onClick={() => setSelectedReportType(type.id as ReportType)}
-                          className={`flex items-start gap-5 p-6 rounded-[2rem] border transition-all text-left group ${selectedReportType === type.id
-                            ? 'bg-blue-50 border-blue-200 shadow-sm'
-                            : 'bg-white border-slate-100 hover:bg-slate-50'
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-8">
+                  <div className="space-y-6">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Report Parameters</h4>
+                    
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Select Dataset Type</label>
+                      <div className="grid grid-cols-1 gap-3">
+                        {[
+                          { id: 'summary', label: 'Executive Herd Summary', icon: LayoutDashboard },
+                          { id: 'repro', label: 'Reproduction Activity Log', icon: Activity },
+                          { id: 'health', label: 'Clinical & Treatment Records', icon: HeartPulse },
+                          { id: 'individual', label: 'Individual Focus Analysis', icon: Target }
+                        ].map(type => (
+                          <button
+                            key={type.id}
+                            onClick={() => setSelectedReportType(type.id as any)}
+                            className={`flex items-center justify-between p-5 rounded-2xl border-2 transition-all ${
+                              selectedReportType === type.id 
+                                ? 'bg-blue-50 border-blue-600 shadow-sm' 
+                                : 'bg-white border-slate-50 hover:border-slate-200'
                             }`}
-                        >
-                          <div className={`p-3 rounded-2xl transition-colors ${selectedReportType === type.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:text-blue-600'}`}>
-                            <type.icon className="w-6 h-6" />
-                          </div>
-                          <div>
-                            <p className="font-black text-slate-800 leading-tight mb-1">{type.label}</p>
-                            <p className="text-xs text-slate-400 font-bold leading-relaxed">{type.desc}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="lg:col-span-7 bg-slate-50/50 p-10 rounded-[3rem] border border-slate-100 space-y-8 h-fit">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] px-2 flex items-center gap-2">
-                      <SettingsIcon className="w-4 h-4" /> Configure Parameters
-                    </h4>
-
-                    <div className="grid grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Start Date</label>
-                        <input
-                          type="date"
-                          className="w-full px-6 py-4 bg-white border border-slate-100 rounded-2xl text-xs font-black shadow-sm focus:ring-2 focus:ring-blue-500/20"
-                          value={reportStartDate}
-                          onChange={(e) => setReportStartDate(e.target.value)}
-                        />
+                          >
+                            <div className="flex items-center gap-4">
+                              <type.icon className={`w-5 h-5 ${selectedReportType === type.id ? 'text-blue-600' : 'text-slate-400'}`} />
+                              <span className={`text-xs font-black uppercase tracking-wider ${selectedReportType === type.id ? 'text-blue-700' : 'text-slate-600'}`}>
+                                {type.label}
+                              </span>
+                            </div>
+                            {selectedReportType === type.id && <Check className="w-4 h-4 text-blue-600" />}
+                          </button>
+                        ))}
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">End Date</label>
+                    </div>
+
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Temporal Window</label>
+                      <div className="grid grid-cols-2 gap-4">
                         <input
                           type="date"
-                          className="w-full px-6 py-4 bg-white border border-slate-100 rounded-2xl text-xs font-black shadow-sm focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-xs font-black shadow-inner"
+                          value={reportStartDate}
+                          onChange={e => setReportStartDate(e.target.value)}
+                        />
+                        <input
+                          type="date"
+                          className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-xs font-black shadow-inner"
                           value={reportEndDate}
-                          onChange={(e) => setReportEndDate(e.target.value)}
+                          onChange={e => setReportEndDate(e.target.value)}
                         />
                       </div>
                     </div>
 
                     {selectedReportType === 'individual' && (
-                      <div className="space-y-2 relative">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Search Animal *</label>
+                      <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
+                        <label className="text-[10px] font-black text-rose-600 uppercase tracking-widest px-2">Patient Selection</label>
                         <div className="relative">
                           <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
                             type="text"
-                            placeholder="Type Tag or Name..."
-                            className="w-full pl-12 pr-6 py-4 bg-white border border-slate-100 rounded-2xl text-xs font-black shadow-sm focus:ring-2 focus:ring-blue-500/20"
+                            placeholder="Type Tag (e.g. PK-12)..."
+                            className="w-full pl-12 pr-4 py-4 bg-rose-50/30 border-none rounded-2xl text-xs font-black shadow-inner"
                             value={reportAnimalSearch}
-                            onChange={(e) => setReportAnimalSearch(e.target.value)}
+                            onChange={e => { setReportAnimalSearch(e.target.value); if(!e.target.value) setReportAnimalId(''); }}
                           />
                         </div>
-                        {reportSearchAnimals.length > 0 && (
-                          <div className="absolute z-10 top-full mt-2 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                            {reportSearchAnimals.map(a => (
-                              <button
-                                key={a.id}
-                                onClick={() => { setReportAnimalId(a.id); setReportAnimalSearch(a.tag); }}
-                                className={`w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors ${reportAnimalId === a.id ? 'bg-blue-50' : ''}`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${getStatusColor(a.status)}`}>{a.tag.slice(-2)}</div>
-                                  <div className="text-left">
-                                    <p className="text-xs font-black text-slate-800">{a.tag}</p>
-                                    <p className="text-[9px] text-slate-400 uppercase font-bold">{a.breed}</p>
-                                  </div>
-                                </div>
-                                {reportAnimalId === a.id && <Check className="w-4 h-4 text-blue-600" />}
-                              </button>
-                            ))}
-                          </div>
+                        {reportAnimalSearch && !reportAnimalId && (
+                           <div className="bg-white border border-slate-100 rounded-2xl shadow-2xl p-2 space-y-1 max-h-40 overflow-y-auto">
+                             {animals.filter(a => a.tag.toLowerCase().includes(reportAnimalSearch.toLowerCase())).slice(0, 8).map(a => (
+                               <button key={a.id} onClick={() => { setReportAnimalId(a.id); setReportAnimalSearch(a.tag); }} className="w-full text-left px-4 py-3 hover:bg-rose-50 rounded-xl text-xs font-black uppercase text-slate-600 hover:text-rose-600 transition-colors">{a.tag}</button>
+                             ))}
+                           </div>
                         )}
                       </div>
                     )}
 
-                    <div className="pt-6">
+                    <div className="pt-8 border-t border-slate-50">
                       <button
                         onClick={executeReportExport}
-                        className="w-full flex items-center justify-center gap-3 bg-blue-600 text-white py-5 rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"
+                        className="w-full flex items-center justify-center gap-3 bg-blue-600 text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"
                       >
-                        <Download className="w-5 h-5" /> Export Selected Report
+                        <Download className="w-6 h-6" /> Export High-Fidelity PDF
                       </button>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center mt-6">Report will be downloaded as high-fidelity PDF</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center mt-6 leading-relaxed">
+                        * Reports are generated locally and optimized for A4 printing. <br/> Reproduction reports include latest PD status logic.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hidden lg:grid grid-cols-1 gap-6">
+                  <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-12 rounded-[3.5rem] text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
+                    <FileText className="w-24 h-24 absolute -bottom-4 -right-4 opacity-10 rotate-12" />
+                    <h4 className="text-2xl font-black tracking-tight leading-tight mb-4">Aero PDF Engine</h4>
+                    <p className="text-sm text-blue-100 font-medium leading-relaxed opacity-80">
+                      Our proprietary export system generates optimized, tamper-evident documents for official farm records, insurance submissions, and veterinary audits.
+                    </p>
+                  </div>
+                  <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm">
+                    <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 italic">Export Previews</h5>
+                    <div className="space-y-4">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="flex gap-4 items-center">
+                          <div className="w-10 h-10 bg-slate-50 rounded-xl border border-slate-100"></div>
+                          <div className="flex-1 space-y-1">
+                            <div className="h-2 w-1/2 bg-slate-100 rounded"></div>
+                            <div className="h-1.5 w-1/3 bg-slate-50 rounded"></div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+             </div>
           )}
 
           {view === 'settings' && (
@@ -2602,7 +3024,7 @@ function MainApp({ user, onLogout }: any) {
                       type="number"
                       className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
                       value={settings.gestationDays}
-                      onChange={(e) => updateSettings({ ...settings, gestationDays: parseInt(e.target.value) })}
+                      onChange={(e) => updateSettings({ ...settings, gestationDays: parseInt(e.target.value) || 283 })}
                     />
                   </div>
                   <div className="space-y-2">
@@ -2611,7 +3033,25 @@ function MainApp({ user, onLogout }: any) {
                       type="number"
                       className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
                       value={settings.pregnancyCheckDays}
-                      onChange={(e) => updateSettings({ ...settings, pregnancyCheckDays: parseInt(e.target.value) })}
+                      onChange={(e) => updateSettings({ ...settings, pregnancyCheckDays: parseInt(e.target.value) || 30 })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Dry Period (Days)</label>
+                    <input
+                      type="number"
+                      className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
+                      value={settings.dryPeriodDays}
+                      onChange={(e) => updateSettings({ ...settings, dryPeriodDays: parseInt(e.target.value) || 60 })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Closeup Phase (Days)</label>
+                    <input
+                      type="number"
+                      className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
+                      value={settings.closeupDays}
+                      onChange={(e) => updateSettings({ ...settings, closeupDays: parseInt(e.target.value) || 21 })}
                     />
                   </div>
                 </div>
@@ -2638,6 +3078,7 @@ function MainApp({ user, onLogout }: any) {
                       { key: 'closeup', label: 'Closeup' },
                       { key: 'inProtocol', label: 'In Protocol' },
                       { key: 'inseminated', label: 'Inseminated' },
+                      { key: 'observation', label: 'Observation' },
                     ] as const).map(({ key, label }) => (
                       <div key={key} className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                         <div className="w-10 h-10 rounded-xl border-2 border-slate-200 overflow-hidden shadow-inner">
@@ -2742,7 +3183,6 @@ function MainApp({ user, onLogout }: any) {
                               if (data.healthEvents) await storageService.saveHealthEvents(data.healthEvents);
                               if (data.enrollments) await storageService.saveEnrollments(data.enrollments);
                               if (data.customProtocols) await storageService.saveCustomProtocols(data.customProtocols);
-                              if (data.vaccinations) await storageService.saveVaccinations(data.vaccinations);
                               if (data.settings) await storageService.saveSettings(data.settings);
                               alert('Backup restored successfully! Reloading...');
                               window.location.reload();
@@ -2794,14 +3234,13 @@ function MainApp({ user, onLogout }: any) {
                   <p className="text-xs text-slate-300 font-bold mt-2">No active alerts</p>
                 </div>
               ) : (
-                (['Protocol', 'Health', 'Repro', 'Vaccination', 'System'] as const).map(category => {
+                (['Protocol', 'Health', 'Repro', 'System'] as const).map(category => {
                   const catAlerts = alerts.filter(a => a.type === category);
                   if (catAlerts.length === 0) return null;
                   const catConfig = {
                     Protocol: { color: 'bg-amber-50 border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500', label: '🧪 Protocol Lab' },
                     Health: { color: 'bg-rose-50 border-rose-200', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500', label: '🩺 Health Bay' },
                     Repro: { color: 'bg-blue-50 border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500', label: '🐄 Reproduction' },
-                    Vaccination: { color: 'bg-emerald-50 border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: '💉 Vaccination' },
                     System: { color: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500', label: '⚙️ System' },
                   }[category];
                   return (
@@ -2896,6 +3335,16 @@ function MainApp({ user, onLogout }: any) {
                   title="Download Filtered Report"
                 >
                   <Download className="w-7 h-7" />
+                </button>
+                <button
+                  onClick={() => {
+                    const text = generateAnimalShareText(selectedAnimal, reproEvents, healthEvents);
+                    shareToWhatsApp(text);
+                  }}
+                  className="p-5 text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-[1.5rem] transition-all"
+                  title="Share on WhatsApp"
+                >
+                  <MessageCircle className="w-7 h-7" />
                 </button>
                 <button onClick={() => setSelectedAnimal(null)} className="p-5 hover:bg-slate-100 rounded-[1.5rem] transition-all text-slate-400">
                   <X className="w-8 h-8" />
@@ -3375,6 +3824,7 @@ function MainApp({ user, onLogout }: any) {
         </form>
       </FormModal>
 
+      
       <FormModal title={editingHealthId ? "Edit Clinical Record" : "Clinical Discovery"} isOpen={isHealthFormOpen} onClose={() => { setIsHealthFormOpen(false); setHealthAnimalSearch(''); }}>
         <form onSubmit={handleAddHealth} className="space-y-6">
           {/* Patient Tag Searchable Autocomplete */}
@@ -3420,6 +3870,7 @@ function MainApp({ user, onLogout }: any) {
             <input type="date" className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newHealth.date || ''} onChange={e => setNewHealth({ ...newHealth, date: e.target.value })} />
           </div>
           <input className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="Technician / Veterinarian" value={newHealth.technician || ''} onChange={e => setNewHealth({ ...newHealth, technician: e.target.value })} />
+          
           <div className="space-y-3 p-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm">
             <div className="flex items-center justify-between pl-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Treatments & Injections</label>
