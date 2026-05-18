@@ -88,6 +88,8 @@ export interface Animal {
   photoUrl?: string;
   status?: AnimalStatus;
   expectedCalving?: string;
+  pregnancyDays?: number;
+  serviceDate?: string;
   motherId?: string;
   fatherId?: string;
   isCalf?: boolean;

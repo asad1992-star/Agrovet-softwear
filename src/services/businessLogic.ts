@@ -60,7 +60,7 @@ export const computeAnimalStatus = (
   healthEvents: HealthEvent[],
   enrollments: ProtocolEnrollment[],
   settings: FarmSettings
-): { status: AnimalStatus; expectedCalving?: string; activeProtocol?: ProtocolEnrollment } => {
+): { status: AnimalStatus; expectedCalving?: string; pregnancyDays?: number; serviceDate?: string; activeProtocol?: ProtocolEnrollment } => {
   const today = dateUtils.today();
   
   // 1. Check Health (Sick status overrides Repro status)
@@ -103,19 +103,25 @@ export const computeAnimalStatus = (
 
   switch (latest.type) {
     case ReproEventType.INSEMINATION:
-      return { status: AnimalStatus.INSEMINATED };
+      return { 
+        status: AnimalStatus.INSEMINATED, 
+        pregnancyDays: dateUtils.diffDays(today, latest.date),
+        serviceDate: latest.date 
+      };
     
     case ReproEventType.PREGNANCY_CHECK:
       if (latest.success && latest.pregnancyResult !== 'Non-Pregnant') {
         const lastInsem = sortedRepro.find(e => e.type === ReproEventType.INSEMINATION && e.date <= latest.date);
         const expectedCalving = lastInsem ? dateUtils.addDays(lastInsem.date, settings.gestationDays) : undefined;
+        const pregnancyDays = lastInsem ? dateUtils.diffDays(today, lastInsem.date) : undefined;
+        const serviceDate = lastInsem?.date;
         
         if (expectedCalving) {
           const daysToCalving = dateUtils.diffDays(expectedCalving, today);
-          if (daysToCalving <= settings.closeupDays) return { status: AnimalStatus.CLOSEUP, expectedCalving };
-          if (daysToCalving <= settings.dryPeriodDays) return { status: AnimalStatus.DRY, expectedCalving };
+          if (daysToCalving <= settings.closeupDays) return { status: AnimalStatus.CLOSEUP, expectedCalving, pregnancyDays, serviceDate };
+          if (daysToCalving <= settings.dryPeriodDays) return { status: AnimalStatus.DRY, expectedCalving, pregnancyDays, serviceDate };
         }
-        return { status: AnimalStatus.PREGNANT, expectedCalving };
+        return { status: AnimalStatus.PREGNANT, expectedCalving, pregnancyDays, serviceDate };
       }
       return { status: AnimalStatus.ACTIVE };
 

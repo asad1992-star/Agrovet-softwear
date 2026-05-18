@@ -1672,7 +1672,20 @@ function MainApp({ user, onLogout }: any) {
                               <p className="text-[10px] text-slate-400 font-bold uppercase">{animal.breed} • {animal.herd}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-6">
+                          
+                          <div className="flex items-center gap-8">
+                            {(animal.pregnancyDays !== undefined && animal.pregnancyDays > 0) && (
+                              <div className="hidden lg:flex flex-col items-end">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pregnancy</span>
+                                <span className="text-xs font-black text-blue-600">{animal.pregnancyDays} Days</span>
+                              </div>
+                            )}
+                            {animal.expectedCalving && (
+                              <div className="hidden xl:flex flex-col items-end">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Exp. Calving</span>
+                                <span className="text-xs font-black text-emerald-600">{animal.expectedCalving}</span>
+                              </div>
+                            )}
                             <span className={`hidden sm:inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter border ${getStatusColor(animal.status)}`}>
                               {animal.status}
                             </span>
@@ -1756,6 +1769,22 @@ function MainApp({ user, onLogout }: any) {
                               <p className="text-xl font-black text-slate-700 flex items-center gap-2"><MapPin className="w-5 h-5 text-blue-500" /> {animal.herd}</p>
                             </div>
                           </div>
+                          {(animal.pregnancyDays !== undefined || animal.expectedCalving) && (
+                            <div className="grid grid-cols-2 gap-4 mt-4">
+                              {animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                <div className="p-4 bg-blue-50 rounded-[2rem] border border-blue-100/50">
+                                  <p className="text-[10px] text-blue-600 font-black uppercase tracking-[0.2em] mb-2">Pregnancy</p>
+                                  <p className="text-xl font-black text-blue-800">{animal.pregnancyDays} Days</p>
+                                </div>
+                              )}
+                              {animal.expectedCalving && (
+                                <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100/50">
+                                  <p className="text-[10px] text-emerald-600 font-black uppercase tracking-[0.2em] mb-2">Exp. Calving</p>
+                                  <p className="text-xl font-black text-emerald-800">{animal.expectedCalving}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           <div className="absolute bottom-8 right-8 bg-blue-50 p-4 rounded-3xl text-blue-600 opacity-0 group-hover:opacity-100 transition-all">
                             <ArrowRight className="w-6 h-6" />
                           </div>
@@ -1810,6 +1839,22 @@ function MainApp({ user, onLogout }: any) {
                             <p className="text-sm font-black text-slate-700 flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {animal.herd}</p>
                           </div>
                         </div>
+                        {(animal.pregnancyDays !== undefined || animal.expectedCalving) && (
+                          <div className="grid grid-cols-2 gap-4 mt-4">
+                            {animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                              <div className="p-4 bg-blue-50 rounded-[1.5rem] border border-blue-100/50">
+                                <p className="text-[10px] text-blue-600 font-black uppercase tracking-[0.2em] mb-1">Pregnancy</p>
+                                <p className="text-sm font-black text-blue-700">{animal.pregnancyDays} Days</p>
+                              </div>
+                            )}
+                            {animal.expectedCalving && (
+                              <div className="p-4 bg-emerald-50 rounded-[1.5rem] border border-emerald-100/50">
+                                <p className="text-[10px] text-emerald-600 font-black uppercase tracking-[0.2em] mb-1">Expected Calving</p>
+                                <p className="text-sm font-black text-emerald-700">{animal.expectedCalving}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-x-4 group-hover:translate-x-0">
                           <div className="bg-blue-600 p-4 rounded-2xl text-white shadow-xl shadow-blue-200">
                             <ArrowRight className="w-5 h-5" />
@@ -3385,17 +3430,16 @@ function MainApp({ user, onLogout }: any) {
                   <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Life Status</p>
                   <p className={`text-sm font-black uppercase inline-block px-3 py-1 rounded-lg border ${getStatusColor(selectedAnimal.status)}`}>{selectedAnimal.status}</p>
                 </div>
-                {selectedAnimal.status === AnimalStatus.PREGNANT && (
+                {(selectedAnimal.pregnancyDays !== undefined && selectedAnimal.pregnancyDays > 0) && (
+                  <div className="p-6 bg-blue-50 rounded-[2rem] border border-blue-100 shadow-inner">
+                    <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest mb-2">Pregnancy Days</p>
+                    <p className="text-lg font-black text-blue-800">{selectedAnimal.pregnancyDays} Days</p>
+                  </div>
+                )}
+                {selectedAnimal.expectedCalving && (
                   <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100 shadow-inner">
-                    <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mb-2">Pregnancy Days</p>
-                    <p className="text-lg font-black text-emerald-800">
-                      {(() => {
-                        const lastInsem = reproEvents
-                          .filter(e => e.animalId === selectedAnimal.id && e.type === ReproEventType.INSEMINATION)
-                          .sort((a, b) => b.date.localeCompare(a.date))[0];
-                        return lastInsem ? dateUtils.diffDays(new Date().toISOString().split('T')[0], lastInsem.date) : 'N/A';
-                      })()} Days
-                    </p>
+                    <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mb-2">Exp. Calving Date</p>
+                    <p className="text-lg font-black text-emerald-800">{selectedAnimal.expectedCalving}</p>
                   </div>
                 )}
                 <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
