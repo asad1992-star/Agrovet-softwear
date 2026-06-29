@@ -348,3 +348,37 @@ export const generateProtocolListReport = (
 
   doc.save(`Protocol_Batch_Report_${new Date().toISOString().split('T')[0]}.pdf`);
 };
+
+export const generatePdCheckSectionReport = (
+  events: ReproductionEvent[],
+  animals: Animal[],
+  settings?: FarmSettings,
+  rangeLabel: string = 'Full Record'
+) => {
+  const doc = new jsPDF();
+  addHeader(doc, `Pregnancy Diagnosis (PD) Checks | ${rangeLabel}`, settings);
+
+  const pdEvents = [...events]
+    .filter(e => e.type === ReproEventType.PREGNANCY_CHECK)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  autoTable(doc, {
+    startY: 45,
+    head: [['Date', 'Animal Tag', 'Breed', 'Herd', 'Diagnosis Result', 'Notes / Details']],
+    body: pdEvents.map(e => {
+      const animal = animals.find(a => a.id === e.animalId);
+      const isPreg = e.pregnancyResult === 'Pregnant' || e.success === true;
+      return [
+        e.date,
+        animal?.tag || 'Unk',
+        animal?.breed || '-',
+        animal?.herd || '-',
+        isPreg ? 'Pregnant (🤰)' : 'Open (❌)',
+        e.details || '-'
+      ];
+    }),
+    headStyles: { fillColor: [79, 70, 229] } // Indigo-600
+  });
+
+  doc.save('PD_Check_Report.pdf');
+};

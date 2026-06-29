@@ -56,7 +56,10 @@ import {
   Share2,
   Upload,
   Zap,
-  Eye
+  Eye,
+  Monitor,
+  Tablet,
+  Smartphone
 } from 'lucide-react';
 import {
   BarChart,
@@ -91,7 +94,8 @@ import {
   generateProtocolReport,
   generateIndividualAnimalReport,
   generateAnimalListReport,
-  generateProtocolListReport
+  generateProtocolListReport,
+  generatePdCheckSectionReport
 } from './utils/pdfUtils';
 import {
   shareToWhatsApp,
@@ -158,12 +162,40 @@ const getStatusColor = (status?: AnimalStatus) => {
   }
 };
 
-type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'reports' | 'settings';
+type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'reports' | 'settings' | 'pd-check';
 type HerdViewMode = 'list' | 'small' | 'medium' | 'large';
-type ReportType = 'summary' | 'repro' | 'health' | 'individual';
+type ReportType = 'summary' | 'repro' | 'health' | 'individual' | 'pd-check';
 type HerdTab = 'adults' | 'calves';
 
-function MainApp({ user, onLogout }: any) {
+const formatDateReadable = (dateStr: string) => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr + 'T00:00:00');
+  if (isNaN(date.getTime())) return dateStr;
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+};
+
+const STICKY_COLORS = [
+  { bg: 'bg-amber-50 border-amber-200 text-amber-800 shadow-amber-100/50', accent: 'bg-amber-400', icon: '🤰' },
+  { bg: 'bg-rose-50 border-rose-200 text-rose-800 shadow-rose-100/50', accent: 'bg-rose-400', icon: '🩺' },
+  { bg: 'bg-teal-50 border-teal-200 text-teal-800 shadow-teal-100/50', accent: 'bg-teal-400', icon: '🐄' },
+  { bg: 'bg-sky-50 border-sky-200 text-sky-800 shadow-sky-100/50', accent: 'bg-sky-400', icon: '📊' },
+  { bg: 'bg-purple-50 border-purple-200 text-purple-800 shadow-purple-100/50', accent: 'bg-purple-400', icon: '🏷️' },
+];
+
+const getBadgeStyleForDate = (dateStr: string) => {
+  let hash = 0;
+  for (let i = 0; i < dateStr.length; i++) {
+    hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % STICKY_COLORS.length;
+  const num = Math.abs(hash) % 10000;
+  return {
+    badgeNum: `#${String(num).padStart(4, '0')}`,
+    ...STICKY_COLORS[index]
+  };
+};
+
+function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const {
     loading,
     animals,
@@ -191,6 +223,19 @@ function MainApp({ user, onLogout }: any) {
     deleteProtocolTemplate,
     updateSettings
   } = useFarm();
+
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobile = previewMode === 'mobile' || (previewMode === 'desktop' && windowWidth < 768);
+  const isTablet = previewMode === 'tablet' || (previewMode === 'desktop' && windowWidth >= 768 && windowWidth < 1024);
+  const isDesktop = previewMode === 'desktop' && windowWidth >= 1024;
+  const isSimulated = previewMode !== 'desktop';
 
   const [view, setView] = useState<ViewState>('dashboard');
   const [herdViewMode, setHerdViewMode] = useState<HerdViewMode>('medium');
@@ -258,6 +303,45 @@ function MainApp({ user, onLogout }: any) {
 
   // Confirmation Dialog
   const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean; message: string; onConfirm: () => void }>({ isOpen: false, message: '', onConfirm: () => { } });
+
+  // PD Check (Pregnancy Diagnosis) Custom Features States
+  const [isNewPdFormOpen, setIsNewPdFormOpen] = useState(false);
+  const [isOldPdFormOpen, setIsOldPdFormOpen] = useState(false);
+  const [isMultiPdFormOpen, setIsMultiPdFormOpen] = useState(false);
+
+  const [pdAnimalId, setPdAnimalId] = useState('');
+  const [pdResult, setPdResult] = useState<'Pregnant' | 'Open' | ''>('');
+  const [pdNotes, setPdNotes] = useState('');
+
+  const [oldPdDate, setOldPdDate] = useState('');
+  const [oldPdAnimalId, setOldPdAnimalId] = useState('');
+  const [oldPdResult, setOldPdResult] = useState<'Pregnant' | 'Open' | ''>('');
+  const [oldPdNotes, setOldPdNotes] = useState('');
+
+  const [multiPdText, setMultiPdText] = useState('');
+  const [multiPdDate, setMultiPdDate] = useState('');
+
+  const [pdSearchTerm, setPdSearchTerm] = useState('');
+  const [pdStartDate, setPdStartDate] = useState('');
+  const [pdEndDate, setPdEndDate] = useState('');
+  const [selectedBadgeDate, setSelectedBadgeDate] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
+  // Pre-fill date picker states with today's date on mount
+  useEffect(() => {
+    setOldPdDate(dateUtils.today());
+    setMultiPdDate(dateUtils.today());
+  }, []);
 
   // Protocol cow-tag search (within protocol tab)
   const [protocolTagSearch, setProtocolTagSearch] = useState('');
@@ -456,6 +540,52 @@ function MainApp({ user, onLogout }: any) {
       }
     });
   }, [reproEvents, animals, reproTagSearch, reproTechFilter, reproSemenFilter, reproDateStart, reproDateEnd, reproSort]);
+
+  const pdChecks = useMemo(() => {
+    return reproEvents.filter(e => e.type === ReproEventType.PREGNANCY_CHECK);
+  }, [reproEvents]);
+
+  const pdChecksByDate = useMemo(() => {
+    const groups: { [date: string]: ReproductionEvent[] } = {};
+    pdChecks.forEach(e => {
+      if (!groups[e.date]) {
+        groups[e.date] = [];
+      }
+      groups[e.date].push(e);
+    });
+    return groups;
+  }, [pdChecks]);
+
+  const dateBadges = useMemo(() => {
+    return Object.keys(pdChecksByDate).sort((a, b) => b.localeCompare(a)).map(date => {
+      const style = getBadgeStyleForDate(date);
+      return {
+        date,
+        badgeNum: style.badgeNum,
+        bg: style.bg,
+        accent: style.accent,
+        icon: style.icon,
+        checks: pdChecksByDate[date]
+      };
+    });
+  }, [pdChecksByDate]);
+
+  const filteredPdChecks = useMemo(() => {
+    return pdChecks.filter(e => {
+      const animal = animals.find(a => a.id === e.animalId);
+      const tag = animal?.tag || '';
+      const dateStr = formatDateReadable(e.date);
+      const search = pdSearchTerm.toLowerCase();
+      
+      const matchesSearch = tag.toLowerCase().includes(search) || 
+                            e.date.includes(search) || 
+                            dateStr.toLowerCase().includes(search);
+      const matchesStart = !pdStartDate || e.date >= pdStartDate;
+      const matchesEnd = !pdEndDate || e.date <= pdEndDate;
+
+      return matchesSearch && matchesStart && matchesEnd;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [pdChecks, animals, pdSearchTerm, pdStartDate, pdEndDate]);
 
   const filteredHealthEvents = useMemo(() => {
     return healthEvents.filter(e => {
@@ -826,6 +956,211 @@ function MainApp({ user, onLogout }: any) {
     }
   };
 
+  const handleSaveNewPdCheck = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pdAnimalId.trim()) {
+      alert('Please enter an Animal ID/Tag');
+      return;
+    }
+    if (!pdResult) {
+      alert('Please select a pregnancy result');
+      return;
+    }
+
+    let animal = animals.find(a => a.tag.toLowerCase() === pdAnimalId.trim().toLowerCase());
+    if (!animal) {
+      // Auto-create animal to make it extremely easy and fluid
+      const newId = Math.random().toString(36).substr(2, 9);
+      const newTag = pdAnimalId.trim();
+      animal = {
+        id: newId,
+        tag: newTag,
+        name: newTag,
+        breed: 'Holstein',
+        sex: 'Female',
+        dob: dateUtils.addDays(dateUtils.today(), -3 * 365), // Default to 3 years old
+        herd: 'Main Herd',
+        isCalf: false
+      };
+      addAnimal(animal);
+    }
+
+    const isPregnant = pdResult === 'Pregnant';
+    const newEvent: ReproductionEvent = {
+      id: Math.random().toString(36).substr(2, 9),
+      animalId: animal.id,
+      type: ReproEventType.PREGNANCY_CHECK,
+      date: dateUtils.today(),
+      success: isPregnant,
+      pregnancyResult: isPregnant ? 'Pregnant' : 'Non-Pregnant',
+      details: pdNotes || 'Pregnancy Diagnosis Check (Today)'
+    };
+
+    addReproEvent(newEvent);
+    setToastMessage(`🤰 Saved check for Cow ${pdAnimalId}!`);
+    
+    // Reset form states
+    setPdAnimalId('');
+    setPdResult('');
+    setPdNotes('');
+    setIsNewPdFormOpen(false);
+
+    // Return to dashboard!
+    setView('dashboard');
+  };
+
+  const handleSaveOldPdCheck = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oldPdAnimalId.trim()) {
+      alert('Please enter an Animal ID/Tag');
+      return;
+    }
+    if (!oldPdDate) {
+      alert('Please select a date');
+      return;
+    }
+    if (!oldPdResult) {
+      alert('Please select a pregnancy result');
+      return;
+    }
+
+    let animal = animals.find(a => a.tag.toLowerCase() === oldPdAnimalId.trim().toLowerCase());
+    if (!animal) {
+      // Auto-create animal
+      const newId = Math.random().toString(36).substr(2, 9);
+      const newTag = oldPdAnimalId.trim();
+      animal = {
+        id: newId,
+        tag: newTag,
+        name: newTag,
+        breed: 'Holstein',
+        sex: 'Female',
+        dob: dateUtils.addDays(oldPdDate, -3 * 365), // 3 years old relative to event date
+        herd: 'Main Herd',
+        isCalf: false
+      };
+      addAnimal(animal);
+    }
+
+    const isPregnant = oldPdResult === 'Pregnant';
+    const newEvent: ReproductionEvent = {
+      id: Math.random().toString(36).substr(2, 9),
+      animalId: animal.id,
+      type: ReproEventType.PREGNANCY_CHECK,
+      date: oldPdDate,
+      success: isPregnant,
+      pregnancyResult: isPregnant ? 'Pregnant' : 'Non-Pregnant',
+      details: oldPdNotes || 'Pregnancy Diagnosis Check (Past Date)'
+    };
+
+    addReproEvent(newEvent);
+    
+    // Format the date for the success message e.g., "June 30, 2026"
+    const formattedDate = formatDateReadable(oldPdDate);
+    setToastMessage(`✅ Added check for ${formattedDate}!`);
+
+    // Reset form states
+    setOldPdAnimalId('');
+    setOldPdResult('');
+    setOldPdNotes('');
+    setOldPdDate(dateUtils.today());
+    setIsOldPdFormOpen(false);
+  };
+
+  const handleSaveMultiPdCheck = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!multiPdText.trim()) {
+      alert('Please paste or enter checks list');
+      return;
+    }
+    if (!multiPdDate) {
+      alert('Please select a date');
+      return;
+    }
+
+    const lines = multiPdText.split('\n');
+    let addedCount = 0;
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      let result: 'Pregnant' | 'Open' = 'Pregnant';
+      let tag = trimmed;
+
+      const lower = trimmed.toLowerCase();
+      if (lower.endsWith('pregnant') || lower.endsWith('preg')) {
+        result = 'Pregnant';
+        tag = trimmed.substring(0, trimmed.lastIndexOf(' ')).trim();
+      } else if (lower.endsWith('open')) {
+        result = 'Open';
+        tag = trimmed.substring(0, trimmed.lastIndexOf(' ')).trim();
+      } else {
+        // If no explicit word is matched at the end, try searching for keywords inside the line
+        const matchPreg = trimmed.match(/(.+)\s+(pregnant|preg|🤰)/i);
+        const matchOpen = trimmed.match(/(.+)\s+(open|❌)/i);
+        if (matchPreg) {
+          tag = matchPreg[1].trim();
+          result = 'Pregnant';
+        } else if (matchOpen) {
+          tag = matchOpen[1].trim();
+          result = 'Open';
+        } else {
+          // Fallback: split by space, first word is tag, second is result
+          const parts = trimmed.split(/\s+/);
+          if (parts.length >= 2) {
+            tag = parts[0];
+            const second = parts[1].toLowerCase();
+            result = (second.startsWith('preg') || second.startsWith('p') || second.includes('🤰')) ? 'Pregnant' : 'Open';
+          }
+        }
+      }
+
+      // Clean up tag
+      tag = tag.replace(/[,;:]+$/, '').trim();
+      if (!tag) return;
+
+      // Find or create animal
+      let animal = animals.find(a => a.tag.toLowerCase() === tag.toLowerCase());
+      if (!animal) {
+        const newId = Math.random().toString(36).substr(2, 9);
+        animal = {
+          id: newId,
+          tag: tag,
+          name: tag,
+          breed: 'Holstein',
+          sex: 'Female',
+          dob: dateUtils.addDays(multiPdDate, -3 * 365),
+          herd: 'Main Herd',
+          isCalf: false
+        };
+        addAnimal(animal);
+      }
+
+      // Create event
+      const isPregnant = result === 'Pregnant';
+      addReproEvent({
+        id: Math.random().toString(36).substr(2, 9),
+        animalId: animal.id,
+        type: ReproEventType.PREGNANCY_CHECK,
+        date: multiPdDate,
+        success: isPregnant,
+        pregnancyResult: isPregnant ? 'Pregnant' : 'Non-Pregnant',
+        details: 'Bulk Entry Pregnancy Diagnosis'
+      } as ReproductionEvent);
+
+      addedCount++;
+    });
+
+    const formattedDate = formatDateReadable(multiPdDate);
+    setToastMessage(`✅ Added ${addedCount} checks for ${formattedDate}`);
+    
+    // Reset form states
+    setMultiPdText('');
+    setMultiPdDate(dateUtils.today());
+    setIsMultiPdFormOpen(false);
+  };
+
   const handleEditAnimal = (animal: Animal, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingAnimalId(animal.id);
@@ -1024,6 +1359,15 @@ function MainApp({ user, onLogout }: any) {
         generateReproSectionReport(filtered, animals, settings, reproEvents, rangeLabel);
         break;
       }
+      case 'pd-check': {
+        const filtered = reproEvents.filter(e =>
+          e.type === ReproEventType.PREGNANCY_CHECK &&
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate)
+        );
+        generatePdCheckSectionReport(filtered, animals, settings, rangeLabel);
+        break;
+      }
       case 'health': {
         const filtered = healthEvents.filter(e =>
           (!reportStartDate || e.date >= reportStartDate) &&
@@ -1077,14 +1421,14 @@ function MainApp({ user, onLogout }: any) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row font-inter">
+    <div className={`flex-1 flex font-inter overflow-hidden relative ${isDesktop ? 'flex-row' : 'flex-col pb-20'} ${isSimulated ? 'h-full w-full' : 'min-h-screen'}`}>
       {/* Sidebar Overlay */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] md:hidden" onClick={() => setIsSidebarOpen(false)} />
+      {isSidebarOpen && !isDesktop && (
+        <div className={`${isSimulated ? 'absolute' : 'fixed'} inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]`} onClick={() => setIsSidebarOpen(false)} />
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-[110] w-72 bg-white border-r border-slate-100 transform transition-transform duration-500 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:static md:block`}>
+      <aside className={`${isSimulated ? 'absolute' : 'fixed'} inset-y-0 left-0 z-[110] w-72 bg-white border-r border-slate-100 transform transition-transform duration-500 ${isDesktop ? 'translate-x-0 static block' : (isSidebarOpen ? 'translate-x-0' : '-translate-x-full')} h-full`}>
         <div className="h-full flex flex-col p-8">
           <div className="flex items-center gap-4 mb-14 px-2">
             <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100 animate-pulse">
@@ -1100,6 +1444,7 @@ function MainApp({ user, onLogout }: any) {
             <NavItem icon={LayoutDashboard} label="Dashboard" id="dashboard" />
             <NavItem icon={Users} label="Herd Hub" id="animals" />
             <NavItem icon={CalendarRange} label="Reproduction" id="repro" />
+            <NavItem icon={CheckCircle2} label="PD Check" id="pd-check" />
             <NavItem icon={Stethoscope} label="Health Bay" id="health" />
             <NavItem icon={FlaskConical} label="Protocol Lab" id="protocols" />
             <NavItem icon={FileText} label="Report Center" id="reports" />
@@ -1150,14 +1495,14 @@ function MainApp({ user, onLogout }: any) {
       </datalist>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 flex flex-col h-screen">
+      <main className={`flex-1 min-w-0 flex flex-col relative overflow-hidden ${isSimulated ? 'h-full' : 'h-screen'}`}>
         {/* Universal Header */}
         <header className="bg-white/80 backdrop-blur-xl sticky top-0 z-[90] border-b border-slate-100 px-6 md:px-10 py-6 flex items-center justify-between">
           <div className="flex items-center gap-5">
-            <button onClick={() => setIsSidebarOpen(true)} className="p-3 md:hidden hover:bg-slate-100 rounded-2xl transition-all">
+            <button onClick={() => setIsSidebarOpen(true)} className={`p-3 hover:bg-slate-100 rounded-2xl transition-all ${isDesktop ? 'hidden' : 'block'}`}>
               <Menu className="w-7 h-7 text-slate-600" />
             </button>
-            <h2 className="text-2xl font-black text-slate-800 capitalize tracking-tight hidden sm:block">{view.replace('-', ' ')}</h2>
+            <h2 className={`text-2xl font-black text-slate-800 capitalize tracking-tight ${isDesktop ? 'block' : 'hidden sm:block'}`}>{view.replace('-', ' ')}</h2>
           </div>
 
           <div className="flex items-center gap-6 flex-1 justify-end">
@@ -1210,7 +1555,7 @@ function MainApp({ user, onLogout }: any) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 md:p-10 scroll-smooth">
+        <div className={`flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth ${isDesktop ? 'pb-10' : 'pb-32'}`}>
           {view === 'dashboard' && (
             <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-20">
               {/* Dashboard Filters */}
@@ -1293,6 +1638,57 @@ function MainApp({ user, onLogout }: any) {
                   <StatCard title="Heat Due" value={dashboardStats.heatDue} icon={Clock} colorClass="bg-blue-400" trend="Next Check" onClick={() => handleMetricClick('Heat Due')} />
                 </div>
               </section>
+
+              {/* FEATURE 4: Date Badges (Sticky Notes) */}
+              {dateBadges.length > 0 && (
+                <section className="space-y-6">
+                  <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-indigo-600 rounded-xl shadow-md shadow-indigo-100">
+                        <CalendarIcon className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-black text-slate-800 tracking-tight">Recent Pregnancy Checks by Date</h3>
+                        <p className="text-xs text-slate-400 font-bold mt-0.5">Click a sticky badge to see all animal checks recorded on that date</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-6 overflow-x-auto pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-slate-200">
+                    {dateBadges.map((badge) => (
+                      <div
+                        key={badge.date}
+                        onClick={() => setSelectedBadgeDate(badge.date)}
+                        className={`flex-shrink-0 snap-start cursor-pointer group relative w-48 h-48 rounded-[2rem] border p-6 flex flex-col justify-between shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1 hover:rotate-1 ${badge.bg}`}
+                      >
+                        {/* Decorative tape / accent on sticky note */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1.5 w-12 h-4 bg-white/40 backdrop-blur-sm rounded-b-md border border-white/20 shadow-[0_2px_4px_rgba(0,0,0,0.02)]" />
+                        
+                        <div className="flex items-start justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-widest bg-white/60 backdrop-blur-sm px-2 py-1 rounded-lg border border-white/40">
+                            {badge.badgeNum}
+                          </span>
+                          <span className="text-2xl filter drop-shadow-sm group-hover:scale-125 transition-transform duration-300">{badge.icon}</span>
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Check Date</p>
+                          <p className="text-base font-black tracking-tight leading-tight group-hover:text-blue-700 transition-colors">
+                            {formatDateReadable(badge.date)}
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-500/10">
+                          <span className="text-[10px] font-bold">Checks: {badge.checks.length}</span>
+                          <div className="flex items-center gap-2 text-[10px] font-black">
+                            <span className="text-emerald-700">🤰 {badge.checks.filter(e => e.pregnancyResult === 'Pregnant').length}</span>
+                            <span className="text-rose-700">❌ {badge.checks.filter(e => e.pregnancyResult !== 'Pregnant').length}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               {/* 2. Fertility Performance */}
               <section className="grid grid-cols-1 lg:grid-cols-12 gap-10">
@@ -2944,6 +3340,7 @@ function MainApp({ user, onLogout }: any) {
                         {[
                           { id: 'summary', label: 'Executive Herd Summary', icon: LayoutDashboard },
                           { id: 'repro', label: 'Reproduction Activity Log', icon: Activity },
+                          { id: 'pd-check', label: 'Pregnancy Diagnosis (PD) Checks', icon: CheckCircle2 },
                           { id: 'health', label: 'Clinical & Treatment Records', icon: HeartPulse },
                           { id: 'individual', label: 'Individual Focus Analysis', icon: Target }
                         ].map(type => (
@@ -3244,7 +3641,281 @@ function MainApp({ user, onLogout }: any) {
               </div>
             </div>
           )}
+
+          {view === 'pd-check' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-10 max-w-6xl mx-auto">
+              {/* Header */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-center gap-6">
+                  <div className="bg-indigo-600 p-4 rounded-[1.5rem] shadow-xl shadow-indigo-100">
+                    <CheckCircle2 className="w-8 h-8 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-black text-slate-800 tracking-tight leading-none">PD Diagnostics Hub</h3>
+                    <p className="text-xs text-slate-400 font-black uppercase tracking-[0.2em] mt-2">Pregnancy Diagnosis Management & Audits</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Actions Panel */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <button
+                  onClick={() => setIsNewPdFormOpen(true)}
+                  className="p-6 bg-emerald-50 border border-emerald-100 hover:border-emerald-300 hover:bg-emerald-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-emerald-50"
+                >
+                  <div className="p-4 bg-emerald-500 text-white rounded-2xl group-hover:scale-110 transition-transform">
+                    <Plus className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-emerald-800 text-sm uppercase tracking-wider">New PD Check</h4>
+                    <p className="text-[10px] text-emerald-600 font-bold mt-0.5">Record today's exam in 1-click</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setIsOldPdFormOpen(true)}
+                  className="p-6 bg-blue-50 border border-blue-100 hover:border-blue-300 hover:bg-blue-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-blue-50"
+                >
+                  <div className="p-4 bg-blue-500 text-white rounded-2xl group-hover:scale-110 transition-transform">
+                    <CalendarIcon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-blue-800 text-sm uppercase tracking-wider">Add Old Check</h4>
+                    <p className="text-[10px] text-blue-600 font-bold mt-0.5">Record checks from past days</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setIsMultiPdFormOpen(true)}
+                  className="p-6 bg-indigo-50 border border-indigo-100 hover:border-indigo-300 hover:bg-indigo-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-indigo-50"
+                >
+                  <div className="p-4 bg-indigo-500 text-white rounded-2xl group-hover:scale-110 transition-transform">
+                    <ClipboardList className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-indigo-800 text-sm uppercase tracking-wider">Multi-Enter</h4>
+                    <p className="text-[10px] text-indigo-600 font-bold mt-0.5">Bulk paste lists of checks</p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Statistics Overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
+                  <div className="p-4 bg-slate-100 text-slate-600 rounded-[1.25rem]">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total PD Checks</p>
+                    <p className="text-2xl font-black text-slate-800 mt-1">{pdChecks.length}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
+                  <div className="p-4 bg-emerald-50 text-emerald-600 rounded-[1.25rem]">
+                    <span className="text-xl">🤰</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pregnant Checks</p>
+                    <p className="text-2xl font-black text-emerald-600 mt-1">
+                      {pdChecks.filter(e => e.pregnancyResult === 'Pregnant').length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
+                  <div className="p-4 bg-rose-50 text-rose-600 rounded-[1.25rem]">
+                    <span className="text-xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Open Checks</p>
+                    <p className="text-2xl font-black text-rose-600 mt-1">
+                      {pdChecks.filter(e => e.pregnancyResult !== 'Pregnant').length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Search & Audit Table */}
+              <div className="bg-white rounded-[3.5rem] border border-slate-100 shadow-sm overflow-hidden font-sans">
+                <div className="p-8 md:p-10 border-b border-slate-100 space-y-6 bg-slate-50/50">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div>
+                      <h4 className="text-xl font-black text-slate-800 tracking-tight">Recorded Diagnosis Registry</h4>
+                      <p className="text-xs text-slate-400 font-bold mt-1">Full chronological audit trail of reproductive examinations</p>
+                    </div>
+                    {/* PDF Export Button */}
+                    <button
+                      onClick={() => {
+                        const label = (pdStartDate || pdEndDate) 
+                          ? `${formatDateReadable(pdStartDate) || 'Start'} to ${formatDateReadable(pdEndDate) || 'End'}` 
+                          : 'Full Record';
+                        generatePdCheckSectionReport(filteredPdChecks, animals, settings, label);
+                      }}
+                      className="flex items-center gap-2 px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-md shadow-indigo-100 self-start md:self-auto"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export Registry PDF</span>
+                    </button>
+                  </div>
+
+                  {/* Filter controls row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 pt-2">
+                    <div className="sm:col-span-5 relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search by Cow Tag or Date..."
+                        className="w-full pl-10 pr-6 py-3.5 bg-white border border-slate-200 rounded-2xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+                        value={pdSearchTerm}
+                        onChange={e => setPdSearchTerm(e.target.value)}
+                      />
+                    </div>
+                    <div className="sm:col-span-3 relative">
+                      <input
+                        type="date"
+                        className="w-full px-5 py-3.5 bg-white border border-slate-200 rounded-2xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+                        placeholder="Start Date"
+                        value={pdStartDate}
+                        onChange={e => setPdStartDate(e.target.value)}
+                      />
+                      {pdStartDate && (
+                        <span className="absolute right-3 top-1 text-[8px] font-black uppercase text-slate-400 select-none">From</span>
+                      )}
+                    </div>
+                    <div className="sm:col-span-3 relative">
+                      <input
+                        type="date"
+                        className="w-full px-5 py-3.5 bg-white border border-slate-200 rounded-2xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+                        placeholder="End Date"
+                        value={pdEndDate}
+                        onChange={e => setPdEndDate(e.target.value)}
+                      />
+                      {pdEndDate && (
+                        <span className="absolute right-3 top-1 text-[8px] font-black uppercase text-slate-400 select-none">To</span>
+                      )}
+                    </div>
+                    <div className="sm:col-span-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPdSearchTerm('');
+                          setPdStartDate('');
+                          setPdEndDate('');
+                        }}
+                        disabled={!pdSearchTerm && !pdStartDate && !pdEndDate}
+                        className="w-full h-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-wider transition-all disabled:opacity-40 flex items-center justify-center gap-1 animate-in fade-in duration-300"
+                        title="Clear Filters"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredPdChecks.length === 0 ? (
+                  <div className="p-16 text-center space-y-4">
+                    <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-2xl flex items-center justify-center mx-auto border border-dashed border-slate-200">
+                      <CheckCircle2 className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <p className="text-slate-800 font-black text-base">No PD Checks Found</p>
+                      <p className="text-slate-400 text-xs font-bold mt-1">Try entering a search term or record a new diagnosis check.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50">
+                          <th className="px-8 py-4">Badge #</th>
+                          <th className="px-8 py-4">Check Date</th>
+                          <th className="px-8 py-4">Animal ID</th>
+                          <th className="px-8 py-4">Examination Result</th>
+                          <th className="px-8 py-4">Notes / Details</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {filteredPdChecks.map((check) => {
+                          const animal = animals.find(a => a.id === check.animalId);
+                          const isPreg = check.pregnancyResult === 'Pregnant';
+                          const style = getBadgeStyleForDate(check.date);
+                          return (
+                            <tr key={check.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-8 py-5">
+                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border border-opacity-30 ${style.bg}`}>
+                                  {style.badgeNum}
+                                </span>
+                              </td>
+                              <td className="px-8 py-5 text-sm font-black text-slate-800">
+                                {formatDateReadable(check.date)}
+                              </td>
+                              <td className="px-8 py-5 text-sm font-extrabold text-blue-600">
+                                Cow {animal?.tag || 'Unregistered'}
+                              </td>
+                              <td className="px-8 py-5">
+                                <span className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider ${
+                                  isPreg ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+                                }`}>
+                                  {isPreg ? '🤰 Pregnant' : '❌ Open'}
+                                </span>
+                              </td>
+                              <td className="px-8 py-5 text-xs text-slate-500 font-bold max-w-xs truncate">
+                                {check.details || '--'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Mobile/Tablet Bottom Navigation Bar */}
+        {!isDesktop && (
+          <nav className={`${isSimulated ? 'absolute' : 'fixed'} bottom-0 left-0 right-0 h-20 bg-white/95 backdrop-blur-xl border-t border-slate-100 px-4 flex items-center justify-around z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.03)]`}>
+            {[
+              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+              { id: 'animals', label: 'Herd Hub', icon: Users },
+              { id: 'repro', label: 'Repro', icon: CalendarRange },
+              { id: 'health', label: 'Health', icon: Stethoscope },
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = view === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => { setView(item.id as ViewState); setIsSidebarOpen(false); }}
+                  className="flex flex-col items-center gap-1 py-1.5 px-3 text-center rounded-xl transition-all relative min-w-[64px]"
+                >
+                  <Icon className={`w-5 h-5 transition-transform duration-300 ${isActive ? 'text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-600'}`} />
+                  <span className={`text-[9px] font-black uppercase tracking-wider ${isActive ? 'text-blue-600 font-extrabold' : 'text-slate-400'}`}>
+                    {item.label}
+                  </span>
+                  {isActive && (
+                    <span className="absolute bottom-0 w-1.5 h-1.5 bg-blue-600 rounded-full shadow-sm shadow-blue-300" />
+                  )}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="flex flex-col items-center gap-1 py-1.5 px-3 text-center rounded-xl transition-all relative min-w-[64px]"
+            >
+              <Menu className={`w-5 h-5 transition-transform duration-300 ${isSidebarOpen ? 'text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-600'}`} />
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                Menu
+              </span>
+              {isSidebarOpen && (
+                <span className="absolute bottom-0 w-1.5 h-1.5 bg-blue-600 rounded-full shadow-sm shadow-blue-300" />
+              )}
+            </button>
+          </nav>
+        )}
       </main>
 
       {/* ====== ALERT PANEL SLIDE-IN ====== */}
@@ -4167,6 +4838,282 @@ function MainApp({ user, onLogout }: any) {
           </div>
         );
       })()}
+
+      {/* 1. Date Checked Details Modal (The Cool Visual Feature) */}
+      {selectedBadgeDate && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
+          <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded-lg">
+                  {getBadgeStyleForDate(selectedBadgeDate).badgeNum}
+                </span>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight mt-1">Checks on {formatDateReadable(selectedBadgeDate)}</h3>
+              </div>
+              <button onClick={() => setSelectedBadgeDate(null)} className="p-3 hover:bg-slate-200 rounded-2xl transition-all">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            
+            <div className="p-8 max-h-[60vh] overflow-y-auto space-y-4">
+              <div className="flex justify-between items-center bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                <span className="text-xs font-bold text-slate-500">Total Checks: {(pdChecksByDate[selectedBadgeDate] || []).length}</span>
+                <div className="flex gap-4 text-xs font-black">
+                  <span className="text-emerald-700">🤰 Pregnant: {(pdChecksByDate[selectedBadgeDate] || []).filter(e => e.pregnancyResult === 'Pregnant').length}</span>
+                  <span className="text-rose-700">❌ Open: {(pdChecksByDate[selectedBadgeDate] || []).filter(e => e.pregnancyResult !== 'Pregnant').length}</span>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                {(pdChecksByDate[selectedBadgeDate] || []).map((check) => {
+                  const checkAnimal = animals.find(a => a.id === check.animalId);
+                  const isPreg = check.pregnancyResult === 'Pregnant';
+                  return (
+                    <div key={check.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div>
+                        <p className="text-sm font-black text-slate-800">Cow {checkAnimal?.tag || 'Unregistered'}</p>
+                        <p className="text-xs text-slate-400 font-bold">{checkAnimal?.breed || 'Unknown Breed'} • {checkAnimal?.herd || 'Main Herd'}</p>
+                        {check.details && <p className="text-[10px] text-slate-400 mt-1 italic font-medium">"{check.details}"</p>}
+                      </div>
+                      <span className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider ${
+                        isPreg ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
+                      }`}>
+                        {isPreg ? '🤰 Pregnant' : '❌ Open'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button
+                onClick={() => setSelectedBadgeDate(null)}
+                className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-900 transition-all shadow-md"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. New PD Check Modal (Today's Check) */}
+      <FormModal title="🤰 New PD Check (Today)" isOpen={isNewPdFormOpen} onClose={() => setIsNewPdFormOpen(false)}>
+        <form onSubmit={handleSaveNewPdCheck} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Animal Tag / ID</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g., Cow_45, 101"
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+              value={pdAnimalId}
+              onChange={e => setPdAnimalId(e.target.value)}
+            />
+            <p className="text-[10px] text-slate-400 px-2 font-bold">If this tag doesn't exist, we will automatically register them in the Main Herd.</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Pregnancy Diagnosis Result</label>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => setPdResult('Pregnant')}
+                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
+                  pdResult === 'Pregnant' 
+                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-100/50' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300'
+                }`}
+              >
+                <span className="text-2xl">🤰</span>
+                <span>Pregnant</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPdResult('Open')}
+                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
+                  pdResult === 'Open' 
+                    ? 'bg-rose-500 text-white border-rose-600 shadow-lg shadow-rose-100/50' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'
+                }`}
+              >
+                <span className="text-2xl">❌</span>
+                <span>Open</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Diagnostic Notes (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g., Ultrasound 45 days, twins"
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+              value={pdNotes}
+              onChange={e => setPdNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="pt-4 flex gap-4">
+            <button
+              type="button"
+              onClick={() => setIsNewPdFormOpen(false)}
+              className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!pdAnimalId.trim() || !pdResult}
+              className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 disabled:opacity-40"
+            >
+              Save Check
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* 3. Add Old Check Modal (Forgot Feature) */}
+      <FormModal title="📅 Add Old Check (Forgot Feature)" isOpen={isOldPdFormOpen} onClose={() => setIsOldPdFormOpen(false)}>
+        <form onSubmit={handleSaveOldPdCheck} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Select Check Date</label>
+            <input
+              type="date"
+              required
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+              value={oldPdDate}
+              onChange={e => setOldPdDate(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Animal Tag / ID</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g., Cow_45"
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+              value={oldPdAnimalId}
+              onChange={e => setOldPdAnimalId(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Pregnancy Diagnosis Result</label>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => setOldPdResult('Pregnant')}
+                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
+                  oldPdResult === 'Pregnant' 
+                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-100/50' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300'
+                }`}
+              >
+                <span className="text-2xl">🤰</span>
+                <span>Pregnant</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOldPdResult('Open')}
+                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
+                  oldPdResult === 'Open' 
+                    ? 'bg-rose-500 text-white border-rose-600 shadow-lg shadow-rose-100/50' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'
+                }`}
+              >
+                <span className="text-2xl">❌</span>
+                <span>Open</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Diagnostic Notes (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g., Forgotten check record"
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+              value={oldPdNotes}
+              onChange={e => setOldPdNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="pt-4 flex gap-4">
+            <button
+              type="button"
+              onClick={() => setIsOldPdFormOpen(false)}
+              className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!oldPdAnimalId.trim() || !oldPdResult || !oldPdDate}
+              className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 disabled:opacity-40"
+            >
+              Add Old Check
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* 4. Multi-Enter Modal (Bulk Entry) */}
+      <FormModal title="📥 Multi-Enter (Bulk Diagnosis)" isOpen={isMultiPdFormOpen} onClose={() => setIsMultiPdFormOpen(false)}>
+        <form onSubmit={handleSaveMultiPdCheck} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Select Check Date</label>
+            <input
+              type="date"
+              required
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+              value={multiPdDate}
+              onChange={e => setMultiPdDate(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Paste or Enter List (One Check per Line)</label>
+            <textarea
+              required
+              placeholder="e.g.,&#10;Animal_101 Pregnant&#10;Animal_102 Open&#10;Animal_103 Pregnant&#10;Cow_45 Open"
+              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20 h-40 font-mono"
+              value={multiPdText}
+              onChange={e => setMultiPdText(e.target.value)}
+            />
+            <p className="text-[10px] text-slate-400 px-2 font-bold leading-relaxed">
+              Format: Animal_ID [Pregnant/Open]. If an animal tag is not registered, we will automatically create it in the system.
+            </p>
+          </div>
+
+          <div className="pt-4 flex gap-4">
+            <button
+              type="button"
+              onClick={() => setIsMultiPdFormOpen(false)}
+              className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!multiPdText.trim() || !multiPdDate}
+              className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-40"
+            >
+              Submit All Checks
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* Floating Success Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-slate-900/95 text-white backdrop-blur-md px-6 py-4 rounded-[1.5rem] shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 border border-slate-800">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+          <p className="text-xs font-black tracking-wide leading-none">{toastMessage}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -4178,6 +5125,9 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  // Device emulator preview state
+  const [previewMode, setPreviewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -4280,5 +5230,74 @@ export default function App() {
     );
   }
 
-  return <MainApp user={user} onLogout={handleLogout} />;
+  const isSimulated = previewMode !== 'desktop';
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex flex-col font-inter">
+      {/* Device Emulator Control Bar */}
+      <div className="bg-slate-900 text-slate-100 px-6 py-3 flex flex-wrap items-center justify-between border-b border-slate-800 text-xs font-black uppercase tracking-widest sticky top-0 z-[500] shadow-md shrink-0 select-none">
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-slate-300">Layout Preview Mode</span>
+        </div>
+        <div className="flex bg-slate-800 p-1 rounded-2xl gap-1">
+          <button 
+            onClick={() => setPreviewMode('desktop')} 
+            className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${previewMode === 'desktop' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+          >
+            <Monitor className="w-4 h-4" /> <span className="hidden sm:inline">Desktop</span>
+          </button>
+          <button 
+            onClick={() => setPreviewMode('tablet')} 
+            className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${previewMode === 'tablet' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+          >
+            <Tablet className="w-4 h-4" /> <span className="hidden sm:inline">Tablet</span>
+          </button>
+          <button 
+            onClick={() => setPreviewMode('mobile')} 
+            className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${previewMode === 'mobile' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+          >
+            <Smartphone className="w-4 h-4" /> <span className="hidden sm:inline">Mobile</span>
+          </button>
+        </div>
+        <div className="hidden md:block text-slate-500 text-[10px]">
+          Active Viewport: <span className="text-blue-400 font-bold">{previewMode === 'desktop' ? 'Desktop' : previewMode === 'tablet' ? 'Tablet (768px)' : 'Mobile (375px)'}</span>
+        </div>
+      </div>
+
+      {isSimulated ? (
+        <div className="flex-1 bg-slate-950 flex items-center justify-center py-10 px-4 min-h-[calc(100vh-53px)] overflow-auto bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]">
+          {/* Simulated Device Frame */}
+          <div 
+            className={`bg-white border-[14px] border-slate-900 rounded-[3.5rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden flex flex-col transition-all duration-500 simulated-device-frame ${
+              previewMode === 'mobile' ? 'w-[375px] h-[812px]' : 'w-[768px] h-[1024px]'
+            }`}
+          >
+            {/* Device Status Bar */}
+            <div className="bg-white px-8 py-2.5 border-b border-slate-100 flex items-center justify-between text-[10px] font-black text-slate-400 shrink-0 select-none relative z-[120]">
+              <div>09:41</div>
+              {previewMode === 'mobile' && (
+                <div className="w-24 h-4 bg-slate-900 rounded-full absolute left-1/2 -translate-x-1/2 top-1" />
+              )}
+              <div className="flex items-center gap-1.5 font-bold">
+                <span>5G</span>
+                <div className="w-5 h-2.5 border border-slate-400 rounded-sm p-[1px] flex items-center">
+                  <div className="h-full w-4 bg-slate-400 rounded-2xs" />
+                </div>
+              </div>
+            </div>
+
+            {/* Simulated Device Screen Content */}
+            <div className="flex-1 overflow-hidden relative flex flex-col">
+              <MainApp user={user} onLogout={handleLogout} previewMode={previewMode} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col bg-[#F8FAFC]">
+          <MainApp user={user} onLogout={handleLogout} previewMode={previewMode} />
+        </div>
+      )}
+    </div>
+  );
 }
