@@ -147,3 +147,14 @@ export interface User {
   email: string;
   farmId: string;
 }
+
+export interface Medicine {
+  id: string;
+  name: string;
+  category: 'Injection' | 'Liquid' | 'Powder';
+  unit: 'ml' | 'bottle' | 'dose';
+  packs: number; // e.g., 5 bottles
+  loose: number; // e.g., 20 ml
+  loosePerPack: number; // size of a full pack (e.g. 100ml per bottle)
+  minStockLevel: number; // e.g. 50 (in total equivalent units, or packs, or loose)
+}

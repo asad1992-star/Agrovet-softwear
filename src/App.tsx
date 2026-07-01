@@ -59,7 +59,9 @@ import {
   Eye,
   Monitor,
   Tablet,
-  Smartphone
+  Smartphone,
+  Pill,
+  Package
 } from 'lucide-react';
 import {
   BarChart,
@@ -84,7 +86,8 @@ import {
   HealthEvent,
   ProtocolEnrollment,
   ProtocolTemplate,
-  ProtocolStep
+  ProtocolStep,
+  Medicine
 } from './types';
 import { validations, dateUtils } from './services/businessLogic';
 import {
@@ -95,7 +98,11 @@ import {
   generateIndividualAnimalReport,
   generateAnimalListReport,
   generateProtocolListReport,
-  generatePdCheckSectionReport
+  generatePdCheckSectionReport,
+  generateTreatmentAnalysisReport,
+  generateMedicineInventoryReport,
+  generateLowStockReport,
+  generateDemandForecastReport
 } from './utils/pdfUtils';
 import {
   shareToWhatsApp,
@@ -164,7 +171,7 @@ const getStatusColor = (status?: AnimalStatus) => {
 
 type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'reports' | 'settings' | 'pd-check';
 type HerdViewMode = 'list' | 'small' | 'medium' | 'large';
-type ReportType = 'summary' | 'repro' | 'health' | 'individual' | 'pd-check';
+type ReportType = 'summary' | 'repro' | 'health' | 'individual' | 'pd-check' | 'treatment-analysis' | 'medicine-inventory' | 'low-stock' | 'demand-forecast';
 type HerdTab = 'adults' | 'calves';
 
 const formatDateReadable = (dateStr: string) => {
@@ -201,6 +208,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     animals,
     reproEvents,
     healthEvents,
+    medicines,
     enrollments,
     protocols,
     customProtocols,
@@ -216,6 +224,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     addHealthEvent,
     updateHealthEvent,
     deleteHealthEvent,
+    addMedicine,
+    updateMedicine,
+    deleteMedicine,
+    saveMedicinesDirectly,
     addEnrollment,
     updateEnrollment,
     deleteEnrollment,
@@ -232,10 +244,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const isMobile = previewMode === 'mobile' || (previewMode === 'desktop' && windowWidth < 768);
-  const isTablet = previewMode === 'tablet' || (previewMode === 'desktop' && windowWidth >= 768 && windowWidth < 1024);
-  const isDesktop = previewMode === 'desktop' && windowWidth >= 1024;
-  const isSimulated = previewMode !== 'desktop';
+  const isMobile = windowWidth <= 768;
+  const isTablet = windowWidth >= 769 && windowWidth <= 1024;
+  const isDesktop = windowWidth >= 1025;
+  const isSimulated = false;
 
   const [view, setView] = useState<ViewState>('dashboard');
   const [herdViewMode, setHerdViewMode] = useState<HerdViewMode>('medium');
@@ -326,6 +338,23 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [pdEndDate, setPdEndDate] = useState('');
   const [selectedBadgeDate, setSelectedBadgeDate] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [dashboardChartType, setDashboardChartType] = useState<'repro' | 'health' | 'conception'>('repro');
+
+  // Medicine Inventory & Usage states
+  const [healthSubTab, setHealthSubTab] = useState<'treatments' | 'inventory' | 'reports'>('treatments');
+  const [isMedicineFormOpen, setIsMedicineFormOpen] = useState(false);
+  const [newMedicine, setNewMedicine] = useState<Partial<Medicine>>({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
+  const [editingMedicineId, setEditingMedicineId] = useState<string | null>(null);
+  const [medicineSearchQuery, setMedicineSearchQuery] = useState('');
+  const [treatmentAnimalType, setTreatmentAnimalType] = useState<'single' | 'multiple'>('single');
+  const [selectedMultipleAnimals, setSelectedMultipleAnimals] = useState<string[]>([]);
+  const [activeMedicineDropdownIdx, setActiveMedicineDropdownIdx] = useState<number | null>(null);
+  const [lowStockAlerts, setLowStockAlerts] = useState<{ id: string; msg: string }[]>([]);
+  
+  // Inventory Filtering & Period Reports
+  const [medInventorySearch, setMedInventorySearch] = useState('');
+  const [medInventoryCat, setMedInventoryCat] = useState('All');
+  const [reportsPeriod, setReportsPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly');
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -600,6 +629,103 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     }).sort((a, b) => a.date.localeCompare(b.date));
   }, [healthEvents, animals, healthTagSearch, healthTypeFilter, healthTechFilter, healthMedFilter, healthDateStart, healthDateEnd]);
 
+  // 1. Grouped usage data for reports chart
+  const usageChartData = useMemo(() => {
+    const usages: { name: string; qty: number; date: string }[] = [];
+    healthEvents.forEach(e => {
+      const treatList = e.treatments && e.treatments.length > 0
+        ? e.treatments
+        : (e.medication ? [{ name: e.medication, dose: e.dosage || '' }] : []);
+      
+      treatList.forEach(t => {
+        if (!t.name) return;
+        const match = t.dose.match(/^([\d.]+)/);
+        const num = match ? parseFloat(match[1]) : 0;
+        if (num > 0) {
+          usages.push({ name: t.name, qty: num, date: e.date });
+        }
+      });
+    });
+
+    const groups: { [key: string]: { [med: string]: number } } = {};
+    usages.forEach(u => {
+      let groupKey = '';
+      const dateObj = new Date(u.date);
+      if (isNaN(dateObj.getTime())) return;
+      
+      if (reportsPeriod === 'daily') {
+        groupKey = u.date;
+      } else if (reportsPeriod === 'weekly') {
+        const day = dateObj.getDay();
+        const diff = dateObj.getDate() - day + (day === 0 ? -6 : 1);
+        const startOfWeek = new Date(dateObj.setDate(diff)).toISOString().split('T')[0];
+        groupKey = `W/C ${startOfWeek}`;
+      } else if (reportsPeriod === 'monthly') {
+        groupKey = dateObj.toLocaleString('default', { month: 'short', year: 'numeric' });
+      } else {
+        groupKey = dateObj.getFullYear().toString();
+      }
+
+      if (!groups[groupKey]) groups[groupKey] = {};
+      groups[groupKey][u.name] = (groups[groupKey][u.name] || 0) + u.qty;
+    });
+
+    const chartData = Object.entries(groups).map(([period, medMap]) => {
+      const row: any = { period };
+      Object.entries(medMap).forEach(([med, qty]) => {
+        row[med] = parseFloat(qty.toFixed(1));
+      });
+      return row;
+    });
+
+    chartData.sort((a, b) => a.period.localeCompare(b.period));
+    return chartData.slice(-12);
+  }, [healthEvents, reportsPeriod]);
+
+  // 2. Predict next 30 days demand
+  const demandPredictions = useMemo(() => {
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+    const usagesLast30Days: { [name: string]: number } = {};
+    
+    healthEvents.forEach(e => {
+      if (e.date >= thirtyDaysAgoStr) {
+        const treatList = e.treatments && e.treatments.length > 0
+          ? e.treatments
+          : (e.medication ? [{ name: e.medication, dose: e.dosage || '' }] : []);
+        
+        treatList.forEach(t => {
+          if (!t.name) return;
+          const match = t.dose.match(/^([\d.]+)/);
+          const num = match ? parseFloat(match[1]) : 0;
+          if (num > 0) {
+            usagesLast30Days[t.name] = (usagesLast30Days[t.name] || 0) + num;
+          }
+        });
+      }
+    });
+
+    return medicines.map(m => {
+      const pastUsage = usagesLast30Days[m.name] || 0;
+      const projected = pastUsage; 
+      const currentStock = (m.packs * m.loosePerPack) + m.loose;
+      const shortfall = projected > currentStock ? parseFloat((projected - currentStock).toFixed(1)) : 0;
+      const recommendedPacks = shortfall > 0 ? Math.ceil(shortfall / m.loosePerPack) : 0;
+
+      return {
+        medicine: m,
+        pastUsage: parseFloat(pastUsage.toFixed(1)),
+        projected: parseFloat(projected.toFixed(1)),
+        currentStock,
+        shortfall,
+        recommendedPacks
+      };
+    });
+  }, [healthEvents, medicines]);
+
   const uniqueReproTechs = useMemo(() => dateUtils.getUniqueNormalized(reproEvents.map(e => e.technician)), [reproEvents]);
   const uniqueHealthTechs = useMemo(() => dateUtils.getUniqueNormalized(healthEvents.map(e => e.technician)), [healthEvents]);
   const uniqueMedications = useMemo(() => dateUtils.getUniqueNormalized(healthEvents.map(e => e.medication)), [healthEvents]);
@@ -774,6 +900,16 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     };
   }, [animals, reproEvents, healthEvents, alerts, dashboardFilter]);
 
+  const statusDistribution = useMemo(() => {
+    return [
+      { name: 'Pregnant', value: dashboardStats.pregnant || 0, color: '#10B981' },
+      { name: 'Open (Ready)', value: dashboardStats.open || 0, color: '#3B82F6' },
+      { name: 'In Heat', value: dashboardStats.inHeat || 0, color: '#F59E0B' },
+      { name: 'Sick Cases', value: dashboardStats.sick || 0, color: '#EF4444' },
+      { name: 'Dry Cows', value: dashboardStats.dry || 0, color: '#64748B' },
+    ].filter(item => item.value > 0);
+  }, [dashboardStats]);
+
   // Auto Backup System
   useEffect(() => {
     const lastBackup = localStorage.getItem('agrovet_backup_time');
@@ -862,16 +998,108 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
   const handleAddHealth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newHealth.animalId && newHealth.type) {
+    
+    const activeAnimals = treatmentAnimalType === 'single' 
+      ? (newHealth.animalId ? [newHealth.animalId] : [])
+      : selectedMultipleAnimals;
+
+    if (activeAnimals.length === 0) {
+      setToastMessage('⚠️ Please select at least one animal patient.');
+      return;
+    }
+
+    if (!newHealth.type) {
+      setToastMessage('⚠️ Please select a health category.');
+      return;
+    }
+
+    const finalTreatments = newHealth.treatments && newHealth.treatments.length > 0
+      ? newHealth.treatments
+      : (newHealth.medication ? [{ name: newHealth.medication, dose: newHealth.dosage || '' }] : []);
+
+    const updatedMedicines = [...medicines];
+    const lowStockMessages: string[] = [];
+
+    finalTreatments.forEach(treatment => {
+      if (!treatment.name) return;
+      
+      const parsed = treatment.dose.match(/^([\d.]+)/);
+      const singleDose = parsed ? parseFloat(parsed[1]) : 0;
+      const totalDose = singleDose * activeAnimals.length;
+
+      if (totalDose > 0) {
+        const medIndex = updatedMedicines.findIndex(m => m.name.toLowerCase() === treatment.name.trim().toLowerCase());
+        if (medIndex !== -1) {
+          const med = updatedMedicines[medIndex];
+          let currentPacks = med.packs;
+          let currentLoose = med.loose;
+          const totalStockUnits = (currentPacks * med.loosePerPack) + currentLoose;
+
+          if (totalStockUnits < totalDose) {
+            currentPacks = 0;
+            currentLoose = 0;
+          } else {
+            const packsToDeduct = Math.floor(totalDose / med.loosePerPack);
+            let remainingDose = totalDose % med.loosePerPack;
+
+            if (currentPacks >= packsToDeduct) {
+              currentPacks -= packsToDeduct;
+            } else {
+              const equivalentLoose = currentPacks * med.loosePerPack;
+              currentPacks = 0;
+              currentLoose += equivalentLoose;
+            }
+
+            if (currentLoose >= remainingDose) {
+              currentLoose -= remainingDose;
+            } else {
+              if (currentPacks > 0) {
+                currentPacks -= 1;
+                currentLoose += med.loosePerPack;
+                currentLoose -= remainingDose;
+              } else {
+                currentLoose = 0;
+              }
+            }
+          }
+
+          updatedMedicines[medIndex] = {
+            ...med,
+            packs: currentPacks,
+            loose: currentLoose
+          };
+
+          const newTotalUnits = (currentPacks * med.loosePerPack) + currentLoose;
+          if (newTotalUnits < med.minStockLevel) {
+            lowStockMessages.push(
+              `⚠️ Low Stock: ${med.name} is down to ${currentPacks} packs + ${currentLoose} ${med.unit} (minimum required: ${med.minStockLevel} ${med.unit})`
+            );
+          }
+        }
+      }
+    });
+
+    saveMedicinesDirectly(updatedMedicines);
+
+    if (lowStockMessages.length > 0) {
+      setLowStockAlerts(prev => [
+        ...prev,
+        ...lowStockMessages.map(msg => ({ id: Math.random().toString(), msg }))
+      ]);
+    }
+
+    activeAnimals.forEach(animalId => {
       const normalizedHealth = {
         ...newHealth,
+        animalId,
+        treatments: finalTreatments,
         technician: newHealth.technician ? dateUtils.normalizeName(newHealth.technician) : '',
-        medication: newHealth.medication ? dateUtils.normalizeName(newHealth.medication) : ''
+        medication: finalTreatments[0]?.name || '',
+        dosage: finalTreatments[0]?.dose || ''
       };
 
       if (editingHealthId) {
         updateHealthEvent(normalizedHealth as HealthEvent);
-        setEditingHealthId(null);
       } else {
         addHealthEvent({
           ...normalizedHealth,
@@ -879,11 +1107,44 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           date: normalizedHealth.date || new Date().toISOString().split('T')[0],
         } as HealthEvent);
       }
-      setIsHealthFormOpen(false);
-      setSelectedAnimal(null);
-      setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0] });
-      setHealthAnimalSearch('');
+    });
+
+    setEditingHealthId(null);
+    setIsHealthFormOpen(false);
+    setSelectedAnimal(null);
+    setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0] });
+    setHealthAnimalSearch('');
+    setSelectedMultipleAnimals([]);
+    setTreatmentAnimalType('single');
+    setToastMessage(`Logged clinical entry for ${activeAnimals.length} animal(s). Stock updated.`);
+  };
+
+  const handleAddMedicineSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMedicine.name) return;
+
+    const formattedMedicine: Medicine = {
+      id: editingMedicineId || Math.random().toString(36).substr(2, 9),
+      name: dateUtils.normalizeName(newMedicine.name),
+      category: newMedicine.category || 'Injection',
+      unit: newMedicine.unit || 'ml',
+      packs: Number(newMedicine.packs) || 0,
+      loose: Number(newMedicine.loose) || 0,
+      loosePerPack: Number(newMedicine.loosePerPack) || 100,
+      minStockLevel: Number(newMedicine.minStockLevel) || 50
+    };
+
+    if (editingMedicineId) {
+      updateMedicine(formattedMedicine);
+      setEditingMedicineId(null);
+      setToastMessage(`Updated medicine "${formattedMedicine.name}" in inventory.`);
+    } else {
+      addMedicine(formattedMedicine);
+      setToastMessage(`Added "${formattedMedicine.name}" to medicine inventory.`);
     }
+
+    setIsMedicineFormOpen(false);
+    setNewMedicine({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
   };
 
   const handlePregnancyCheck = () => {
@@ -1376,6 +1637,26 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         generateHealthSectionReport(filtered, animals, settings, rangeLabel);
         break;
       }
+      case 'treatment-analysis': {
+        const filtered = healthEvents.filter(e =>
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate)
+        );
+        generateTreatmentAnalysisReport(filtered, animals, settings, rangeLabel);
+        break;
+      }
+      case 'medicine-inventory': {
+        generateMedicineInventoryReport(medicines, settings);
+        break;
+      }
+      case 'low-stock': {
+        generateLowStockReport(medicines, settings);
+        break;
+      }
+      case 'demand-forecast': {
+        generateDemandForecastReport(demandPredictions, settings);
+        break;
+      }
       case 'individual': {
         const animal = animals.find(a => a.id === reportAnimalId);
         if (!animal) {
@@ -1558,6 +1839,71 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         <div className={`flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth ${isDesktop ? 'pb-10' : 'pb-32'}`}>
           {view === 'dashboard' && (
             <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-20">
+              {/* Dashboard Hero Command & Quick Actions */}
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[3.5rem] p-8 md:p-10 text-white relative overflow-hidden shadow-2xl">
+                {/* Glowing design accents */}
+                <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
+                <div className="absolute bottom-0 left-1/3 w-60 h-60 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+                  <div className="space-y-3">
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-500/20 rounded-full border border-indigo-400/20 backdrop-blur-sm">
+                      <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">System Ready & Synchronized</span>
+                    </div>
+                    <h2 className="text-3xl md:text-4xl font-black tracking-tight leading-none text-white">
+                      Farm Operations Command
+                    </h2>
+                    <p className="text-xs text-slate-300 font-bold max-w-xl leading-relaxed">
+                      Real-time metrics, reproductive diagnostics tracking, and automated synchronization scheduling for your herd.
+                    </p>
+                  </div>
+
+                  {/* Ribbon Quick Actions */}
+                  <div className="flex flex-wrap gap-4">
+                    <button
+                      onClick={() => setIsAnimalFormOpen(true)}
+                      className="flex items-center gap-3 px-6 py-4 bg-white text-slate-900 hover:bg-slate-50 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-white/5 group"
+                    >
+                      <div className="p-2 bg-slate-100 text-slate-800 rounded-xl group-hover:scale-110 transition-transform">
+                        <Plus className="w-4 h-4" />
+                      </div>
+                      <span>Add Animal</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsReproFormOpen(true)}
+                      className="flex items-center gap-3 px-6 py-4 bg-indigo-600 text-white hover:bg-indigo-700 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 group"
+                    >
+                      <div className="p-2 bg-indigo-500 text-white rounded-xl group-hover:scale-110 transition-transform">
+                        <CalendarIcon className="w-4 h-4" />
+                      </div>
+                      <span>Log Repro</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsHealthFormOpen(true)}
+                      className="flex items-center gap-3 px-6 py-4 bg-rose-600 text-white hover:bg-rose-700 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-rose-600/20 group"
+                    >
+                      <div className="p-2 bg-rose-500 text-white rounded-xl group-hover:scale-110 transition-transform">
+                        <Stethoscope className="w-4 h-4" />
+                      </div>
+                      <span>Clinical Entry</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsNewPdFormOpen(true)}
+                      className="flex items-center gap-3 px-6 py-4 bg-emerald-600 text-white hover:bg-emerald-700 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-600/20 group"
+                    >
+                      <div className="p-2 bg-emerald-500 text-white rounded-xl group-hover:scale-110 transition-transform">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <span>Preg Exam</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* Dashboard Filters */}
               <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-xl">
@@ -1692,55 +2038,151 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
               {/* 2. Fertility Performance */}
               <section className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                <div className="lg:col-span-8 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm">
-                  <div className="flex items-center justify-between mb-10">
+                <div className="lg:col-span-8 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
                     <div>
                       <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Efficiency Analysis</h3>
-                      <p className="text-3xl font-black text-slate-800">Reproduction Trends</p>
+                      <p className="text-3xl font-black text-slate-800 tracking-tight">
+                        {dashboardChartType === 'repro' && 'Reproduction Trends'}
+                        {dashboardChartType === 'health' && 'Clinical Discovery Trends'}
+                        {dashboardChartType === 'conception' && 'Conception Success Rate'}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Avg Conception</p>
-                        <p className="text-xl font-black text-blue-600">{dashboardStats.conceptionRate}%</p>
-                      </div>
+                    {/* Modern Chart Type Switcher */}
+                    <div className="flex bg-slate-50 p-1.5 rounded-2xl border border-slate-100 shadow-inner self-start sm:self-auto">
+                      <button
+                        onClick={() => setDashboardChartType('repro')}
+                        className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                          dashboardChartType === 'repro'
+                            ? 'bg-white text-blue-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Reproduction
+                      </button>
+                      <button
+                        onClick={() => setDashboardChartType('health')}
+                        className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                          dashboardChartType === 'health'
+                            ? 'bg-white text-rose-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Health
+                      </button>
+                      <button
+                        onClick={() => setDashboardChartType('conception')}
+                        className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                          dashboardChartType === 'conception'
+                            ? 'bg-white text-indigo-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Conception
+                      </button>
                     </div>
                   </div>
+
                   <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={reproductionTrends}>
-                        <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="#F1F5F9" />
-                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 800 }} dy={10} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} />
-                        <Tooltip
-                          cursor={{ fill: '#F8FAFC' }}
-                          contentStyle={{ borderRadius: '24px', border: 'none', padding: '16px', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.15)' }}
-                        />
-                        <Bar dataKey="inseminations" name="Inseminations" fill="#3B82F6" radius={[8, 8, 0, 0]} />
-                        <Bar dataKey="pregnancies" name="Pregnancies" fill="#10B981" radius={[8, 8, 0, 0]} />
-                        <Bar dataKey="calvings" name="Calvings" fill="#F59E0B" radius={[8, 8, 0, 0]} />
-                      </BarChart>
+                      {dashboardChartType === 'repro' ? (
+                        <BarChart data={reproductionTrends}>
+                          <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="#F1F5F9" />
+                          <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 800 }} dy={10} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} />
+                          <Tooltip
+                            cursor={{ fill: '#F8FAFC' }}
+                            contentStyle={{ borderRadius: '24px', border: 'none', padding: '16px', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.15)' }}
+                          />
+                          <Bar dataKey="inseminations" name="Inseminations" fill="#3B82F6" radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="pregnancies" name="Pregnancies" fill="#10B981" radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="calvings" name="Calvings" fill="#F59E0B" radius={[8, 8, 0, 0]} />
+                        </BarChart>
+                      ) : dashboardChartType === 'health' ? (
+                        <BarChart data={healthTrends}>
+                          <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="#F1F5F9" />
+                          <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 800 }} dy={10} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} />
+                          <Tooltip
+                            cursor={{ fill: '#F8FAFC' }}
+                            contentStyle={{ borderRadius: '24px', border: 'none', padding: '16px', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.15)' }}
+                          />
+                          <Bar dataKey="treatments" name="Treatments" fill="#EC4899" radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="cases" name="Clinical Cases" fill="#F43F5E" radius={[8, 8, 0, 0]} />
+                        </BarChart>
+                      ) : (
+                        <BarChart data={conceptionRateTrends}>
+                          <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="#F1F5F9" />
+                          <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 800 }} dy={10} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} unit="%" />
+                          <Tooltip
+                            cursor={{ fill: '#F8FAFC' }}
+                            contentStyle={{ borderRadius: '24px', border: 'none', padding: '16px', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.15)' }}
+                          />
+                          <Bar dataKey="rate" name="Success Rate" fill="#6366F1" radius={[8, 8, 0, 0]} />
+                        </BarChart>
+                      )}
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <div className="lg:col-span-4 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col justify-center text-center">
-                  <div className={`p-8 rounded-[2.5rem] bg-blue-50 border border-blue-100 mb-6 mx-auto w-fit`}>
-                    <Target className="w-12 h-12 text-blue-600" />
-                  </div>
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Overall Performance</h3>
-                  <p className="text-5xl font-black text-slate-800 mb-4">{dashboardStats.conceptionRate}%</p>
-                  <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Conception Rate</p>
-                  <div className="mt-8 pt-8 border-t border-slate-50 space-y-4">
-                    <div className="flex items-center justify-between text-xs font-black uppercase tracking-widest">
-                      <span className="text-slate-400">Trend Monthly</span>
-                      <span className="text-emerald-500 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> +5%</span>
+
+                <div className="lg:col-span-4 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col justify-between">
+                  {/* Top Stats */}
+                  <div className="text-center pb-6 border-b border-slate-100">
+                    <div className="p-5 rounded-[2rem] bg-blue-50 border border-blue-100 mb-4 mx-auto w-fit">
+                      <Target className="w-8 h-8 text-blue-600" />
                     </div>
-                    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                      <div className="h-full bg-blue-600 rounded-full" style={{ width: `${dashboardStats.conceptionRate}%` }}></div>
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Reproductive Performance</h3>
+                    <p className="text-4xl font-black text-slate-800 leading-none">{dashboardStats.conceptionRate}%</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Overall Conception Rate</p>
+                    <div className="mt-4 max-w-[160px] mx-auto">
+                      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                        <div className="h-full bg-blue-600 rounded-full" style={{ width: `${dashboardStats.conceptionRate}%` }} />
+                      </div>
                     </div>
                   </div>
-                  <button onClick={() => handleMetricClick('Conception Rate')} className="mt-8 text-xs font-black text-blue-600 uppercase tracking-[0.2em] hover:underline cursor-pointer">
-                    Detailed Breakdown →
-                  </button>
+
+                  {/* Donut Chart Portion */}
+                  <div className="pt-6 flex-1 flex flex-col justify-center items-center">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Herd Status Proportions</h4>
+                    <div className="relative w-full h-[140px] flex items-center justify-center">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={statusDistribution}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={45}
+                            outerRadius={60}
+                            paddingAngle={4}
+                            dataKey="value"
+                          >
+                            {statusDistribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="absolute flex flex-col items-center justify-center text-center">
+                        <span className="text-lg font-black text-slate-800 leading-none">
+                          {statusDistribution.reduce((acc, curr) => acc + curr.value, 0)}
+                        </span>
+                        <span className="text-[8px] font-black uppercase text-slate-400 tracking-wider">Cows</span>
+                      </div>
+                    </div>
+
+                    {/* Donut Legend */}
+                    <div className="flex flex-wrap gap-2 justify-center mt-3 max-w-xs">
+                      {statusDistribution.map((entry, idx) => (
+                        <div key={idx} className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                          <span className="text-[9px] font-black text-slate-600 uppercase tracking-tight">
+                            {entry.name} ({entry.value})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </section>
 
@@ -2539,273 +2981,683 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
           {view === 'health' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-              <div className="flex flex-col sm:flex-row gap-6 justify-between items-center bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
-                <div>
-                  <h3 className="text-3xl font-black text-slate-800 tracking-tighter">Clinical Log</h3>
-                  <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Medical treatment records</p>
-                </div>
-                <div className="flex gap-4 w-full sm:w-auto">
-                  <button
-                    onClick={() => {
-                      const label = (healthDateStart || healthDateEnd) ? `${healthDateStart || 'Start'} to ${healthDateEnd || 'End'}` : 'Full History';
-                      generateHealthSectionReport(filteredHealthEvents, animals, settings, label);
-                    }}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-white text-slate-700 border-2 border-slate-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all border-slate-200"
-                  >
-                    <Printer className="w-5 h-5" /> Print PDF
-                  </button>
-                  <button
-                    onClick={() => {
-                      const label = (healthDateStart || healthDateEnd) ? `${healthDateStart || 'Start'} to ${healthDateEnd || 'End'}` : 'Clinical History';
-                      const items = filteredHealthEvents.map(e => {
-                        const animal = animals.find(a => a.id === e.animalId);
-                        return { tag: animal?.tag || 'Unk', value: `${e.type} - ${e.details || 'Checkup'}` };
-                      });
-                      const text = generateListShareText(label, items);
-                      shareToWhatsApp(text);
-                    }}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-emerald-50 text-emerald-700 border-2 border-emerald-100 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all"
-                  >
-                    <MessageCircle className="w-5 h-5" /> Share List
-                  </button>
-                  <button
-                    onClick={() => { setEditingHealthId(null); setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0], treatments: [{ name: '', dose: '' }] }); setIsHealthFormOpen(true); }}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-rose-600 text-white px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-100"
-                  >
-                    <Plus className="w-5 h-5" /> Add Discovery
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <Filter className="w-5 h-5 text-rose-600" />
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Health Filters</h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Patient Tag</label>
-                    <div className="relative">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search tag..."
-                        className="w-full pl-9 pr-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                        value={healthTagSearch}
-                        onChange={(e) => setHealthTagSearch(e.target.value)}
-                      />
+              {/* Top Banner for Low Stock Alerts (Popups) */}
+              {lowStockAlerts.length > 0 && (
+                <div className="bg-rose-50 border-2 border-rose-200 rounded-[2rem] p-6 space-y-4 shadow-lg shadow-rose-100 animate-in fade-in slide-in-from-top-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="w-6 h-6 text-rose-600 animate-pulse" />
+                      <div>
+                        <h4 className="text-sm font-black text-rose-900 uppercase tracking-wider">⚠️ Medicine Inventory Warning Alerts</h4>
+                        <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">Action Required: Several item stocks are below safe levels</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Technician / Vet</label>
-                    <select
-                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                      value={healthTechFilter}
-                      onChange={(e) => setHealthTechFilter(e.target.value)}
+                    <button
+                      onClick={() => setLowStockAlerts([])}
+                      className="text-xs font-black text-rose-600 bg-rose-100 hover:bg-rose-200 px-3 py-1.5 rounded-xl uppercase tracking-wider transition-all"
                     >
-                      <option value="All">All Vets</option>
-                      {uniqueHealthTechs.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                      Clear Alerts
+                    </button>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Medication</label>
-                    <select
-                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                      value={healthMedFilter}
-                      onChange={(e) => setHealthMedFilter(e.target.value)}
-                    >
-                      <option value="All">All Medication</option>
-                      {uniqueMedications.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Type</label>
-                    <select
-                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                      value={healthTypeFilter}
-                      onChange={(e) => setHealthTypeFilter(e.target.value)}
-                    >
-                      <option value="All">All Types</option>
-                      {Object.values(HealthEventType).map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between px-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">From Date</label>
-                      <button onClick={() => { const today = new Date().toISOString().split('T')[0]; setHealthDateStart(today); setHealthDateEnd(today); }} className="text-[9px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-widest">Today</button>
-                    </div>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                      value={healthDateStart}
-                      onChange={(e) => setHealthDateStart(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">To Date</label>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                      value={healthDateEnd}
-                      onChange={(e) => setHealthDateEnd(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Inseminated Animals - Pregnancy Check Queue in Health view */}
-              {inseminatedAnimals.length > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-[2.5rem] p-8 space-y-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                    <h4 className="text-xs font-black text-blue-700 uppercase tracking-widest">Pregnancy Check Queue — {inseminatedAnimals.length} Inseminated</h4>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {inseminatedAnimals.map(a => {
-                      const lastInsem = reproEvents.filter(e => e.animalId === a.id && e.type === ReproEventType.INSEMINATION).sort((x, y) => y.date.localeCompare(x.date))[0];
-                      const daysSince = lastInsem ? dateUtils.diffDays(new Date().toISOString().split('T')[0], lastInsem.date) : 0;
-                      // Show all inseminated animals
-                      const isCheckDue = daysSince >= settings.pregnancyCheckDays - 3;
-                      return (
-                        <div key={a.id} className={`bg-white rounded-2xl p-5 border flex items-center justify-between shadow-sm ${isCheckDue ? 'border-amber-200' : 'border-blue-100'}`}>
-                          <div>
-                            <p className="font-black text-slate-800">{a.tag}</p>
-                            <p className={`text-[10px] font-black uppercase tracking-wider ${isCheckDue ? 'text-amber-600' : 'text-blue-500'}`}>Day {daysSince} since insem</p>
-                          </div>
-                          <button
-                            onClick={() => { setPregnancyCheckTarget(a); setPregnancyCheckResult(''); setIsPregnancyCheckModalOpen(true); }}
-                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider hover:bg-blue-700 transition-all shadow-md"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Preg Check
-                          </button>
-                        </div>
-                      );
-                    })}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {lowStockAlerts.map(alert => (
+                      <div key={alert.id} className="flex items-start gap-2.5 bg-white p-3 rounded-xl border border-rose-100 text-xs text-rose-700 font-bold leading-relaxed">
+                        <span>•</span>
+                        <span>{alert.msg}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
-              <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50/50 border-b border-slate-100">
-                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16 text-center">Sr. No</th>
-                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Animal</th>
-                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Type</th>
-                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Prescription</th>
-                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Condition Details</th>
-                        <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredHealthEvents.map((event, index) => {
-                        const animal = animals.find(a => a.id === event.animalId);
-                        return (
-                          <tr key={event.id} className="hover:bg-slate-50 transition-colors group">
-                            <td className="px-8 py-6 text-xs font-black text-slate-400 text-center">{index + 1}</td>
-                            <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedAnimal(animal || null)}>
-                              <span className="font-black text-slate-800 group-hover:text-blue-600">{animal?.tag || 'Unknown Tag'}</span>
-                              <br />
-                              <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">
-                                {animal?.status || 'Active'}
-                              </span>
-                            </td>
-                            <td className="px-8 py-6">
-                              <div className="flex flex-col">
-                                <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tighter shadow-sm border inline-block w-fit ${event.type === HealthEventType.ILLNESS ? 'bg-rose-50 text-rose-600 border-rose-100' :
-                                    'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                  }`}>
-                                  {event.type}
-                                </span>
-                                <span className="text-[9px] text-slate-500 font-bold mt-1.5 uppercase tracking-wider flexItemsCenter gap-1">
-                                  {event.date}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-8 py-6">
-                              {(event.treatments && event.treatments.length > 0 && event.treatments[0].name) ? (
-                                <div className="space-y-1">
-                                  {event.treatments.map((t, idx) => (
-                                    <div key={idx} className="flex items-center gap-2">
-                                      <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                      <span className="text-xs font-black text-slate-700">{t.name || 'Unnamed'}</span>
-                                      <span className="text-[9px] font-black text-slate-400 uppercase ml-1">({t.dose || 'N/A'})</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : event.medication ? (
-                                <div className="flex items-center gap-2">
-                                  <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                  <span className="text-xs font-black text-slate-700">{event.medication}</span>
-                                  <span className="text-[9px] font-black text-slate-400 uppercase ml-1">({event.dosage || 'N/A'})</span>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-slate-400 italic">No medication</span>
-                              )}
-                            </td>
-                            <td className="px-8 py-6 max-w-[200px]">
-                              <p className="text-xs text-slate-600 font-bold truncate" title={event.details}>{event.details || '--'}</p>
-                              {event.technician && <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1 block">Tech: {dateUtils.normalizeName(event.technician)}</span>}
 
-                              {event.treatmentDays && (() => {
-                                const today = new Date().toISOString().split('T')[0];
-                                const endDate = dateUtils.addDays(event.date, event.treatmentDays);
-                                const daysInto = dateUtils.diffDays(today, event.date);
-                                const daysLeft = dateUtils.diffDays(endDate, today);
-                                const isActive = daysInto >= 0 && daysLeft >= 0;
-                                return isActive ? (
-                                  <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md mt-2 inline-block">
-                                    {daysLeft} days active
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md mt-2 inline-block">
-                                    Done
-                                  </span>
-                                );
-                              })()}
-                            </td>
-                            <td className="px-8 py-6">
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    const text = generateHealthEventShareText(event, animal?.tag || 'Unknown');
-                                    shareToWhatsApp(text);
-                                  }}
-                                  className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-colors"
-                                  title="Share on WhatsApp"
-                                >
-                                  <MessageCircle className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => { setEditingHealthId(event.id); const toEdit = { ...event }; if (!toEdit.treatments) { if (toEdit.medication || toEdit.dosage) { toEdit.treatments = [{ name: toEdit.medication || '', dose: toEdit.dosage || '' }]; } else { toEdit.treatments = [{ name: '', dose: '' }]; } } setNewHealth(toEdit); const anim = animals.find((x: any) => x.id === event.animalId); if (anim) setHealthAnimalSearch(anim.tag); setIsHealthFormOpen(true); }}
-                                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
-                                  title="Edit"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={(e) => handleDeleteHealth(event, e)}
-                                  className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {filteredHealthEvents.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="px-8 py-12 text-center text-slate-400 font-bold text-sm">
-                            No health records found in this view.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+              {/* Health Bay Sub-navigation Menu */}
+              <div className="flex flex-col sm:flex-row gap-6 justify-between items-center bg-white p-6 sm:p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                <div>
+                  <h3 className="text-3xl font-black text-slate-800 tracking-tighter">Health Bay</h3>
+                  <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Smart Veterinary, Treatment, & Medicine Suite</p>
+                </div>
+
+                <div className="flex border border-slate-100 bg-slate-50 p-1.5 rounded-2xl flex-wrap gap-1 shadow-inner">
+                  <button
+                    onClick={() => setHealthSubTab('treatments')}
+                    className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+                      healthSubTab === 'treatments'
+                        ? 'bg-white text-rose-600 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Syringe className="w-3.5 h-3.5" /> Treatments
+                  </button>
+                  <button
+                    onClick={() => setHealthSubTab('inventory')}
+                    className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+                      healthSubTab === 'inventory'
+                        ? 'bg-white text-rose-600 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Package className="w-3.5 h-3.5" /> Medicine Inventory
+                  </button>
+                  <button
+                    onClick={() => setHealthSubTab('reports')}
+                    className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+                      healthSubTab === 'reports'
+                        ? 'bg-white text-rose-600 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" /> Reports & Forecasts
+                  </button>
                 </div>
               </div>
+
+              {/* SUB-TAB 1: TREATMENTS & CLINICAL LOG */}
+              {healthSubTab === 'treatments' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex justify-end gap-3 bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <button
+                      onClick={() => {
+                        const label = (healthDateStart || healthDateEnd) ? `${healthDateStart || 'Start'} to ${healthDateEnd || 'End'}` : 'Full History';
+                        generateHealthSectionReport(filteredHealthEvents, animals, settings, label);
+                      }}
+                      className="flex items-center gap-2 bg-white text-slate-700 border border-slate-200 px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
+                    >
+                      <Printer className="w-4 h-4" /> Print PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        const label = (healthDateStart || healthDateEnd) ? `${healthDateStart || 'Start'} to ${healthDateEnd || 'End'}` : 'Clinical History';
+                        const items = filteredHealthEvents.map(e => {
+                          const animal = animals.find(a => a.id === e.animalId);
+                          return { tag: animal?.tag || 'Unk', value: `${e.type} - ${e.details || 'Checkup'}` };
+                        });
+                        const text = generateListShareText(label, items);
+                        shareToWhatsApp(text);
+                      }}
+                      className="flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-100 px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                    >
+                      <MessageCircle className="w-4 h-4" /> Share List
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingHealthId(null);
+                        setNewHealth({
+                          type: HealthEventType.ILLNESS,
+                          date: new Date().toISOString().split('T')[0],
+                          treatments: [{ name: '', dose: '' }]
+                        });
+                        setTreatmentAnimalType('single');
+                        setHealthAnimalSearch('');
+                        setSelectedMultipleAnimals([]);
+                        setIsHealthFormOpen(true);
+                      }}
+                      className="flex items-center gap-2 bg-rose-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md shadow-rose-100"
+                    >
+                      <Plus className="w-4 h-4" /> Log Treatment
+                    </button>
+                  </div>
+
+                  {/* Filters block */}
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Filter className="w-5 h-5 text-rose-600" />
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Treatment Filters</h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Patient Tag</label>
+                        <div className="relative">
+                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search tag..."
+                            className="w-full pl-9 pr-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                            value={healthTagSearch}
+                            onChange={(e) => setHealthTagSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Technician / Vet</label>
+                        <select
+                          className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                          value={healthTechFilter}
+                          onChange={(e) => setHealthTechFilter(e.target.value)}
+                        >
+                          <option value="All">All Vets</option>
+                          {uniqueHealthTechs.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Medication</label>
+                        <select
+                          className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                          value={healthMedFilter}
+                          onChange={(e) => setHealthMedFilter(e.target.value)}
+                        >
+                          <option value="All">All Medication</option>
+                          {uniqueMedications.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Type</label>
+                        <select
+                          className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                          value={healthTypeFilter}
+                          onChange={(e) => setHealthTypeFilter(e.target.value)}
+                        >
+                          <option value="All">All Types</option>
+                          {Object.values(HealthEventType).map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">From Date</label>
+                          <button onClick={() => { const today = new Date().toISOString().split('T')[0]; setHealthDateStart(today); setHealthDateEnd(today); }} className="text-[9px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-widest">Today</button>
+                        </div>
+                        <input
+                          type="date"
+                          className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                          value={healthDateStart}
+                          onChange={(e) => setHealthDateStart(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pregnancy check helper in treatments sub-view */}
+                  {inseminatedAnimals.length > 0 && (
+                    <div className="bg-blue-50/50 border border-blue-100 rounded-[2.5rem] p-8 space-y-4 shadow-sm">
+                      <div className="flex items-center gap-3 mb-2">
+                        <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                        <h4 className="text-xs font-black text-blue-700 uppercase tracking-widest">Pregnancy Check Queue — {inseminatedAnimals.length} Inseminated</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {inseminatedAnimals.map(a => {
+                          const lastInsem = reproEvents.filter(e => e.animalId === a.id && e.type === ReproEventType.INSEMINATION).sort((x, y) => y.date.localeCompare(x.date))[0];
+                          const daysSince = lastInsem ? dateUtils.diffDays(new Date().toISOString().split('T')[0], lastInsem.date) : 0;
+                          const isCheckDue = daysSince >= settings.pregnancyCheckDays - 3;
+                          return (
+                            <div key={a.id} className={`bg-white rounded-2xl p-5 border flex items-center justify-between shadow-sm ${isCheckDue ? 'border-amber-200 shadow-amber-50/50' : 'border-blue-50'}`}>
+                              <div>
+                                <p className="font-black text-slate-800">{a.tag}</p>
+                                <p className={`text-[10px] font-black uppercase tracking-wider ${isCheckDue ? 'text-amber-600' : 'text-blue-500'}`}>Day {daysSince} since insem</p>
+                              </div>
+                              <button
+                                onClick={() => { setPregnancyCheckTarget(a); setPregnancyCheckResult(''); setIsPregnancyCheckModalOpen(true); }}
+                                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider hover:bg-blue-700 transition-all shadow-md"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Preg Check
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Table Clinical Records List */}
+                  <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50/50 border-b border-slate-100">
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16 text-center">Sr. No</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Animal</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Type</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Prescription</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Condition Details</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredHealthEvents.map((event, index) => {
+                            const animal = animals.find(a => a.id === event.animalId);
+                            return (
+                              <tr key={event.id} className="hover:bg-slate-50 transition-colors group">
+                                <td className="px-8 py-6 text-xs font-black text-slate-400 text-center">{index + 1}</td>
+                                <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedAnimal(animal || null)}>
+                                  <span className="font-black text-slate-800 group-hover:text-blue-600">{animal?.tag || 'Unknown Tag'}</span>
+                                  <br />
+                                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                                    {animal?.status || 'Active'}
+                                  </span>
+                                </td>
+                                <td className="px-8 py-6">
+                                  <div className="flex flex-col">
+                                    <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tighter shadow-sm border inline-block w-fit ${event.type === HealthEventType.ILLNESS ? 'bg-rose-50 text-rose-600 border-rose-100' :
+                                        'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                      }`}>
+                                      {event.type}
+                                    </span>
+                                    <span className="text-[9px] text-slate-500 font-bold mt-1.5 uppercase tracking-wider">
+                                      {event.date}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-8 py-6">
+                                  {(event.treatments && event.treatments.length > 0 && event.treatments[0].name) ? (
+                                    <div className="space-y-1">
+                                      {event.treatments.map((t, idx) => (
+                                        <div key={idx} className="flex items-center gap-2">
+                                          <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                          <span className="text-xs font-black text-slate-700">{t.name || 'Unnamed'}</span>
+                                          <span className="text-[9px] font-black text-slate-400 uppercase ml-1">({t.dose || 'N/A'})</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : event.medication ? (
+                                    <div className="flex items-center gap-2">
+                                      <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                      <span className="text-xs font-black text-slate-700">{event.medication}</span>
+                                      <span className="text-[9px] font-black text-slate-400 uppercase ml-1">({event.dosage || 'N/A'})</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-slate-400 italic">No medication</span>
+                                  )}
+                                </td>
+                                <td className="px-8 py-6 max-w-[200px]">
+                                  <p className="text-xs text-slate-600 font-bold truncate" title={event.details}>{event.details || '--'}</p>
+                                  {event.technician && <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1 block">Tech: {dateUtils.normalizeName(event.technician)}</span>}
+
+                                  {event.treatmentDays && (() => {
+                                    const today = new Date().toISOString().split('T')[0];
+                                    const endDate = dateUtils.addDays(event.date, event.treatmentDays);
+                                    const daysInto = dateUtils.diffDays(today, event.date);
+                                    const daysLeft = dateUtils.diffDays(endDate, today);
+                                    const isActive = daysInto >= 0 && daysLeft >= 0;
+                                    return isActive ? (
+                                      <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md mt-2 inline-block">
+                                        {daysLeft} days active
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md mt-2 inline-block">
+                                        Done
+                                      </span>
+                                    );
+                                  })()}
+                                </td>
+                                <td className="px-8 py-6 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      onClick={() => {
+                                        const text = generateHealthEventShareText(event, animal?.tag || 'Unknown');
+                                        shareToWhatsApp(text);
+                                      }}
+                                      className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-colors"
+                                      title="Share on WhatsApp"
+                                    >
+                                      <MessageCircle className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setEditingHealthId(event.id);
+                                        const toEdit = { ...event };
+                                        if (!toEdit.treatments) {
+                                          if (toEdit.medication || toEdit.dosage) {
+                                            toEdit.treatments = [{ name: toEdit.medication || '', dose: toEdit.dosage || '' }];
+                                          } else {
+                                            toEdit.treatments = [{ name: '', dose: '' }];
+                                          }
+                                        }
+                                        setNewHealth(toEdit);
+                                        setTreatmentAnimalType('single');
+                                        const anim = animals.find((x: any) => x.id === event.animalId);
+                                        if (anim) setHealthAnimalSearch(anim.tag);
+                                        setIsHealthFormOpen(true);
+                                      }}
+                                      className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
+                                      title="Edit"
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => handleDeleteHealth(event, e)}
+                                      className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {filteredHealthEvents.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="px-8 py-12 text-center text-slate-400 font-bold text-sm">
+                                No health records found in this view.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 2: MEDICINE INVENTORY */}
+              {healthSubTab === 'inventory' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  {/* Inventory controls header */}
+                  <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    {/* Search bar */}
+                    <div className="relative flex-1 w-full">
+                      <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search medicines by name..."
+                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                        value={medInventorySearch}
+                        onChange={e => setMedInventorySearch(e.target.value)}
+                      />
+                    </div>
+                    
+                    {/* Category Filter */}
+                    <div className="w-full md:w-48">
+                      <select
+                        className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                        value={medInventoryCat}
+                        onChange={e => setMedInventoryCat(e.target.value)}
+                      >
+                        <option value="All">All Categories</option>
+                        <option value="Injection">💉 Injection</option>
+                        <option value="Liquid">🧴 Liquid</option>
+                        <option value="Powder">💊 Powder</option>
+                        <option value="Pill">💊 Pill</option>
+                        <option value="Topical">🧴 Topical</option>
+                        <option value="Other">📦 Other</option>
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setEditingMedicineId(null);
+                        setNewMedicine({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
+                        setIsMedicineFormOpen(true);
+                      }}
+                      className="w-full md:w-auto flex items-center justify-center gap-2 bg-rose-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md shadow-rose-100"
+                    >
+                      <Plus className="w-4 h-4" /> Add Medicine
+                    </button>
+                  </div>
+
+                  {/* Medicines Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {medicines
+                      .filter(m => {
+                        const matchesSearch = m.name.toLowerCase().includes(medInventorySearch.toLowerCase());
+                        const matchesCat = medInventoryCat === 'All' || m.category === medInventoryCat;
+                        return matchesSearch && matchesCat;
+                      })
+                      .map(m => {
+                        const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+                        const isLow = totalUnits < m.minStockLevel;
+
+                        return (
+                          <div
+                            key={m.id}
+                            className={`bg-white rounded-[2rem] p-6 border-2 transition-all shadow-sm flex flex-col justify-between ${
+                              isLow
+                                ? 'border-rose-400 bg-rose-50/10 shadow-rose-100/30'
+                                : 'border-slate-100 hover:border-slate-200'
+                            }`}
+                          >
+                            <div className="space-y-4">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <h4 className="text-lg font-black text-slate-800 tracking-tight">{m.name}</h4>
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    Category: {m.category}
+                                  </span>
+                                </div>
+                                {isLow ? (
+                                  <span className="flex items-center gap-1 bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                    <AlertTriangle className="w-3 h-3" /> Low Stock
+                                  </span>
+                                ) : (
+                                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                    Good Stock
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100/80">
+                                <div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Packs (Unopened)</p>
+                                  <p className="text-sm font-black text-slate-700">{m.packs} packs</p>
+                                  <p className="text-[9px] font-bold text-slate-400 italic">({m.loosePerPack} {m.unit} ea)</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Loose Qty (Open Pack)</p>
+                                  <p className="text-sm font-black text-slate-700">{m.loose} {m.unit}</p>
+                                </div>
+                              </div>
+
+                              <div className="flex justify-between items-center text-xs pt-1">
+                                <div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Inventory</p>
+                                  <p className={`text-lg font-black ${isLow ? 'text-rose-600' : 'text-slate-800'}`}>
+                                    {totalUnits} {m.unit}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Alert Limit</p>
+                                  <p className="font-bold text-slate-600">
+                                    {m.minStockLevel} {m.unit}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2 pt-5 mt-5 border-t border-slate-100">
+                              <button
+                                onClick={() => {
+                                  setEditingMedicineId(m.id);
+                                  setNewMedicine(m);
+                                  setIsMedicineFormOpen(true);
+                                }}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-800 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" /> Edit Stock
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setConfirmDialog({
+                                    isOpen: true,
+                                    message: `Are you sure you want to delete "${m.name}" from your active pharmacy database? This cannot be undone.`,
+                                    onConfirm: () => {
+                                      deleteMedicine(m.id);
+                                      setConfirmDialog(d => ({ ...d, isOpen: false }));
+                                      setToastMessage(`Removed "${m.name}" from active records.`);
+                                    }
+                                  });
+                                }}
+                                className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all flex items-center justify-center"
+                                title="Delete Medicine Record"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    {medicines.length === 0 && (
+                      <div className="col-span-full bg-white p-16 rounded-[2.5rem] border border-slate-100 text-center space-y-4">
+                        <Pill className="w-12 h-12 text-slate-300 mx-auto" />
+                        <h4 className="text-base font-black text-slate-700">No Medicines Registered</h4>
+                        <p className="text-xs text-slate-400 font-bold max-w-sm mx-auto uppercase tracking-wider leading-relaxed">
+                          Your pharmacy is empty! Register vaccines, antibiotics, and supplements to enable automated dose tracking.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 3: REPORTS & ANALYTICS */}
+              {healthSubTab === 'reports' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  {/* Period selector bar */}
+                  <div className="flex flex-col md:flex-row gap-6 justify-between items-center bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                    <div>
+                      <h4 className="text-lg font-black text-slate-800 tracking-tight">Medicine Consumption Analysis</h4>
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">View quantity reports across customized intervals</p>
+                    </div>
+
+                    <div className="flex bg-slate-50 border border-slate-100 p-1 rounded-xl shadow-inner">
+                      {(['daily', 'weekly', 'monthly', 'yearly'] as const).map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setReportsPeriod(p)}
+                          className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                            reportsPeriod === p
+                              ? 'bg-white text-rose-600 shadow-sm border border-slate-100'
+                              : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Graph visualization */}
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+                    <div>
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Active Stock Volume Administered</h4>
+                      <p className="text-[9px] text-slate-400 font-bold italic">Y-Axis unit represents medicine's standard measurement unit (ml, g, doses etc.)</p>
+                    </div>
+
+                    {usageChartData.length > 0 ? (
+                      <div className="h-[320px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={usageChartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                            <XAxis
+                              dataKey="period"
+                              stroke="#94a3b8"
+                              fontSize={10}
+                              fontWeight="bold"
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis
+                              stroke="#94a3b8"
+                              fontSize={10}
+                              fontWeight="bold"
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                background: '#1e293b',
+                                border: 'none',
+                                borderRadius: '1rem',
+                                color: '#ffffff',
+                                fontSize: '11px',
+                                fontWeight: 'bold'
+                              }}
+                            />
+                            {/* Dynamically draw a bar for each unique medicine in inventory */}
+                            {medicines.map((m, idx) => {
+                              const barColors = ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#f97316'];
+                              const color = barColors[idx % barColors.length];
+                              return (
+                                <Bar
+                                  key={m.id}
+                                  dataKey={m.name}
+                                  fill={color}
+                                  radius={[4, 4, 0, 0]}
+                                  maxBarSize={30}
+                                />
+                              );
+                            })}
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="h-[200px] flex flex-col items-center justify-center text-slate-400 font-bold space-y-2">
+                        <BarChart3 className="w-10 h-10 text-slate-300 animate-pulse" />
+                        <span className="text-xs uppercase tracking-widest">No treatment events found for this interval</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PREDICTIVE DEMAND FORECAST & BENTO CARDS */}
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Demand Prediction & Forecasts</h4>
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest px-1">Statistical forecast for the next 30 days based on past average usage</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {demandPredictions.map(item => {
+                        const isShort = item.shortfall > 0;
+                        return (
+                          <div
+                            key={item.medicine.id}
+                            className={`bg-white rounded-[2.5rem] p-6 border-2 flex flex-col justify-between shadow-sm transition-all ${
+                              isShort
+                                ? 'border-amber-200 bg-amber-50/5 shadow-amber-100/20'
+                                : 'border-slate-100'
+                            }`}
+                          >
+                            <div className="space-y-4">
+                              <div>
+                                <h4 className="text-base font-black text-slate-800">{item.medicine.name}</h4>
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                  Current Stock: {item.currentStock} {item.medicine.unit}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl text-center border border-slate-100">
+                                <div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Past 30d Use</p>
+                                  <p className="text-sm font-black text-slate-700">{item.pastUsage} {item.medicine.unit}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Projected 30d Demand</p>
+                                  <p className="text-sm font-black text-slate-700">{item.projected} {item.medicine.unit}</p>
+                                </div>
+                              </div>
+
+                              {isShort ? (
+                                <div className="p-3 bg-amber-100/50 rounded-xl border border-amber-200 text-xs text-amber-800 space-y-1.5 font-bold">
+                                  <p className="flex items-center gap-1.5 uppercase text-[9px] font-black tracking-wider text-amber-700">
+                                    <AlertTriangle className="w-3.5 h-3.5" /> Order Recommendation
+                                  </p>
+                                  <p className="leading-relaxed">
+                                    You may face a shortfall of <span className="font-black text-amber-950">{item.shortfall} {item.medicine.unit}</span> soon.
+                                  </p>
+                                  <p className="text-[10px] text-amber-600">
+                                    Recommend ordering <span className="font-black text-amber-950">{item.recommendedPacks}</span> unopened pack(s) of {item.medicine.name}.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-emerald-800 space-y-1 font-bold">
+                                  <p className="flex items-center gap-1.5 uppercase text-[9px] font-black tracking-wider text-emerald-700">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Stock Sufficient
+                                  </p>
+                                  <p className="leading-relaxed">
+                                    Your current inventory of {item.currentStock} {item.medicine.unit} is estimated to cover your usage for the next 30 days comfortably.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {demandPredictions.length === 0 && (
+                        <div className="col-span-full bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                          No registered medicines to predict forecasts for.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -3342,6 +4194,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           { id: 'repro', label: 'Reproduction Activity Log', icon: Activity },
                           { id: 'pd-check', label: 'Pregnancy Diagnosis (PD) Checks', icon: CheckCircle2 },
                           { id: 'health', label: 'Clinical & Treatment Records', icon: HeartPulse },
+                          { id: 'treatment-analysis', label: 'Treatment & Dosage Report', icon: ClipboardList },
+                          { id: 'medicine-inventory', label: 'Medicine Inventory Report', icon: Package },
+                          { id: 'low-stock', label: 'Low Stock Warnings Report', icon: AlertCircle },
+                          { id: 'demand-forecast', label: '30D Demand & Forecast Report', icon: TrendingUp },
                           { id: 'individual', label: 'Individual Focus Analysis', icon: Target }
                         ].map(type => (
                           <button
@@ -4540,44 +5396,165 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       </FormModal>
 
       
-      <FormModal title={editingHealthId ? "Edit Clinical Record" : "Clinical Discovery"} isOpen={isHealthFormOpen} onClose={() => { setIsHealthFormOpen(false); setHealthAnimalSearch(''); }}>
+      <FormModal title={editingHealthId ? "Edit Clinical Record" : "Clinical Discovery & Treatments"} isOpen={isHealthFormOpen} onClose={() => { setIsHealthFormOpen(false); setHealthAnimalSearch(''); setSelectedMultipleAnimals([]); }}>
         <form onSubmit={handleAddHealth} className="space-y-6">
-          {/* Patient Tag Searchable Autocomplete */}
-          <div className="space-y-2 relative">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Patient Cow Tag *</label>
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                required={!newHealth.animalId}
-                placeholder="Search and select patient..."
-                className="w-full pl-12 pr-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                value={healthAnimalSearch}
-                onChange={e => { setHealthAnimalSearch(e.target.value); setHealthAnimalDropdown(true); if (!e.target.value) setNewHealth({ ...newHealth, animalId: '' }); }}
-                onFocus={() => setHealthAnimalDropdown(true)}
-                disabled={!!editingHealthId}
-              />
-              {newHealth.animalId && <CheckCircle2 className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500" />}
+          {/* Patient Animal Selector: Single or Multiple */}
+          {!editingHealthId && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Patient Grouping Selection</label>
+              <div className="flex bg-slate-50 p-1.5 rounded-2xl border border-slate-100 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setTreatmentAnimalType('single')}
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                    treatmentAnimalType === 'single'
+                      ? 'bg-white text-rose-600 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Single Animal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTreatmentAnimalType('multiple')}
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                    treatmentAnimalType === 'multiple'
+                      ? 'bg-white text-rose-600 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Multiple Animals (Flock)
+                </button>
+              </div>
             </div>
-            {healthAnimalDropdown && healthAnimalSearch && !editingHealthId && (
-              <div className="absolute z-20 top-full mt-1 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                {animals.filter(a => a.tag.toLowerCase().includes(healthAnimalSearch.toLowerCase()) || (a.name && a.name.toLowerCase().includes(healthAnimalSearch.toLowerCase()))).slice(0, 8).map(a => (
-                  <button key={a.id} type="button"
-                    onClick={() => { setNewHealth({ ...newHealth, animalId: a.id }); setHealthAnimalSearch(a.tag); setHealthAnimalDropdown(false); }}
-                    className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left ${newHealth.animalId === a.id ? 'bg-rose-50' : ''}`}
-                  >
-                    <div>
-                      <p className="text-sm font-black text-slate-800">{a.tag}</p>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} • {a.breed}</p>
+          )}
+
+          {treatmentAnimalType === 'single' ? (
+            /* Patient Tag Searchable Autocomplete (Single) */
+            <div className="space-y-2 relative">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Patient Cow Tag *</label>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  required={!newHealth.animalId && treatmentAnimalType === 'single'}
+                  placeholder="Search and select patient..."
+                  className="w-full pl-12 pr-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                  value={healthAnimalSearch}
+                  onChange={e => { setHealthAnimalSearch(e.target.value); setHealthAnimalDropdown(true); if (!e.target.value) setNewHealth({ ...newHealth, animalId: '' }); }}
+                  onFocus={() => setHealthAnimalDropdown(true)}
+                  disabled={!!editingHealthId}
+                />
+                {newHealth.animalId && <CheckCircle2 className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500" />}
+              </div>
+              {healthAnimalDropdown && healthAnimalSearch && !editingHealthId && (
+                <div className="absolute z-30 top-full mt-1 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                  {animals.filter(a => a.tag.toLowerCase().includes(healthAnimalSearch.toLowerCase()) || (a.name && a.name.toLowerCase().includes(healthAnimalSearch.toLowerCase()))).slice(0, 8).map(a => (
+                    <button key={a.id} type="button"
+                      onClick={() => { setNewHealth({ ...newHealth, animalId: a.id }); setHealthAnimalSearch(a.tag); setHealthAnimalDropdown(false); }}
+                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left ${newHealth.animalId === a.id ? 'bg-rose-50' : ''}`}
+                    >
+                      <div>
+                        <p className="text-sm font-black text-slate-800">{a.tag}</p>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} • {a.breed}</p>
+                      </div>
+                      {newHealth.animalId === a.id && <Check className="w-4 h-4 text-rose-600" />}
+                    </button>
+                  ))}
+                  {animals.filter(a => a.tag.toLowerCase().includes(healthAnimalSearch.toLowerCase())).length === 0 && (
+                    <p className="text-center py-4 text-xs text-slate-400 font-bold">No animals found</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Multiple Animals Selection Layout */
+            <div className="space-y-3 p-4 bg-slate-50/50 border border-slate-100 rounded-[1.5rem] relative">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Multiple Animal Tags *</label>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Type tag to add to flock..."
+                  className="w-full pl-12 pr-5 py-3.5 bg-white border-none rounded-2xl text-sm font-black shadow-sm outline-none focus:ring-2 focus:ring-rose-500/20"
+                  value={medicineSearchQuery}
+                  onChange={e => { setMedicineSearchQuery(e.target.value); setActiveMedicineDropdownIdx(-99); }}
+                  onFocus={() => setActiveMedicineDropdownIdx(-99)}
+                />
+              </div>
+
+              {/* Match dropdown for flock selection */}
+              {activeMedicineDropdownIdx === -99 && medicineSearchQuery && (
+                <div className="absolute z-30 left-4 right-4 bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                  {animals.filter(a => !selectedMultipleAnimals.includes(a.id) && (a.tag.toLowerCase().includes(medicineSearchQuery.toLowerCase()) || (a.name && a.name.toLowerCase().includes(medicineSearchQuery.toLowerCase())))).slice(0, 8).map(a => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedMultipleAnimals(prev => [...prev, a.id]);
+                        setMedicineSearchQuery('');
+                        setActiveMedicineDropdownIdx(null);
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 text-left"
+                    >
+                      <div>
+                        <p className="text-sm font-black text-slate-800">{a.tag}</p>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} • {a.breed}</p>
+                      </div>
+                      <Plus className="w-4 h-4 text-emerald-600" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Selected Pills */}
+              <div className="flex flex-wrap gap-2 mt-2">
+                {selectedMultipleAnimals.map(id => {
+                  const anim = animals.find(a => a.id === id);
+                  return (
+                    <div key={id} className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 px-3 py-1.5 rounded-xl text-xs font-black text-rose-700">
+                      <span>{anim?.tag || 'Unk'}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMultipleAnimals(prev => prev.filter(x => x !== id))}
+                        className="hover:text-rose-950"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    {newHealth.animalId === a.id && <Check className="w-4 h-4 text-rose-600" />}
-                  </button>
-                ))}
-                {animals.filter(a => a.tag.toLowerCase().includes(healthAnimalSearch.toLowerCase())).length === 0 && (
-                  <p className="text-center py-4 text-xs text-slate-400 font-bold">No animals found</p>
+                  );
+                })}
+                {selectedMultipleAnimals.length === 0 && (
+                  <p className="text-[10px] font-bold text-slate-400 italic py-1">No animals added to temporary flock yet. Type above to add.</p>
                 )}
               </div>
-            )}
-          </div>
+              
+              {/* Quick Select Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-slate-100/50">
+                <button
+                  type="button"
+                  onClick={() => setSelectedMultipleAnimals(animals.map(a => a.id))}
+                  className="text-[9px] font-black text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-lg uppercase tracking-wider hover:bg-blue-100 transition-all"
+                >
+                  Select All Herd ({animals.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMultipleAnimals(animals.filter(a => a.status === AnimalStatus.SICK).map(a => a.id))}
+                  className="text-[9px] font-black text-rose-600 bg-rose-50 px-2.5 py-1.5 rounded-lg uppercase tracking-wider hover:bg-rose-100 transition-all"
+                >
+                  Select All Sick ({animals.filter(a => a.status === AnimalStatus.SICK).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMultipleAnimals([])}
+                  className="text-[9px] font-black text-slate-500 bg-slate-100 px-2.5 py-1.5 rounded-lg uppercase tracking-wider hover:bg-slate-200 transition-all ml-auto"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <select className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newHealth.type || HealthEventType.ILLNESS} onChange={e => setNewHealth({ ...newHealth, type: e.target.value as any })}>
               {Object.values(HealthEventType).map(t => <option key={t} value={t}>{t}</option>)}
@@ -4586,9 +5563,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           </div>
           <input className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="Technician / Veterinarian" value={newHealth.technician || ''} onChange={e => setNewHealth({ ...newHealth, technician: e.target.value })} />
           
-          <div className="space-y-3 p-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm">
+          {/* Treatments & Injections with search autocomplete */}
+          <div className="space-y-3 p-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm relative">
             <div className="flex items-center justify-between pl-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Treatments & Injections</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Treatments & Medicine Inventory Usage</label>
               <button
                 type="button"
                 onClick={() => {
@@ -4600,35 +5578,115 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 + Add Medicine
               </button>
             </div>
+
             {(!newHealth.treatments || newHealth.treatments.length === 0) && (
               <div className="grid grid-cols-2 gap-4">
                 <input className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner" placeholder="Medication (Optional)" value={newHealth.medication || ''} onChange={e => setNewHealth({ ...newHealth, medication: e.target.value })} />
                 <input className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner" placeholder="Dosage" value={newHealth.dosage || ''} onChange={e => setNewHealth({ ...newHealth, dosage: e.target.value })} />
               </div>
             )}
-            {newHealth.treatments?.map((treatment: any, idx: number) => (
-              <div key={idx} className="flex gap-2 relative group">
-                <input className="flex-1 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="Injection / Medication Name" value={treatment.name} onChange={e => {
-                  const t = [...(newHealth.treatments || [])];
-                  t[idx].name = e.target.value;
-                  setNewHealth({ ...newHealth, treatments: t });
-                }} />
-                <input className="w-1/3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="Dosage (e.g. 5ml)" value={treatment.dose} onChange={e => {
-                  const t = [...(newHealth.treatments || [])];
-                  t[idx].dose = e.target.value;
-                  setNewHealth({ ...newHealth, treatments: t });
-                }} />
-                {(newHealth.treatments && newHealth.treatments.length > 1) && (
-                  <button type="button" onClick={() => {
-                    const t = [...(newHealth.treatments || [])];
-                    t.splice(idx, 1);
-                    setNewHealth({ ...newHealth, treatments: t });
-                  }} className="w-10 flex-shrink-0 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+
+            {newHealth.treatments?.map((treatment: any, idx: number) => {
+              const matchedMedicine = medicines.find(m => m.name.toLowerCase() === treatment.name.toLowerCase());
+              const unitLabel = matchedMedicine?.unit || 'ml';
+              const filteredMedicines = medicines.filter(m => m.name.toLowerCase().includes(treatment.name.toLowerCase()));
+
+              return (
+                <div key={idx} className="space-y-2 relative group p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                  <div className="flex gap-2 items-center">
+                    {/* Medicine Autocomplete Selector */}
+                    <div className="flex-1 relative">
+                      <input
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner focus:ring-2 focus:ring-blue-500/20 outline-none"
+                        placeholder="Search Medicine Inventory..."
+                        value={treatment.name}
+                        onChange={e => {
+                          const t = [...(newHealth.treatments || [])];
+                          t[idx].name = e.target.value;
+                          setNewHealth({ ...newHealth, treatments: t });
+                          setActiveMedicineDropdownIdx(idx);
+                        }}
+                        onFocus={() => setActiveMedicineDropdownIdx(idx)}
+                      />
+                      {activeMedicineDropdownIdx === idx && treatment.name && (
+                        <div className="absolute z-30 top-full left-0 w-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl max-h-40 overflow-y-auto">
+                          {filteredMedicines.map(m => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => {
+                                const t = [...(newHealth.treatments || [])];
+                                t[idx].name = m.name;
+                                // Auto suggested default dose if not set
+                                if (!t[idx].dose) t[idx].dose = `5${m.unit}`;
+                                setNewHealth({ ...newHealth, treatments: t });
+                                setActiveMedicineDropdownIdx(null);
+                              }}
+                              className="w-full px-4 py-2 hover:bg-slate-50 transition-colors text-left text-xs font-black flex items-center justify-between"
+                            >
+                              <span>{m.name}</span>
+                              <span className="text-[9px] text-slate-400 uppercase font-bold">
+                                {m.packs} packs + {m.loose}{m.unit}
+                              </span>
+                            </button>
+                          ))}
+                          {filteredMedicines.length === 0 && (
+                            <p className="p-3 text-center text-[10px] text-slate-400 font-bold">No registered medicines found</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <input
+                      className="w-1/3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner focus:ring-2 focus:ring-blue-500/20 outline-none"
+                      placeholder={`Dosage (e.g. 5${unitLabel})`}
+                      value={treatment.dose}
+                      onChange={e => {
+                        const t = [...(newHealth.treatments || [])];
+                        t[idx].dose = e.target.value;
+                        setNewHealth({ ...newHealth, treatments: t });
+                      }}
+                    />
+
+                    {(newHealth.treatments && newHealth.treatments.length > 1) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = [...(newHealth.treatments || [])];
+                          t.splice(idx, 1);
+                          setNewHealth({ ...newHealth, treatments: t });
+                        }}
+                        className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-all flex items-center justify-center"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Dose Buttons */}
+                  <div className="flex gap-2 items-center pl-1">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Quick Dose:</span>
+                    {[2, 5, 10].map(val => {
+                      const quickDoseText = `${val}${unitLabel}`;
+                      return (
+                        <button
+                          type="button"
+                          key={val}
+                          onClick={() => {
+                            const t = [...(newHealth.treatments || [])];
+                            t[idx].dose = quickDoseText;
+                            setNewHealth({ ...newHealth, treatments: t });
+                          }}
+                          className="text-[9px] font-black px-2.5 py-1 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 text-slate-600 rounded-lg transition-all"
+                        >
+                          {quickDoseText}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <textarea className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" rows={3} placeholder="Clinical symptoms..." value={newHealth.details || ''} onChange={e => setNewHealth({ ...newHealth, details: e.target.value })} />
           <div className="space-y-2">
@@ -4673,6 +5731,111 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           </div>
           <button type="submit" className="w-full py-5 bg-rose-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-100">
             {editingHealthId ? "Save Changes" : "Save Clinical Record"}
+          </button>
+        </form>
+      </FormModal>
+
+      {/* Medicine FormModal */}
+      <FormModal title={editingMedicineId ? "Edit Medicine Stock" : "Register New Medicine"} isOpen={isMedicineFormOpen} onClose={() => { setIsMedicineFormOpen(false); setEditingMedicineId(null); }}>
+        <form onSubmit={handleAddMedicineSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Medicine Name *</label>
+            <input
+              required
+              placeholder="e.g. Oxytetracycline LA"
+              className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+              value={newMedicine.name || ''}
+              onChange={e => setNewMedicine({ ...newMedicine, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Category</label>
+              <select
+                className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
+                value={newMedicine.category || 'Injection'}
+                onChange={e => setNewMedicine({ ...newMedicine, category: e.target.value as any })}
+              >
+                <option value="Injection">💉 Injection</option>
+                <option value="Liquid">🧴 Liquid</option>
+                <option value="Powder">💊 Powder</option>
+                <option value="Pill">💊 Pill</option>
+                <option value="Topical">🧴 Topical</option>
+                <option value="Other">📦 Other</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Measurement Unit</label>
+              <select
+                className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
+                value={newMedicine.unit || 'ml'}
+                onChange={e => setNewMedicine({ ...newMedicine, unit: e.target.value as any })}
+              >
+                <option value="ml">ml (Milliliters)</option>
+                <option value="dose">dose (Doses)</option>
+                <option value="g">g (Grams)</option>
+                <option value="pill">pill (Pills)</option>
+                <option value="bottle">bottle (Bottles)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="p-5 bg-slate-50/50 rounded-2xl border border-slate-100/80 space-y-4">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stock Configuration</h4>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Unopened Packs</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold shadow-sm"
+                  value={newMedicine.packs ?? 0}
+                  onChange={e => setNewMedicine({ ...newMedicine, packs: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Capacity / Pack</label>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 100 ml"
+                  className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold shadow-sm"
+                  value={newMedicine.loosePerPack ?? 100}
+                  onChange={e => setNewMedicine({ ...newMedicine, loosePerPack: parseInt(e.target.value) || 100 })}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Loose Qty (Open Pack)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold shadow-sm"
+                  value={newMedicine.loose ?? 0}
+                  onChange={e => setNewMedicine({ ...newMedicine, loose: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
+            <p className="text-[9px] text-slate-400 font-bold italic">
+              Total stock: {((newMedicine.packs || 0) * (newMedicine.loosePerPack || 100)) + (newMedicine.loose || 0)} {newMedicine.unit || 'ml'}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Min Stock Alert Level (Total Units)</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="Warn me when stock falls below e.g. 50"
+              className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
+              value={newMedicine.minStockLevel ?? 50}
+              onChange={e => setNewMedicine({ ...newMedicine, minStockLevel: parseFloat(e.target.value) || 0 })}
+            />
+            <p className="text-[10px] text-slate-400 font-bold px-1">⚠️ Warning alerts will display if total inventory drops below this number.</p>
+          </div>
+
+          <button type="submit" className="w-full py-5 bg-rose-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-100">
+            {editingMedicineId ? "Update Stock" : "Register Medicine"}
           </button>
         </form>
       </FormModal>
@@ -5126,9 +6289,6 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  // Device emulator preview state
-  const [previewMode, setPreviewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -5230,74 +6390,9 @@ export default function App() {
     );
   }
 
-  const isSimulated = previewMode !== 'desktop';
-
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col font-inter">
-      {/* Device Emulator Control Bar */}
-      <div className="bg-slate-900 text-slate-100 px-6 py-3 flex flex-wrap items-center justify-between border-b border-slate-800 text-xs font-black uppercase tracking-widest sticky top-0 z-[500] shadow-md shrink-0 select-none">
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-slate-300">Layout Preview Mode</span>
-        </div>
-        <div className="flex bg-slate-800 p-1 rounded-2xl gap-1">
-          <button 
-            onClick={() => setPreviewMode('desktop')} 
-            className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${previewMode === 'desktop' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-          >
-            <Monitor className="w-4 h-4" /> <span className="hidden sm:inline">Desktop</span>
-          </button>
-          <button 
-            onClick={() => setPreviewMode('tablet')} 
-            className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${previewMode === 'tablet' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-          >
-            <Tablet className="w-4 h-4" /> <span className="hidden sm:inline">Tablet</span>
-          </button>
-          <button 
-            onClick={() => setPreviewMode('mobile')} 
-            className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${previewMode === 'mobile' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-          >
-            <Smartphone className="w-4 h-4" /> <span className="hidden sm:inline">Mobile</span>
-          </button>
-        </div>
-        <div className="hidden md:block text-slate-500 text-[10px]">
-          Active Viewport: <span className="text-blue-400 font-bold">{previewMode === 'desktop' ? 'Desktop' : previewMode === 'tablet' ? 'Tablet (768px)' : 'Mobile (375px)'}</span>
-        </div>
-      </div>
-
-      {isSimulated ? (
-        <div className="flex-1 bg-slate-950 flex items-center justify-center py-10 px-4 min-h-[calc(100vh-53px)] overflow-auto bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]">
-          {/* Simulated Device Frame */}
-          <div 
-            className={`bg-white border-[14px] border-slate-900 rounded-[3.5rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden flex flex-col transition-all duration-500 simulated-device-frame ${
-              previewMode === 'mobile' ? 'w-[375px] h-[812px]' : 'w-[768px] h-[1024px]'
-            }`}
-          >
-            {/* Device Status Bar */}
-            <div className="bg-white px-8 py-2.5 border-b border-slate-100 flex items-center justify-between text-[10px] font-black text-slate-400 shrink-0 select-none relative z-[120]">
-              <div>09:41</div>
-              {previewMode === 'mobile' && (
-                <div className="w-24 h-4 bg-slate-900 rounded-full absolute left-1/2 -translate-x-1/2 top-1" />
-              )}
-              <div className="flex items-center gap-1.5 font-bold">
-                <span>5G</span>
-                <div className="w-5 h-2.5 border border-slate-400 rounded-sm p-[1px] flex items-center">
-                  <div className="h-full w-4 bg-slate-400 rounded-2xs" />
-                </div>
-              </div>
-            </div>
-
-            {/* Simulated Device Screen Content */}
-            <div className="flex-1 overflow-hidden relative flex flex-col">
-              <MainApp user={user} onLogout={handleLogout} previewMode={previewMode} />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col bg-[#F8FAFC]">
-          <MainApp user={user} onLogout={handleLogout} previewMode={previewMode} />
-        </div>
-      )}
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+      <MainApp user={user} onLogout={handleLogout} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Animal, ReproductionEvent, HealthEvent, Alert, FarmSettings, ProtocolEnrollment, ProtocolTemplate, ReproEventType, AnimalStatus } from '../types';
+import { Animal, ReproductionEvent, HealthEvent, Alert, FarmSettings, ProtocolEnrollment, ProtocolTemplate, ReproEventType, AnimalStatus, Medicine } from '../types';
 import { storageService, DEFAULT_SETTINGS } from '../services/storage';
 import { computeAnimalStatus, generateAlerts, dateUtils } from '../services/businessLogic';
 import { PREDEFINED_PROTOCOLS } from '../data';
@@ -9,6 +9,7 @@ export const useFarm = () => {
   const [animals, setAnimals] = useState<Animal[]>([]);
   const [reproEvents, setReproEvents] = useState<ReproductionEvent[]>([]);
   const [healthEvents, setHealthEvents] = useState<HealthEvent[]>([]);
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [enrollments, setEnrollments] = useState<ProtocolEnrollment[]>([]);
   const [customProtocols, setCustomProtocols] = useState<ProtocolTemplate[]>([]);
   const [settings, setSettings] = useState<FarmSettings>(DEFAULT_SETTINGS);
@@ -26,6 +27,7 @@ export const useFarm = () => {
         const fetchedAnimals = await storageService.getAnimals();
         const fetchedReproEvents = await storageService.getReproEvents();
         const fetchedHealthEvents = await storageService.getHealthEvents();
+        const fetchedMedicines = await storageService.getMedicines();
         const fetchedEnrollments = await storageService.getEnrollments();
         const fetchedCustomProtocols = await storageService.getCustomProtocols();
         const fetchedSettings = await storageService.getSettings();
@@ -33,6 +35,7 @@ export const useFarm = () => {
         setAnimals(fetchedAnimals);
         setReproEvents(fetchedReproEvents);
         setHealthEvents(fetchedHealthEvents);
+        setMedicines(fetchedMedicines);
         setEnrollments(fetchedEnrollments);
         setCustomProtocols(fetchedCustomProtocols);
         setSettings(fetchedSettings);
@@ -58,6 +61,10 @@ export const useFarm = () => {
   useEffect(() => {
     if (!loading && healthEvents.length) storageService.saveHealthEvents(healthEvents);
   }, [healthEvents, loading]);
+
+  useEffect(() => {
+    if (!loading && medicines.length) storageService.saveMedicines(medicines);
+  }, [medicines, loading]);
 
   useEffect(() => {
     if (!loading) storageService.saveEnrollments(enrollments);
@@ -148,6 +155,11 @@ export const useFarm = () => {
   const updateHealthEvent = (updated: HealthEvent) => setHealthEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
   const deleteHealthEvent = (id: string) => setHealthEvents(prev => prev.filter(e => e.id !== id));
 
+  const addMedicine = (m: Medicine) => setMedicines(prev => [m, ...prev]);
+  const updateMedicine = (updated: Medicine) => setMedicines(prev => prev.map(m => m.id === updated.id ? updated : m));
+  const deleteMedicine = (id: string) => setMedicines(prev => prev.filter(m => m.id !== id));
+  const saveMedicinesDirectly = (m: Medicine[]) => setMedicines(m);
+
   const addEnrollment = (e: ProtocolEnrollment) => setEnrollments(prev => [e, ...prev]);
   const updateEnrollment = (updated: ProtocolEnrollment) => setEnrollments(prev => prev.map(e => e.id === updated.id ? updated : e));
   const deleteEnrollment = (id: string) => setEnrollments(prev => prev.filter(e => e.id !== id));
@@ -162,6 +174,7 @@ export const useFarm = () => {
     animals: animalsWithStatus,
     reproEvents,
     healthEvents,
+    medicines,
     enrollments,
     protocols: allTemplates,
     customProtocols,
@@ -177,6 +190,10 @@ export const useFarm = () => {
     addHealthEvent,
     updateHealthEvent,
     deleteHealthEvent,
+    addMedicine,
+    updateMedicine,
+    deleteMedicine,
+    saveMedicinesDirectly,
     addEnrollment,
     updateEnrollment,
     deleteEnrollment,

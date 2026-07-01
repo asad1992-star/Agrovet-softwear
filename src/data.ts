@@ -1,5 +1,5 @@
 
-import { AnimalStatus, Animal, ReproductionEvent, HealthEvent, Alert, ReproEventType, HealthEventType, ProtocolTemplate } from './types';
+import { AnimalStatus, Animal, ReproductionEvent, HealthEvent, Alert, ReproEventType, HealthEventType, ProtocolTemplate, Medicine } from './types';
 
 export const PREDEFINED_PROTOCOLS: ProtocolTemplate[] = [
   {
@@ -84,4 +84,13 @@ export const MOCK_HEALTH_EVENTS: HealthEvent[] = [
 
 export const MOCK_ALERTS: Alert[] = [
   { id: 'a1', type: 'Repro', title: 'Pregnancy Check Due', description: 'Daisy (TAG-002) is due for 30-day ultrasound.', dueDate: '2024-01-20', animalId: '2', isRead: false, priority: 'High' },
+];
+
+export const MOCK_MEDICINES: Medicine[] = [
+  { id: 'm1', name: 'Oxytetracycline LA', category: 'Injection', unit: 'ml', packs: 3, loose: 40, loosePerPack: 100, minStockLevel: 100 },
+  { id: 'm2', name: 'Penicillin G', category: 'Injection', unit: 'ml', packs: 5, loose: 15, loosePerPack: 100, minStockLevel: 120 },
+  { id: 'm3', name: 'Masti-Clear Syringe', category: 'Liquid', unit: 'dose', packs: 10, loose: 4, loosePerPack: 12, minStockLevel: 24 },
+  { id: 'm4', name: 'Borgal 24%', category: 'Injection', unit: 'ml', packs: 2, loose: 80, loosePerPack: 100, minStockLevel: 100 },
+  { id: 'm5', name: 'Dewormer Oral drench', category: 'Liquid', unit: 'ml', packs: 1, loose: 500, loosePerPack: 1000, minStockLevel: 500 },
+  { id: 'm6', name: 'Sulfa-Trim Powder', category: 'Powder', unit: 'dose', packs: 4, loose: 10, loosePerPack: 50, minStockLevel: 50 }
 ];

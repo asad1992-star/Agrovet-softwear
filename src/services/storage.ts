@@ -1,5 +1,5 @@
-import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate } from '../types';
-import { MOCK_ANIMALS, MOCK_REPRO_EVENTS, MOCK_HEALTH_EVENTS, PREDEFINED_PROTOCOLS } from '../data';
+import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, Medicine } from '../types';
+import { MOCK_ANIMALS, MOCK_REPRO_EVENTS, MOCK_HEALTH_EVENTS, PREDEFINED_PROTOCOLS, MOCK_MEDICINES } from '../data';
 import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -9,7 +9,8 @@ const KEYS = {
   HEALTH: 'agrovet_health',
   SETTINGS: 'asad_settings',
   ENROLLMENTS: 'agrovet_enrollments',
-  PROTOCOLS: 'agrovet_protocols'
+  PROTOCOLS: 'agrovet_protocols',
+  MEDICINES: 'agrovet_medicines'
 };
 
 export const DEFAULT_SETTINGS: FarmSettings = {
@@ -75,6 +76,9 @@ export const storageService = {
 
   getCustomProtocols: () => getFromFirebase<ProtocolTemplate[]>(KEYS.PROTOCOLS, []),
   saveCustomProtocols: (data: ProtocolTemplate[]) => saveToFirebase(KEYS.PROTOCOLS, data),
+
+  getMedicines: () => getFromFirebase<Medicine[]>(KEYS.MEDICINES, MOCK_MEDICINES),
+  saveMedicines: (data: Medicine[]) => saveToFirebase(KEYS.MEDICINES, data),
 
   getSettings: async () => {
     try {

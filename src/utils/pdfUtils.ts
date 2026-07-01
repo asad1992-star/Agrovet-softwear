@@ -9,7 +9,8 @@ import {
   ProtocolEnrollment, 
   ProtocolTemplate, 
   ReproEventType, 
-  AnimalStatus
+  AnimalStatus,
+  Medicine
 } from '../types';
 import { dateUtils } from '../services/businessLogic';
 
@@ -381,4 +382,167 @@ export const generatePdCheckSectionReport = (
   });
 
   doc.save('PD_Check_Report.pdf');
+};
+
+export const generateTreatmentAnalysisReport = (
+  events: HealthEvent[],
+  animals: Animal[],
+  settings?: FarmSettings,
+  rangeLabel: string = 'Full Record'
+) => {
+  const doc = new jsPDF();
+  addHeader(doc, `Treatment & Dosage Usage Report | ${rangeLabel}`, settings);
+
+  // Summary Metrics
+  const totalTreatments = events.length;
+  const uniqueMedicines = Array.from(new Set(events.map(e => e.medication).filter(Boolean)));
+  const uniquePatients = Array.from(new Set(events.map(e => e.animalId)));
+
+  doc.setFontSize(11);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Total Recorded Treatments: ${totalTreatments} | Unique Medications: ${uniqueMedicines.length} | Unique Animals Treated: ${uniquePatients.length}`, 14, 42);
+
+  autoTable(doc, {
+    startY: 47,
+    head: [['Date', 'Tag', 'Treatment Type', 'Medication/Dose', 'Vet/Tech', 'Status/Details']],
+    body: events.map(e => {
+      const animal = animals.find(a => a.id === e.animalId);
+      const medicationDisplay = [
+        e.medication,
+        ...(e.treatments?.map(t => `${t.name} (${t.dose})`) || [])
+      ].filter(Boolean).join(', ') || '-';
+      
+      const detailsText = [
+        e.details,
+        e.treatmentDays ? `${e.treatmentDays} days` : '',
+        e.numberOfDoses ? `${e.completedDoses || 0}/${e.numberOfDoses} doses` : ''
+      ].filter(Boolean).join(' - ');
+
+      return [
+        e.date,
+        animal?.tag || 'Unk',
+        e.type,
+        medicationDisplay,
+        e.technician || '-',
+        detailsText || '-'
+      ];
+    }),
+    headStyles: { fillColor: [14, 116, 144] } // Cyan-700
+  });
+
+  doc.save(`Treatment_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+export const generateMedicineInventoryReport = (
+  medicines: Medicine[],
+  settings?: FarmSettings
+) => {
+  const doc = new jsPDF();
+  addHeader(doc, `Medicine Inventory Report`, settings);
+
+  const totalMedicines = medicines.length;
+  const lowStockCount = medicines.filter(m => ((m.packs * m.loosePerPack) + m.loose) < m.minStockLevel).length;
+
+  doc.setFontSize(11);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Total Registered Medicines: ${totalMedicines} | Low Stock Warnings: ${lowStockCount}`, 14, 42);
+
+  autoTable(doc, {
+    startY: 47,
+    head: [['Medicine Name', 'Category', 'Unit', 'Packs', 'Loose Units', 'Total Stock', 'Min Level', 'Status']],
+    body: medicines.map(m => {
+      const totalStock = (m.packs * m.loosePerPack) + m.loose;
+      const isLow = totalStock < m.minStockLevel;
+      return [
+        m.name,
+        m.category,
+        m.unit,
+        `${m.packs} pack(s)`,
+        `${m.loose} ${m.unit}`,
+        `${totalStock} ${m.unit}`,
+        `${m.minStockLevel} ${m.unit}`,
+        isLow ? '⚠️ LOW STOCK' : '🟢 OK'
+      ];
+    }),
+    headStyles: { fillColor: [13, 148, 136] } // Teal-600
+  });
+
+  doc.save(`Medicine_Inventory_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+export const generateLowStockReport = (
+  medicines: Medicine[],
+  settings?: FarmSettings
+) => {
+  const doc = new jsPDF();
+  addHeader(doc, `Low Stock & Alert Report`, settings);
+
+  const lowStockMedicines = medicines.filter(m => {
+    const totalStock = (m.packs * m.loosePerPack) + m.loose;
+    return totalStock < m.minStockLevel;
+  });
+
+  doc.setFontSize(11);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Identified Low Stock Items: ${lowStockMedicines.length} / ${medicines.length}`, 14, 42);
+
+  autoTable(doc, {
+    startY: 47,
+    head: [['Medicine Name', 'Category', 'Current Stock', 'Min Stock Level', 'Shortfall', 'Replenish Recommend']],
+    body: lowStockMedicines.map(m => {
+      const totalStock = (m.packs * m.loosePerPack) + m.loose;
+      const shortfall = m.minStockLevel - totalStock;
+      const recommendedPacks = m.loosePerPack > 0 ? Math.ceil(shortfall / m.loosePerPack) : 0;
+      return [
+        m.name,
+        m.category,
+        `${totalStock} ${m.unit}`,
+        `${m.minStockLevel} ${m.unit}`,
+        `${shortfall} ${m.unit}`,
+        recommendedPacks > 0 ? `Order min ${recommendedPacks} pack(s)` : 'Order custom units'
+      ];
+    }),
+    headStyles: { fillColor: [217, 119, 6] } // Amber-600
+  });
+
+  doc.save(`Low_Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+export const generateDemandForecastReport = (
+  predictions: {
+    medicine: Medicine;
+    pastUsage: number;
+    projected: number;
+    currentStock: number;
+    shortfall: number;
+    recommendedPacks: number;
+  }[],
+  settings?: FarmSettings
+) => {
+  const doc = new jsPDF();
+  addHeader(doc, `Medicine Demand & Forecast Report (30-Day Outlook)`, settings);
+
+  const shortageItems = predictions.filter(p => p.shortfall > 0).length;
+
+  doc.setFontSize(11);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Analyzed Medicines: ${predictions.length} | Projected Stockout Risks: ${shortageItems}`, 14, 42);
+
+  autoTable(doc, {
+    startY: 47,
+    head: [['Medicine Name', 'Current Stock', 'Last 30D Usage', 'Projected Demand', 'Projected Shortfall', 'Order Recommendation']],
+    body: predictions.map(p => {
+      return [
+        p.medicine.name,
+        `${p.currentStock} ${p.medicine.unit}`,
+        `${p.pastUsage} ${p.medicine.unit}`,
+        `${p.projected} ${p.medicine.unit}`,
+        p.shortfall > 0 ? `${p.shortfall} ${p.medicine.unit} ⚠️` : '0 (Comfortable) 🟢',
+        p.recommendedPacks > 0 ? `Order ${p.recommendedPacks} pack(s)` : 'No order needed'
+      ];
+    }),
+    headStyles: { fillColor: [79, 70, 229] } // Indigo-600
+  });
+
+  doc.save(`Medicine_Demand_Forecast_${new Date().toISOString().split('T')[0]}.pdf`);
 };
