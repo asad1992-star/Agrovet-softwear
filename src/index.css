@@ -1,1 +1,40 @@
 @import "tailwindcss";
+
+@layer base {
+  :root {
+    --safe-area-inset-top: env(safe-area-inset-top, 0px);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-inset-left: env(safe-area-inset-left, 0px);
+    --safe-area-inset-right: env(safe-area-inset-right, 0px);
+  }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+    touch-action: manipulation;
+  }
+}
+
+/* Mobile-friendly smooth scrolling & touch momentum */
+.overflow-y-auto, .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbar for clean mobile tabs while keeping scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom touch feedback */
+.touch-btn {
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+.touch-btn:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}

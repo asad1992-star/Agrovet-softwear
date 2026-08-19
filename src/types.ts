@@ -158,3 +158,18 @@ export interface Medicine {
   loosePerPack: number; // size of a full pack (e.g. 100ml per bottle)
   minStockLevel: number; // e.g. 50 (in total equivalent units, or packs, or loose)
 }
+
+export interface MedicinePurchase {
+  id: string;
+  medicineId: string;
+  medicineName: string;
+  date: string;
+  packs: number;
+  loose: number;
+  totalUnits: number;
+  supplier?: string;
+  batchNumber?: string;
+  expiryDate?: string;
+  notes?: string;
+  recordedBy?: string;
+}

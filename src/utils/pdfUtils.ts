@@ -10,7 +10,8 @@ import {
   ProtocolTemplate, 
   ReproEventType, 
   AnimalStatus,
-  Medicine
+  Medicine,
+  MedicinePurchase
 } from '../types';
 import { dateUtils } from '../services/businessLogic';
 
@@ -545,4 +546,103 @@ export const generateDemandForecastReport = (
   });
 
   doc.save(`Medicine_Demand_Forecast_${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+export const generateMedicineHistoryReport = (
+  medicine: Medicine,
+  purchases: MedicinePurchase[],
+  usages: {
+    date: string;
+    animalTag: string;
+    animalName: string;
+    dose: string;
+    type: string;
+    details: string;
+    technician: string;
+  }[],
+  settings?: FarmSettings
+) => {
+  const doc = new jsPDF();
+  addHeader(doc, `Medicine Audit & History: ${medicine.name}`, settings);
+
+  const totalStock = (medicine.packs * medicine.loosePerPack) + medicine.loose;
+  const totalPurchasedUnits = purchases.reduce((acc, p) => acc + (p.totalUnits || ((p.packs * medicine.loosePerPack) + p.loose)), 0);
+
+  // Summary box
+  doc.setFontSize(10);
+  doc.setTextColor(30, 41, 59);
+  doc.text(`Category: ${medicine.category} | Standard Unit: ${medicine.unit} | Pack Size: ${medicine.loosePerPack} ${medicine.unit}/pack`, 14, 42);
+  doc.text(`Current Stock: ${medicine.packs} packs + ${medicine.loose} ${medicine.unit} (${totalStock} ${medicine.unit} total) | Min Level: ${medicine.minStockLevel} ${medicine.unit}`, 14, 48);
+  doc.text(`Lifetime Restocked: ${totalPurchasedUnits} ${medicine.unit} (${purchases.length} restock batches) | Clinical Treatment Events: ${usages.length}`, 14, 54);
+
+  // Section 1: Purchase History
+  doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text('1. Purchase & Restock History', 14, 64);
+
+  autoTable(doc, {
+    startY: 68,
+    head: [['Date', 'Supplier', 'Packs Added', 'Volume Added', 'Batch #', 'Expiry Date', 'Recorded By']],
+    body: purchases.length > 0 
+      ? purchases.map(p => [
+          p.date,
+          p.supplier || 'N/A',
+          `${p.packs} pk`,
+          `${p.totalUnits || ((p.packs * medicine.loosePerPack) + p.loose)} ${medicine.unit}`,
+          p.batchNumber || '-',
+          p.expiryDate || '-',
+          p.recordedBy || 'Staff'
+        ])
+      : [['No purchase records logged', '-', '-', '-', '-', '-', '-']],
+    headStyles: { fillColor: [16, 185, 129] } // Emerald-600
+  });
+
+  // Section 2: Clinical Usage History
+  const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 12 : 120;
+  
+  // Check if we need a new page
+  if (finalY > 230) {
+    doc.addPage();
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text('2. Clinical Administration & Usage History', 14, 20);
+    autoTable(doc, {
+      startY: 24,
+      head: [['Date', 'Animal Tag', 'Animal Name', 'Dose Given', 'Health Category', 'Diagnosis & Notes', 'Technician']],
+      body: usages.length > 0
+        ? usages.map(u => [
+            u.date,
+            u.animalTag,
+            u.animalName || '-',
+            u.dose,
+            u.type,
+            u.details,
+            u.technician || '-'
+          ])
+        : [['No clinical usage records logged', '-', '-', '-', '-', '-', '-']],
+      headStyles: { fillColor: [59, 130, 246] } // Blue-600
+    });
+  } else {
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text('2. Clinical Administration & Usage History', 14, finalY);
+    autoTable(doc, {
+      startY: finalY + 4,
+      head: [['Date', 'Animal Tag', 'Animal Name', 'Dose Given', 'Health Category', 'Diagnosis & Notes', 'Technician']],
+      body: usages.length > 0
+        ? usages.map(u => [
+            u.date,
+            u.animalTag,
+            u.animalName || '-',
+            u.dose,
+            u.type,
+            u.details,
+            u.technician || '-'
+          ])
+        : [['No clinical usage records logged', '-', '-', '-', '-', '-', '-']],
+      headStyles: { fillColor: [59, 130, 246] } // Blue-600
+    });
+  }
+
+  doc.save(`${medicine.name.replace(/\s+/g, '_')}_History_${new Date().toISOString().split('T')[0]}.pdf`);
 };

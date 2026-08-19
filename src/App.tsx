@@ -87,8 +87,10 @@ import {
   ProtocolEnrollment,
   ProtocolTemplate,
   ProtocolStep,
-  Medicine
+  Medicine,
+  MedicinePurchase
 } from './types';
+import { MedicineHistoryModal } from './components/MedicineHistoryModal';
 import { validations, dateUtils } from './services/businessLogic';
 import {
   generateReproSectionReport,
@@ -116,23 +118,23 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, on
 
 const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any) => (
   <div
-    className={`bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ${onClick ? 'cursor-pointer hover:border-blue-200 active:scale-95' : ''}`}
+    className={`bg-white p-4 sm:p-6 rounded-2xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ${onClick ? 'cursor-pointer hover:border-blue-200 active:scale-95' : ''}`}
     onClick={onClick}
   >
-    <div className="flex items-center justify-between mb-4">
-      <div className={`p-4 rounded-3xl ${colorClass} bg-opacity-10 shadow-inner`}>
-        <Icon className={`w-7 h-7 ${colorClass.replace('bg-', 'text-')}`} />
+    <div className="flex items-center justify-between mb-2 sm:mb-4">
+      <div className={`p-2.5 sm:p-4 rounded-xl sm:rounded-3xl ${colorClass} bg-opacity-10 shadow-inner flex items-center justify-center`}>
+        <Icon className={`w-5 h-5 sm:w-7 sm:h-7 ${colorClass.replace('bg-', 'text-')}`} />
       </div>
       {trend && (
-        <span className="text-[10px] font-black px-3 py-1.5 rounded-full bg-slate-50 text-slate-400 border border-slate-100 uppercase tracking-tighter">
+        <span className="text-[8px] sm:text-[10px] font-black px-2 sm:px-3 py-1 sm:py-1.5 rounded-full bg-slate-50 text-slate-500 border border-slate-100 uppercase tracking-tighter truncate max-w-[120px]">
           {trend}
         </span>
       )}
     </div>
     <div>
-      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">{title}</p>
-      <h3 className="text-4xl font-black text-slate-800">{value}</h3>
-      {onClick && <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-1">Tap to view →</p>}
+      <p className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">{title}</p>
+      <h3 className="text-2xl sm:text-4xl font-black text-slate-800 tracking-tight">{value}</h3>
+      {onClick && <p className="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-widest mt-1">Tap to view →</p>}
     </div>
   </div>
 );
@@ -140,15 +142,15 @@ const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any)
 const FormModal = ({ title, isOpen, onClose, children }: any) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-      <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h3 className="text-xl font-black text-slate-800">{title}</h3>
-          <button onClick={onClose} className="p-3 hover:bg-slate-200 rounded-2xl transition-all">
-            <X className="w-6 h-6 text-slate-500" />
+    <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-md">
+      <div className="bg-white w-full max-w-lg rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in duration-200 flex flex-col max-h-[92vh] sm:max-h-[85vh]">
+        <div className="px-5 sm:px-8 py-4 sm:py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
+          <h3 className="text-lg sm:text-xl font-black text-slate-800 truncate pr-2">{title}</h3>
+          <button onClick={onClose} className="p-2 sm:p-3 hover:bg-slate-200 rounded-xl sm:rounded-2xl transition-all">
+            <X className="w-5 h-5 sm:w-6 sm:h-6 text-slate-500" />
           </button>
         </div>
-        <div className="p-8 max-h-[80vh] overflow-y-auto">
+        <div className="p-5 sm:p-8 overflow-y-auto overscroll-contain">
           {children}
         </div>
       </div>
@@ -209,6 +211,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     reproEvents,
     healthEvents,
     medicines,
+    purchases,
     enrollments,
     protocols,
     customProtocols,
@@ -228,6 +231,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     updateMedicine,
     deleteMedicine,
     saveMedicinesDirectly,
+    addPurchase,
+    updatePurchase,
+    deletePurchase,
     addEnrollment,
     updateEnrollment,
     deleteEnrollment,
@@ -339,10 +345,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [selectedBadgeDate, setSelectedBadgeDate] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dashboardChartType, setDashboardChartType] = useState<'repro' | 'health' | 'conception'>('repro');
+  const [isMobileQuickActionsOpen, setIsMobileQuickActionsOpen] = useState(false);
 
   // Medicine Inventory & Usage states
   const [healthSubTab, setHealthSubTab] = useState<'treatments' | 'inventory' | 'reports'>('treatments');
   const [isMedicineFormOpen, setIsMedicineFormOpen] = useState(false);
+  const [selectedMedicineForHistory, setSelectedMedicineForHistory] = useState<Medicine | null>(null);
   const [newMedicine, setNewMedicine] = useState<Partial<Medicine>>({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
   const [editingMedicineId, setEditingMedicineId] = useState<string | null>(null);
   const [medicineSearchQuery, setMedicineSearchQuery] = useState('');
@@ -350,6 +358,28 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [selectedMultipleAnimals, setSelectedMultipleAnimals] = useState<string[]>([]);
   const [activeMedicineDropdownIdx, setActiveMedicineDropdownIdx] = useState<number | null>(null);
   const [lowStockAlerts, setLowStockAlerts] = useState<{ id: string; msg: string }[]>([]);
+
+  const handleAddPurchaseWithStockUpdate = (purchase: MedicinePurchase, autoUpdateStock: boolean) => {
+    addPurchase(purchase);
+    if (autoUpdateStock) {
+      const medIndex = medicines.findIndex(m => m.id === purchase.medicineId);
+      if (medIndex !== -1) {
+        const med = medicines[medIndex];
+        const updatedMed: Medicine = {
+          ...med,
+          packs: med.packs + purchase.packs,
+          loose: med.loose + purchase.loose
+        };
+        updateMedicine(updatedMed);
+      }
+    }
+    setToastMessage(`📦 Recorded purchase for "${purchase.medicineName}".`);
+  };
+
+  const handleDeletePurchaseWithConfirmation = (purchaseId: string) => {
+    deletePurchase(purchaseId);
+    setToastMessage('🗑️ Deleted purchase record.');
+  };
   
   // Inventory Filtering & Period Reports
   const [medInventorySearch, setMedInventorySearch] = useState('');
@@ -1467,6 +1497,24 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     setIsReproFormOpen(true);
   };
 
+  const handleEditHealth = (event: HealthEvent, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingHealthId(event.id);
+    const toEdit = { ...event };
+    if (!toEdit.treatments) {
+      if (toEdit.medication || toEdit.dosage) {
+        toEdit.treatments = [{ name: toEdit.medication || '', dose: toEdit.dosage || '' }];
+      } else {
+        toEdit.treatments = [{ name: '', dose: '' }];
+      }
+    }
+    setNewHealth(toEdit);
+    setTreatmentAnimalType('single');
+    const animal = animals.find(a => a.id === event.animalId);
+    if (animal) setHealthAnimalSearch(animal.tag);
+    setIsHealthFormOpen(true);
+  };
+
   const exportBackup = () => {
     const data = {
       exportDate: new Date().toISOString(),
@@ -1976,7 +2024,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     <h3 className="text-xl font-black text-slate-800 tracking-tight">Reproduction Summary</h3>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-6">
                   <StatCard title="Pregnant" value={dashboardStats.pregnant} icon={Baby} colorClass="bg-emerald-500" trend={`${Math.round((dashboardStats.pregnant / (dashboardStats.total || 1)) * 100)}% Herd`} onClick={() => handleMetricClick('Pregnant')} />
                   <StatCard title="Open Animals" value={dashboardStats.open} icon={Square} colorClass="bg-blue-500" trend="Awaiting Insem" onClick={() => handleMetricClick('Open')} />
                   <StatCard title="Repeat Breeders" value={dashboardStats.repeatBreeders} icon={RotateCcw} colorClass="bg-rose-500" trend="> 3 Insems" onClick={() => handleMetricClick('Repeat Breeders')} />
@@ -2196,14 +2244,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     <h3 className="text-xl font-black text-slate-800 tracking-tight">Health Summary</h3>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8">
-                  <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 sm:gap-8">
+                  <div className="lg:col-span-5 grid grid-cols-2 sm:grid-cols-2 gap-3 sm:gap-6">
                     <StatCard title="Sick Animals" value={dashboardStats.sick} icon={Stethoscope} colorClass="bg-rose-500" trend="Active Cases" onClick={() => handleMetricClick('Sick')} />
                     <StatCard title="Recently Treated" value={dashboardStats.recentlyTreated} icon={Activity} colorClass="bg-amber-500" trend="Last 7 Days" onClick={() => handleMetricClick('Treated')} />
                     <StatCard title="In Lab / Support" value={dashboardStats.inProtocol} icon={FlaskConical} colorClass="bg-blue-500" trend="Under Protocol" onClick={() => handleMetricClick('Protocol')} />
                     <StatCard title="Under Observation" value={dashboardStats.underObservation} icon={Eye} colorClass="bg-slate-400" trend="Monitoring" onClick={() => handleMetricClick('Observation')} />
                   </div>
-                  <div className="lg:col-span-7 bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                  <div className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-[2rem] sm:rounded-[3rem] border border-slate-100 shadow-sm">
                     <div className="flex items-center justify-between mb-8 px-2">
                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Disease Frequency</h4>
                       <BarChart3 className="w-4 h-4 text-rose-400" />
@@ -2238,7 +2286,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   </div>
                   <h3 className="text-xl font-black text-slate-800 tracking-tight">Calving & Dry Management</h3>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                   <StatCard title="Dry Animals" value={dashboardStats.dry} icon={Droplets} colorClass="bg-slate-500" trend="Rest Period" onClick={() => handleMetricClick('Dry')} />
                   <StatCard title="Calving Due" value={dashboardStats.calvingDue} icon={Clock} colorClass="bg-emerald-500" trend="Next 7 Days" onClick={() => handleMetricClick('Calving Due')} />
                   <StatCard title="Overdue Calving" value={dashboardStats.overdueCalving} icon={AlertTriangle} colorClass="bg-rose-500" trend="Urgent Action" onClick={() => handleMetricClick('Overdue')} />
@@ -3237,21 +3285,73 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 </td>
                                 <td className="px-8 py-6">
                                   {(event.treatments && event.treatments.length > 0 && event.treatments[0].name) ? (
-                                    <div className="space-y-1">
-                                      {event.treatments.map((t, idx) => (
-                                        <div key={idx} className="flex items-center gap-2">
-                                          <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                          <span className="text-xs font-black text-slate-700">{t.name || 'Unnamed'}</span>
-                                          <span className="text-[9px] font-black text-slate-400 uppercase ml-1">({t.dose || 'N/A'})</span>
-                                        </div>
-                                      ))}
+                                    <div className="space-y-1.5">
+                                      {event.treatments.map((t, idx) => {
+                                        const match = medicines.find(m => m.name.toLowerCase() === (t.name || '').toLowerCase());
+                                        return (
+                                          <div key={idx} className="flex items-center gap-1.5">
+                                            <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (match) {
+                                                  setSelectedMedicineForHistory(match);
+                                                } else {
+                                                  setSelectedMedicineForHistory({
+                                                    id: t.name,
+                                                    name: t.name,
+                                                    category: 'Injection',
+                                                    unit: 'ml',
+                                                    packs: 0,
+                                                    loose: 0,
+                                                    loosePerPack: 100,
+                                                    minStockLevel: 10
+                                                  });
+                                                }
+                                              }}
+                                              className="text-xs font-black text-slate-800 hover:text-blue-600 underline decoration-dotted decoration-slate-300 hover:decoration-blue-500 cursor-pointer text-left transition-colors"
+                                              title={`Click to view full history for ${t.name}`}
+                                            >
+                                              {t.name || 'Unnamed'}
+                                            </button>
+                                            <span className="text-[9px] font-black text-slate-400 uppercase ml-0.5">({t.dose || 'N/A'})</span>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   ) : event.medication ? (
-                                    <div className="flex items-center gap-2">
-                                      <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                      <span className="text-xs font-black text-slate-700">{event.medication}</span>
-                                      <span className="text-[9px] font-black text-slate-400 uppercase ml-1">({event.dosage || 'N/A'})</span>
-                                    </div>
+                                    (() => {
+                                      const match = medicines.find(m => m.name.toLowerCase() === (event.medication || '').toLowerCase());
+                                      return (
+                                        <div className="flex items-center gap-1.5">
+                                          <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (match) {
+                                                setSelectedMedicineForHistory(match);
+                                              } else {
+                                                setSelectedMedicineForHistory({
+                                                  id: event.medication!,
+                                                  name: event.medication!,
+                                                  category: 'Injection',
+                                                  unit: 'ml',
+                                                  packs: 0,
+                                                  loose: 0,
+                                                  loosePerPack: 100,
+                                                  minStockLevel: 10
+                                                });
+                                              }
+                                            }}
+                                            className="text-xs font-black text-slate-800 hover:text-blue-600 underline decoration-dotted decoration-slate-300 hover:decoration-blue-500 cursor-pointer text-left transition-colors"
+                                            title={`Click to view full history for ${event.medication}`}
+                                          >
+                                            {event.medication}
+                                          </button>
+                                          <span className="text-[9px] font-black text-slate-400 uppercase ml-0.5">({event.dosage || 'N/A'})</span>
+                                        </div>
+                                      );
+                                    })()
                                   ) : (
                                     <span className="text-xs text-slate-400 italic">No medication</span>
                                   )}
@@ -3395,19 +3495,34 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         const totalUnits = (m.packs * m.loosePerPack) + m.loose;
                         const isLow = totalUnits < m.minStockLevel;
 
+                        const medPurchases = purchases.filter(p => p.medicineId === m.id || p.medicineName.toLowerCase() === m.name.toLowerCase());
+                        const medUsages = healthEvents.filter(h => {
+                          if (h.medication && h.medication.toLowerCase() === m.name.toLowerCase()) return true;
+                          if (h.treatments && h.treatments.some(t => t.name.toLowerCase() === m.name.toLowerCase())) return true;
+                          return false;
+                        });
+
                         return (
                           <div
                             key={m.id}
-                            className={`bg-white rounded-[2rem] p-6 border-2 transition-all shadow-sm flex flex-col justify-between ${
+                            className={`bg-white rounded-[2rem] p-6 border-2 transition-all shadow-sm flex flex-col justify-between hover:shadow-lg ${
                               isLow
                                 ? 'border-rose-400 bg-rose-50/10 shadow-rose-100/30'
-                                : 'border-slate-100 hover:border-slate-200'
+                                : 'border-slate-100 hover:border-blue-200'
                             }`}
                           >
                             <div className="space-y-4">
-                              <div className="flex items-start justify-between">
+                              <div
+                                onClick={() => setSelectedMedicineForHistory(m)}
+                                className="flex items-start justify-between cursor-pointer group"
+                                title="Click to view full purchase and clinical usage history"
+                              >
                                 <div>
-                                  <h4 className="text-lg font-black text-slate-800 tracking-tight">{m.name}</h4>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-lg font-black text-slate-800 tracking-tight group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
+                                      {m.name}
+                                    </h4>
+                                  </div>
                                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                     Category: {m.category}
                                   </span>
@@ -3423,7 +3538,25 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 )}
                               </div>
 
-                              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100/80">
+                              {/* Clickable Quick History Summary Badge */}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedMedicineForHistory(m)}
+                                className="w-full flex items-center justify-between px-3.5 py-2 bg-blue-50/70 hover:bg-blue-100/80 text-blue-700 rounded-xl transition-all border border-blue-100 text-left group cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+                                  <Clock className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>History ({medPurchases.length} buys, {medUsages.length} uses)</span>
+                                </div>
+                                <span className="text-[10px] font-black text-blue-600 group-hover:translate-x-0.5 transition-transform">
+                                  View Audit →
+                                </span>
+                              </button>
+
+                              <div
+                                onClick={() => setSelectedMedicineForHistory(m)}
+                                className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100/80 cursor-pointer hover:bg-slate-100/70 transition-colors"
+                              >
                                 <div>
                                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Packs (Unopened)</p>
                                   <p className="text-sm font-black text-slate-700">{m.packs} packs</p>
@@ -3451,34 +3584,43 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               </div>
                             </div>
 
-                            <div className="flex gap-2 pt-5 mt-5 border-t border-slate-100">
+                            <div className="space-y-2 pt-5 mt-5 border-t border-slate-100">
                               <button
-                                onClick={() => {
-                                  setEditingMedicineId(m.id);
-                                  setNewMedicine(m);
-                                  setIsMedicineFormOpen(true);
-                                }}
-                                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-800 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all"
+                                onClick={() => setSelectedMedicineForHistory(m)}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shadow-md shadow-blue-100 cursor-pointer"
                               >
-                                <Edit2 className="w-3.5 h-3.5" /> Edit Stock
+                                <Clock className="w-3.5 h-3.5" /> Purchase & Usage History
                               </button>
-                              <button
-                                onClick={() => {
-                                  setConfirmDialog({
-                                    isOpen: true,
-                                    message: `Are you sure you want to delete "${m.name}" from your active pharmacy database? This cannot be undone.`,
-                                    onConfirm: () => {
-                                      deleteMedicine(m.id);
-                                      setConfirmDialog(d => ({ ...d, isOpen: false }));
-                                      setToastMessage(`Removed "${m.name}" from active records.`);
-                                    }
-                                  });
-                                }}
-                                className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all flex items-center justify-center"
-                                title="Delete Medicine Record"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingMedicineId(m.id);
+                                    setNewMedicine(m);
+                                    setIsMedicineFormOpen(true);
+                                  }}
+                                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-800 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" /> Edit Stock
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setConfirmDialog({
+                                      isOpen: true,
+                                      message: `Are you sure you want to delete "${m.name}" from your active pharmacy database? This cannot be undone.`,
+                                      onConfirm: () => {
+                                        deleteMedicine(m.id);
+                                        setConfirmDialog(d => ({ ...d, isOpen: false }));
+                                        setToastMessage(`Removed "${m.name}" from active records.`);
+                                      }
+                                    });
+                                  }}
+                                  className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all flex items-center justify-center"
+                                  title="Delete Medicine Record"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -4876,22 +5018,22 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
       {/* Animal Detail Modal (Profile) */}
       {selectedAnimal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xl animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-4xl max-h-[95vh] rounded-[4rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in slide-in-from-bottom-10 duration-500">
-            <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-white">
-              <div className="flex items-center gap-6">
-                <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center text-blue-600 font-black text-3xl border border-slate-100 shadow-inner">
+        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xl animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-4xl max-h-[92vh] sm:max-h-[95vh] rounded-t-[2.5rem] sm:rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom sm:zoom-in duration-300">
+            <div className="px-5 sm:px-10 py-4 sm:py-8 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
+              <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+                <div className="w-12 h-12 sm:w-20 sm:h-20 bg-slate-50 rounded-2xl sm:rounded-[2rem] flex items-center justify-center text-blue-600 font-black text-xl sm:text-3xl border border-slate-100 shadow-inner flex-shrink-0">
                   {selectedAnimal.tag.slice(-2)}
                 </div>
-                <div>
-                  <h3 className="text-4xl font-black text-slate-800 tracking-tighter">{selectedAnimal.tag}</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                    <p className="text-xs text-slate-400 font-black uppercase tracking-[0.2em]">{selectedAnimal.breed}</p>
+                <div className="min-w-0">
+                  <h3 className="text-xl sm:text-4xl font-black text-slate-800 tracking-tighter truncate">{selectedAnimal.tag}</h3>
+                  <div className="flex items-center gap-2 mt-0.5 sm:mt-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
+                    <p className="text-[10px] sm:text-xs text-slate-400 font-black uppercase tracking-[0.2em] truncate">{selectedAnimal.breed}</p>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5 sm:gap-4 flex-shrink-0">
                 <button
                   onClick={() => {
                     const repros = reproEvents.filter(e => e.animalId === selectedAnimal.id)
@@ -4903,48 +5045,48 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       : 'Full History';
                     generateIndividualAnimalReport(selectedAnimal, repros, healths, label, settings);
                   }}
-                  className="p-5 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-[1.5rem] transition-all"
+                  className="p-2.5 sm:p-5 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl sm:rounded-[1.5rem] transition-all"
                   title="Download Filtered Report"
                 >
-                  <Download className="w-7 h-7" />
+                  <Download className="w-5 h-5 sm:w-7 sm:h-7" />
                 </button>
                 <button
                   onClick={() => {
                     const text = generateAnimalShareText(selectedAnimal, reproEvents, healthEvents);
                     shareToWhatsApp(text);
                   }}
-                  className="p-5 text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-[1.5rem] transition-all"
+                  className="p-2.5 sm:p-5 text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl sm:rounded-[1.5rem] transition-all"
                   title="Share on WhatsApp"
                 >
-                  <MessageCircle className="w-7 h-7" />
+                  <MessageCircle className="w-5 h-5 sm:w-7 sm:h-7" />
                 </button>
-                <button onClick={() => setSelectedAnimal(null)} className="p-5 hover:bg-slate-100 rounded-[1.5rem] transition-all text-slate-400">
-                  <X className="w-8 h-8" />
+                <button onClick={() => setSelectedAnimal(null)} className="p-2.5 sm:p-5 hover:bg-slate-100 rounded-xl sm:rounded-[1.5rem] transition-all text-slate-400">
+                  <X className="w-6 h-6 sm:w-8 sm:h-8" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-10 space-y-12">
-              <div className="bg-slate-50/50 p-8 rounded-[3rem] border border-slate-100/50 space-y-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <Filter className="w-5 h-5 text-blue-600" />
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Report Parameter Selection</h4>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-10 space-y-6 sm:space-y-12">
+              <div className="bg-slate-50/50 p-4 sm:p-8 rounded-2xl sm:rounded-[3rem] border border-slate-100/50 space-y-4 sm:space-y-6">
+                <div className="flex items-center gap-3 mb-1">
+                  <Filter className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
+                  <h4 className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest">Report Parameter Selection</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Filter From Date</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
+                  <div className="space-y-1 sm:space-y-2">
+                    <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Filter From Date</label>
                     <input
                       type="date"
-                      className="w-full px-5 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-white border border-slate-200 rounded-xl sm:rounded-2xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
                       value={animalReportStart}
                       onChange={(e) => setAnimalReportStart(e.target.value)}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Filter To Date</label>
+                  <div className="space-y-1 sm:space-y-2">
+                    <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Filter To Date</label>
                     <input
                       type="date"
-                      className="w-full px-5 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-white border border-slate-200 rounded-xl sm:rounded-2xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
                       value={animalReportEnd}
                       onChange={(e) => setAnimalReportEnd(e.target.value)}
                     />
@@ -4952,34 +5094,34 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Life Status</p>
-                  <p className={`text-sm font-black uppercase inline-block px-3 py-1 rounded-lg border ${getStatusColor(selectedAnimal.status)}`}>{selectedAnimal.status}</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-6">
+                <div className="p-3.5 sm:p-6 bg-slate-50 rounded-xl sm:rounded-[2rem] border border-slate-100 shadow-inner">
+                  <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1 sm:mb-2">Life Status</p>
+                  <p className={`text-xs sm:text-sm font-black uppercase inline-block px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-lg border ${getStatusColor(selectedAnimal.status)}`}>{selectedAnimal.status}</p>
                 </div>
                 {(selectedAnimal.pregnancyDays !== undefined && selectedAnimal.pregnancyDays > 0) && (
-                  <div className="p-6 bg-blue-50 rounded-[2rem] border border-blue-100 shadow-inner">
-                    <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest mb-2">Pregnancy Days</p>
-                    <p className="text-lg font-black text-blue-800">{selectedAnimal.pregnancyDays} Days</p>
+                  <div className="p-3.5 sm:p-6 bg-blue-50 rounded-xl sm:rounded-[2rem] border border-blue-100 shadow-inner">
+                    <p className="text-[8px] sm:text-[10px] text-blue-600 font-black uppercase tracking-widest mb-1 sm:mb-2">Pregnancy</p>
+                    <p className="text-sm sm:text-lg font-black text-blue-800">{selectedAnimal.pregnancyDays} Days</p>
                   </div>
                 )}
                 {selectedAnimal.expectedCalving && (
-                  <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100 shadow-inner">
-                    <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mb-2">Exp. Calving Date</p>
-                    <p className="text-lg font-black text-emerald-800">{selectedAnimal.expectedCalving}</p>
+                  <div className="p-3.5 sm:p-6 bg-emerald-50 rounded-xl sm:rounded-[2rem] border border-emerald-100 shadow-inner">
+                    <p className="text-[8px] sm:text-[10px] text-emerald-600 font-black uppercase tracking-widest mb-1 sm:mb-2">Exp. Calving</p>
+                    <p className="text-xs sm:text-lg font-black text-emerald-800">{selectedAnimal.expectedCalving}</p>
                   </div>
                 )}
-                <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Genetic Breed</p>
-                  <p className="text-lg font-black text-slate-800">{selectedAnimal.breed}</p>
+                <div className="p-3.5 sm:p-6 bg-slate-50 rounded-xl sm:rounded-[2rem] border border-slate-100 shadow-inner">
+                  <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1 sm:mb-2">Breed</p>
+                  <p className="text-xs sm:text-lg font-black text-slate-800">{selectedAnimal.breed}</p>
                 </div>
-                <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Age Context</p>
-                  <p className="text-lg font-black text-slate-800">{dateUtils.diffDays(new Date().toISOString().split('T')[0], selectedAnimal.dob)} Days</p>
+                <div className="p-3.5 sm:p-6 bg-slate-50 rounded-xl sm:rounded-[2rem] border border-slate-100 shadow-inner">
+                  <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1 sm:mb-2">Age Context</p>
+                  <p className="text-xs sm:text-lg font-black text-slate-800">{dateUtils.diffDays(new Date().toISOString().split('T')[0], selectedAnimal.dob)} Days</p>
                 </div>
-                <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Herd Assigned</p>
-                  <p className="text-lg font-black text-slate-800">{selectedAnimal.herd}</p>
+                <div className="p-3.5 sm:p-6 bg-slate-50 rounded-xl sm:rounded-[2rem] border border-slate-100 shadow-inner">
+                  <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1 sm:mb-2">Herd Assigned</p>
+                  <p className="text-xs sm:text-lg font-black text-slate-800">{selectedAnimal.herd}</p>
                 </div>
               </div>
 
@@ -5015,26 +5157,124 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     ))}
                 </div>
               </div>
+
+              {/* Health & Clinical History */}
+              <div className="space-y-8">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-3">
+                  <HeartPulse className="w-6 h-6 text-rose-500" /> Clinical & Medication History
+                </h4>
+                <div className="space-y-4">
+                  {healthEvents.filter(e => e.animalId === selectedAnimal.id)
+                    .filter(e => (!animalReportStart || e.date >= animalReportStart) && (!animalReportEnd || e.date <= animalReportEnd))
+                    .map(e => (
+                      <div key={e.id} className="flex items-center gap-6 p-6 rounded-[2rem] border border-slate-100 bg-white hover:bg-slate-50 transition-all shadow-sm">
+                        <div className="p-4 rounded-2xl bg-rose-50 text-rose-500 transition-all">
+                          <Syringe className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <p className="text-base font-black text-slate-800">{e.type}</p>
+                            <button onClick={(event) => handleEditHealth(e, event)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-rose-600">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-500 font-semibold">{e.details || '--'}</p>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {e.technician && <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-md">Vet: {e.technician}</span>}
+                            {(e.treatments && e.treatments.length > 0) ? (
+                              e.treatments.map((t, tidx) => {
+                                const match = medicines.find(m => m.name.toLowerCase() === (t.name || '').toLowerCase());
+                                return (
+                                  <button
+                                    key={tidx}
+                                    type="button"
+                                    onClick={() => {
+                                      if (match) {
+                                        setSelectedMedicineForHistory(match);
+                                      } else {
+                                        setSelectedMedicineForHistory({
+                                          id: t.name,
+                                          name: t.name,
+                                          category: 'Injection',
+                                          unit: 'ml',
+                                          packs: 0,
+                                          loose: 0,
+                                          loosePerPack: 100,
+                                          minStockLevel: 10
+                                        });
+                                      }
+                                    }}
+                                    className="text-[10px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-100 transition-colors cursor-pointer flex items-center gap-1"
+                                    title="Click to view medicine purchase and usage history"
+                                  >
+                                    <Pill className="w-3 h-3 text-indigo-500" />
+                                    {t.name} ({t.dose || 'dose'}) → History
+                                  </button>
+                                );
+                              })
+                            ) : e.medication ? (
+                              (() => {
+                                const match = medicines.find(m => m.name.toLowerCase() === (e.medication || '').toLowerCase());
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (match) {
+                                        setSelectedMedicineForHistory(match);
+                                      } else {
+                                        setSelectedMedicineForHistory({
+                                          id: e.medication!,
+                                          name: e.medication!,
+                                          category: 'Injection',
+                                          unit: 'ml',
+                                          packs: 0,
+                                          loose: 0,
+                                          loosePerPack: 100,
+                                          minStockLevel: 10
+                                        });
+                                      }
+                                    }}
+                                    className="text-[10px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-100 transition-colors cursor-pointer flex items-center gap-1"
+                                    title="Click to view medicine purchase and usage history"
+                                  >
+                                    <Pill className="w-3 h-3 text-indigo-500" />
+                                    {e.medication} ({e.dosage || 'dose'}) → History
+                                  </button>
+                                );
+                              })()
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-black text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">{e.date}</p>
+                        </div>
+                      </div>
+                    ))}
+                  {healthEvents.filter(e => e.animalId === selectedAnimal.id).length === 0 && (
+                    <p className="text-xs text-slate-400 italic">No clinical or health treatments recorded for this animal.</p>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="p-8 border-t border-slate-100 bg-white flex gap-4 flex-wrap">
+            <div className="p-4 sm:p-8 border-t border-slate-100 bg-white flex gap-2 sm:gap-4 flex-wrap">
               <button
                 onClick={() => { setEditingReproId(null); setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0], animalId: selectedAnimal.id }); setReproAnimalSearch(selectedAnimal.tag); setIsReproFormOpen(true); setSelectedAnimal(null); }}
-                className="flex-1 py-4 bg-blue-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"
+                className="flex-1 min-w-[140px] py-3 sm:py-4 bg-blue-600 text-white rounded-xl sm:rounded-[1.5rem] font-black text-[11px] sm:text-xs uppercase tracking-wider hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
               >
                 Log Repro Event
               </button>
               <button
                 onClick={() => { setEditingHealthId(null); setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0], animalId: selectedAnimal.id, treatments: [{ name: '', dose: '' }] }); setHealthAnimalSearch(selectedAnimal.tag); setIsHealthFormOpen(true); setSelectedAnimal(null); }}
-                className="flex-1 py-4 bg-rose-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-rose-700 transition-all shadow-xl shadow-rose-100"
+                className="flex-1 min-w-[140px] py-3 sm:py-4 bg-rose-600 text-white rounded-xl sm:rounded-[1.5rem] font-black text-[11px] sm:text-xs uppercase tracking-wider hover:bg-rose-700 transition-all shadow-lg shadow-rose-100"
               >
                 Log Health Issue
               </button>
               <button
                 onClick={(e) => handleDeleteAnimal(selectedAnimal, e)}
-                className="py-4 px-6 bg-slate-100 text-slate-600 rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-rose-50 hover:text-rose-600 transition-all"
+                className="py-3 sm:py-4 px-4 sm:px-6 bg-slate-100 text-slate-600 rounded-xl sm:rounded-[1.5rem] font-black text-xs uppercase tracking-wider hover:bg-rose-50 hover:text-rose-600 transition-all flex items-center justify-center"
               >
-                <Trash2 className="w-5 h-5" />
+                <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
           </div>
@@ -6270,11 +6510,210 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         </form>
       </FormModal>
 
+      {/* Medicine Purchase and Usage History Modal */}
+      {selectedMedicineForHistory && (
+        <MedicineHistoryModal
+          medicine={medicines.find(m => m.id === selectedMedicineForHistory.id) || selectedMedicineForHistory}
+          allMedicines={medicines}
+          purchases={purchases}
+          healthEvents={healthEvents}
+          animals={animals}
+          settings={settings}
+          onClose={() => setSelectedMedicineForHistory(null)}
+          onAddPurchase={handleAddPurchaseWithStockUpdate}
+          onDeletePurchase={handleDeletePurchaseWithConfirmation}
+          onOpenTreatmentWithMedicine={(medName) => {
+            setSelectedMedicineForHistory(null);
+            setEditingHealthId(null);
+            setNewHealth({
+              type: HealthEventType.ILLNESS,
+              date: new Date().toISOString().split('T')[0],
+              medication: medName,
+              treatments: [{ name: medName, dose: '10 ml' }]
+            });
+            setTreatmentAnimalType('single');
+            setHealthAnimalSearch('');
+            setSelectedMultipleAnimals([]);
+            setIsHealthFormOpen(true);
+          }}
+          onEditMedicineStock={(med) => {
+            setSelectedMedicineForHistory(null);
+            setEditingMedicineId(med.id);
+            setNewMedicine(med);
+            setIsMedicineFormOpen(true);
+          }}
+          onSelectAnimal={(animal) => {
+            setSelectedMedicineForHistory(null);
+            setSelectedAnimal(animal);
+          }}
+        />
+      )}
+
       {/* Floating Success Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-slate-900/95 text-white backdrop-blur-md px-6 py-4 rounded-[1.5rem] shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 border border-slate-800">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-          <p className="text-xs font-black tracking-wide leading-none">{toastMessage}</p>
+        <div className="fixed bottom-24 sm:bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-slate-900/95 text-white backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 border border-slate-800 max-w-[90vw]">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping flex-shrink-0" />
+          <p className="text-xs font-black tracking-wide leading-tight truncate">{toastMessage}</p>
+        </div>
+      )}
+
+      {/* Mobile Bottom Navigation Dock */}
+      {!isDesktop && (
+        <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-xl border-t border-slate-200/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-4px_20px_rgba(0,0,0,0.06)] pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+          <button
+            onClick={() => { setView('dashboard'); setIsSidebarOpen(false); }}
+            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
+              view === 'dashboard' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            }`}
+          >
+            <LayoutDashboard className={`w-5 h-5 mb-0.5 ${view === 'dashboard' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <span className="text-[10px] tracking-tight">Home</span>
+          </button>
+
+          <button
+            onClick={() => { setView('animals'); setIsSidebarOpen(false); }}
+            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
+              view === 'animals' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            }`}
+          >
+            <Users className={`w-5 h-5 mb-0.5 ${view === 'animals' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <span className="text-[10px] tracking-tight">Herd</span>
+          </button>
+
+          {/* Center Quick Action FAB */}
+          <div className="flex-1 flex justify-center -mt-6">
+            <button
+              onClick={() => setIsMobileQuickActionsOpen(true)}
+              className="w-13 h-13 rounded-full bg-gradient-to-tr from-blue-700 to-indigo-600 text-white shadow-xl shadow-blue-500/40 flex items-center justify-center active:scale-95 transition-transform border-4 border-white"
+              title="Quick Actions"
+            >
+              <Plus className="w-6 h-6 stroke-[3]" />
+            </button>
+          </div>
+
+          <button
+            onClick={() => { setView('repro'); setIsSidebarOpen(false); }}
+            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
+              view === 'repro' || view === 'pd-check' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            }`}
+          >
+            <CalendarRange className={`w-5 h-5 mb-0.5 ${view === 'repro' || view === 'pd-check' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <span className="text-[10px] tracking-tight">Repro</span>
+          </button>
+
+          <button
+            onClick={() => { setView('health'); setIsSidebarOpen(false); }}
+            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
+              view === 'health' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            }`}
+          >
+            <Stethoscope className={`w-5 h-5 mb-0.5 ${view === 'health' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <span className="text-[10px] tracking-tight">Health</span>
+          </button>
+        </nav>
+      )}
+
+      {/* Mobile Quick Action Bottom Sheet */}
+      {isMobileQuickActionsOpen && (
+        <div 
+          className="fixed inset-0 z-[250] flex items-end justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" 
+          onClick={() => setIsMobileQuickActionsOpen(false)}
+        >
+          <div 
+            className="bg-white w-full rounded-t-[2.5rem] shadow-2xl p-6 space-y-5 animate-in slide-in-from-bottom duration-300 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto" />
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 tracking-tight">⚡ Quick Field Actions</h3>
+                <p className="text-[11px] text-slate-400 font-bold">Select an operation to record immediately</p>
+              </div>
+              <button onClick={() => setIsMobileQuickActionsOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingAnimalId(null); setNewAnimal({ sex: 'Female', breed: 'Holstein', herd: 'Main Herd' }); setIsAnimalFormOpen(true); }}
+                className="p-4 bg-blue-50/70 hover:bg-blue-100 rounded-2xl border border-blue-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md shadow-blue-200">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Add Cow</p>
+                  <p className="text-[10px] text-slate-400 font-semibold">New tag registration</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingReproId(null); setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0] }); setReproAnimalSearch(''); setIsReproFormOpen(true); }}
+                className="p-4 bg-indigo-50/70 hover:bg-indigo-100 rounded-2xl border border-indigo-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">
+                  <CalendarRange className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Log Repro</p>
+                  <p className="text-[10px] text-slate-400 font-semibold">Heat or insemination</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingHealthId(null); setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0], treatments: [{ name: '', dose: '' }] }); setHealthAnimalSearch(''); setIsHealthFormOpen(true); }}
+                className="p-4 bg-rose-50/70 hover:bg-rose-100 rounded-2xl border border-rose-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2.5 bg-rose-600 text-white rounded-xl shadow-md shadow-rose-200">
+                  <Stethoscope className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Clinical Entry</p>
+                  <p className="text-[10px] text-slate-400 font-semibold">Treatments & sickness</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setIsNewPdFormOpen(true); }}
+                className="p-4 bg-emerald-50/70 hover:bg-emerald-100 rounded-2xl border border-emerald-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-md shadow-emerald-200">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Preg Exam (PD)</p>
+                  <p className="text-[10px] text-slate-400 font-semibold">Single diagnosis</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setIsMedicineFormOpen(true); }}
+                className="p-4 bg-purple-50/70 hover:bg-purple-100 rounded-2xl border border-purple-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2.5 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-200">
+                  <Pill className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">New Medicine</p>
+                  <p className="text-[10px] text-slate-400 font-semibold">Add / stock medicine</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setIsMultiPdFormOpen(true); }}
+                className="p-4 bg-amber-50/70 hover:bg-amber-100 rounded-2xl border border-amber-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2.5 bg-amber-600 text-white rounded-xl shadow-md shadow-amber-200">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Bulk PD Entry</p>
+                  <p className="text-[10px] text-slate-400 font-semibold">Multi-animal list</p>
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
