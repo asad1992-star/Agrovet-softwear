@@ -147,6 +147,9 @@ export const useFarm = () => {
   // Actions
   const addAnimal = (a: Animal) => setAnimals(prev => [a, ...prev]);
   const updateAnimal = (updated: Animal) => setAnimals(prev => prev.map(a => a.id === updated.id ? updated : a));
+  const updateAnimalsHerd = (animalIds: string[], targetHerd: string) => {
+    setAnimals(prev => prev.map(a => animalIds.includes(a.id) ? { ...a, herd: targetHerd } : a));
+  };
   const deleteAnimal = (id: string) => setAnimals(prev => prev.filter(a => a.id !== id));
 
   const addReproEvent = (e: ReproductionEvent) => {
@@ -195,6 +198,7 @@ export const useFarm = () => {
     settings,
     addAnimal,
     updateAnimal,
+    updateAnimalsHerd,
     deleteAnimal,
     addReproEvent,
     updateReproEvent,

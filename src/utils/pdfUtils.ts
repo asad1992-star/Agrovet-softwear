@@ -436,24 +436,36 @@ export const generateTreatmentAnalysisReport = (
 
 export const generateMedicineInventoryReport = (
   medicines: Medicine[],
-  settings?: FarmSettings
+  settings?: FarmSettings,
+  filterLabel: string = 'All Inventory'
 ) => {
   const doc = new jsPDF();
-  addHeader(doc, `Medicine Inventory Report`, settings);
+  addHeader(doc, `Medicine Inventory Report | ${filterLabel}`, settings);
 
   const totalMedicines = medicines.length;
-  const lowStockCount = medicines.filter(m => ((m.packs * m.loosePerPack) + m.loose) < m.minStockLevel).length;
+  const inStockCount = medicines.filter(m => {
+    const total = (m.packs * m.loosePerPack) + m.loose;
+    return total >= m.minStockLevel && total > 0;
+  }).length;
+  const lowStockCount = medicines.filter(m => {
+    const total = (m.packs * m.loosePerPack) + m.loose;
+    return total < m.minStockLevel && total > 0;
+  }).length;
+  const outOfStockCount = medicines.filter(m => ((m.packs * m.loosePerPack) + m.loose) === 0).length;
 
-  doc.setFontSize(11);
+  doc.setFontSize(10);
   doc.setTextColor(51, 65, 85);
-  doc.text(`Total Registered Medicines: ${totalMedicines} | Low Stock Warnings: ${lowStockCount}`, 14, 42);
+  doc.text(`Scope: ${filterLabel} | Total Items: ${totalMedicines} | In Stock: ${inStockCount} | Low Stock: ${lowStockCount} | Out of Stock: ${outOfStockCount}`, 14, 42);
 
   autoTable(doc, {
     startY: 47,
-    head: [['Medicine Name', 'Category', 'Unit', 'Packs', 'Loose Units', 'Total Stock', 'Min Level', 'Status']],
-    body: medicines.map(m => {
+    head: [['Medicine Name', 'Category', 'Unit', 'Packs (Closed)', 'Loose (Open)', 'Total Stock', 'Min Level', 'Stock Status']],
+    body: medicines.length > 0 ? medicines.map(m => {
       const totalStock = (m.packs * m.loosePerPack) + m.loose;
-      const isLow = totalStock < m.minStockLevel;
+      const isOut = totalStock === 0;
+      const isLow = totalStock < m.minStockLevel && !isOut;
+      const statusText = isOut ? 'OUT OF STOCK' : isLow ? 'LOW STOCK' : 'IN STOCK';
+
       return [
         m.name,
         m.category,
@@ -462,51 +474,58 @@ export const generateMedicineInventoryReport = (
         `${m.loose} ${m.unit}`,
         `${totalStock} ${m.unit}`,
         `${m.minStockLevel} ${m.unit}`,
-        isLow ? '⚠️ LOW STOCK' : '🟢 OK'
+        statusText
       ];
-    }),
+    }) : [['No medicines match the selected filter criteria', '-', '-', '-', '-', '-', '-', '-']],
     headStyles: { fillColor: [13, 148, 136] } // Teal-600
   });
 
-  doc.save(`Medicine_Inventory_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+  const cleanLabel = filterLabel.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Medicine_Inventory_${cleanLabel}_${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
 export const generateLowStockReport = (
   medicines: Medicine[],
-  settings?: FarmSettings
+  settings?: FarmSettings,
+  filterLabel: string = 'Critical & Low Stock'
 ) => {
   const doc = new jsPDF();
-  addHeader(doc, `Low Stock & Alert Report`, settings);
+  addHeader(doc, `Low Stock & Reorder Alert Report`, settings);
 
   const lowStockMedicines = medicines.filter(m => {
     const totalStock = (m.packs * m.loosePerPack) + m.loose;
     return totalStock < m.minStockLevel;
   });
 
-  doc.setFontSize(11);
+  const outOfStockCount = lowStockMedicines.filter(m => ((m.packs * m.loosePerPack) + m.loose) === 0).length;
+
+  doc.setFontSize(10);
   doc.setTextColor(51, 65, 85);
-  doc.text(`Identified Low Stock Items: ${lowStockMedicines.length} / ${medicines.length}`, 14, 42);
+  doc.text(`Identified Low Stock Items: ${lowStockMedicines.length} / ${medicines.length} | Depleted: ${outOfStockCount} | Filter: ${filterLabel}`, 14, 42);
 
   autoTable(doc, {
     startY: 47,
-    head: [['Medicine Name', 'Category', 'Current Stock', 'Min Stock Level', 'Shortfall', 'Replenish Recommend']],
-    body: lowStockMedicines.map(m => {
+    head: [['Medicine Name', 'Category', 'Current Stock', 'Min Stock Level', 'Shortfall', 'Status', 'Replenish Recommendation']],
+    body: lowStockMedicines.length > 0 ? lowStockMedicines.map(m => {
       const totalStock = (m.packs * m.loosePerPack) + m.loose;
       const shortfall = m.minStockLevel - totalStock;
-      const recommendedPacks = m.loosePerPack > 0 ? Math.ceil(shortfall / m.loosePerPack) : 0;
+      const recommendedPacks = m.loosePerPack > 0 ? Math.ceil(shortfall / m.loosePerPack) : 1;
+      const isOut = totalStock === 0;
+
       return [
         m.name,
         m.category,
         `${totalStock} ${m.unit}`,
         `${m.minStockLevel} ${m.unit}`,
         `${shortfall} ${m.unit}`,
-        recommendedPacks > 0 ? `Order min ${recommendedPacks} pack(s)` : 'Order custom units'
+        isOut ? 'DEPLETED (0)' : 'LOW STOCK',
+        recommendedPacks > 0 ? `Order min ${recommendedPacks} pack(s) (${m.loosePerPack} ${m.unit}/pk)` : 'Order custom units'
       ];
-    }),
+    }) : [['All medicines are adequately stocked above minimum levels!', '-', '-', '-', '-', '-', '-']],
     headStyles: { fillColor: [217, 119, 6] } // Amber-600
   });
 
-  doc.save(`Low_Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+  doc.save(`Low_Stock_Alert_Report_${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
 export const generateDemandForecastReport = (

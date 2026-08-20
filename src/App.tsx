@@ -62,7 +62,9 @@ import {
   Tablet,
   Smartphone,
   Pill,
-  Package
+  Package,
+  ArrowRightLeft,
+  Warehouse
 } from 'lucide-react';
 import {
   BarChart,
@@ -91,6 +93,7 @@ import {
   Medicine,
   MedicinePurchase
 } from './types';
+import { MoveToPenModal } from './components/MoveToPenModal';
 import { MedicineHistoryModal } from './components/MedicineHistoryModal';
 import { QuickRestockModal } from './components/QuickRestockModal';
 import { QuickDispenseModal } from './components/QuickDispenseModal';
@@ -125,7 +128,12 @@ import {
   generateAnimalShareText,
   generateReproEventShareText,
   generateHealthEventShareText,
-  generateListShareText
+  generateListShareText,
+  generateMedicineInventoryShareText,
+  generateLowStockAlertShareText,
+  generateHealthReportShareText,
+  generateDemandForecastShareText,
+  generatePdCheckShareText
 } from './utils/shareUtils';
 import { auth } from './services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
@@ -234,6 +242,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     settings,
     addAnimal,
     updateAnimal,
+    updateAnimalsHerd,
     deleteAnimal,
     addReproEvent,
     updateReproEvent,
@@ -323,6 +332,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [reportEndDate, setReportEndDate] = useState<string>('');
   const [reportAnimalId, setReportAnimalId] = useState<string>('');
   const [reportAnimalSearch, setReportAnimalSearch] = useState<string>('');
+  const [reportStockFilter, setReportStockFilter] = useState<'All' | 'In Stock' | 'Low Stock' | 'Out of Stock'>('All');
+  const [reportMedCategory, setReportMedCategory] = useState<string>('All');
+  const [reportHealthType, setReportHealthType] = useState<string>('All');
 
   // Report Date Filters (Individual Profile)
   const [animalReportStart, setAnimalReportStart] = useState<string>('');
@@ -378,6 +390,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [selectedMultipleAnimals, setSelectedMultipleAnimals] = useState<string[]>([]);
   const [activeMedicineDropdownIdx, setActiveMedicineDropdownIdx] = useState<number | null>(null);
   const [lowStockAlerts, setLowStockAlerts] = useState<{ id: string; msg: string }[]>([]);
+  const [isMoveToPenModalOpen, setIsMoveToPenModalOpen] = useState(false);
+  const [moveToPenAnimalId, setMoveToPenAnimalId] = useState<string | null>(null);
+
+  const handleConfirmMoveToPen = (animalIds: string[], targetGroup: string, reason?: string) => {
+    updateAnimalsHerd(animalIds, targetGroup);
+    const count = animalIds.length;
+    setToastMessage(`✅ Successfully moved ${count} ${count === 1 ? 'cow' : 'cows'} to "${targetGroup}" pen.`);
+  };
 
   const handleAddPurchaseWithStockUpdate = (purchase: MedicinePurchase, autoUpdateStock: boolean) => {
     addPurchase(purchase);
@@ -1767,9 +1787,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       case 'health': {
         const filtered = healthEvents.filter(e =>
           (!reportStartDate || e.date >= reportStartDate) &&
-          (!reportEndDate || e.date <= reportEndDate)
+          (!reportEndDate || e.date <= reportEndDate) &&
+          (reportHealthType === 'All' || e.type === reportHealthType)
         );
-        generateHealthSectionReport(filtered, animals, settings, rangeLabel);
+        const healthScopeLabel = `${rangeLabel}${reportHealthType !== 'All' ? ` (${reportHealthType})` : ''}`;
+        generateHealthSectionReport(filtered, animals, settings, healthScopeLabel);
         break;
       }
       case 'treatment-analysis': {
@@ -1781,11 +1803,33 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         break;
       }
       case 'medicine-inventory': {
-        generateMedicineInventoryReport(medicines, settings);
+        const filteredMeds = medicines.filter(m => {
+          const matchesCat = reportMedCategory === 'All' || m.category === reportMedCategory;
+          const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+          let matchesStock = true;
+          if (reportStockFilter === 'In Stock') {
+            matchesStock = totalUnits > 0 && totalUnits >= m.minStockLevel;
+          } else if (reportStockFilter === 'Low Stock') {
+            matchesStock = totalUnits > 0 && totalUnits < m.minStockLevel;
+          } else if (reportStockFilter === 'Out of Stock') {
+            matchesStock = totalUnits === 0;
+          }
+          return matchesCat && matchesStock;
+        });
+        const filterLabel = reportStockFilter === 'All'
+          ? (reportMedCategory === 'All' ? 'All Medicines' : `${reportMedCategory} Category`)
+          : `${reportStockFilter}${reportMedCategory !== 'All' ? ` - ${reportMedCategory}` : ''}`;
+        generateMedicineInventoryReport(filteredMeds, settings, filterLabel);
         break;
       }
       case 'low-stock': {
-        generateLowStockReport(medicines, settings);
+        const filteredMeds = medicines.filter(m => {
+          const matchesCat = reportMedCategory === 'All' || m.category === reportMedCategory;
+          const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+          return matchesCat && totalUnits < m.minStockLevel;
+        });
+        const filterLabel = reportMedCategory === 'All' ? 'Low Stock Alerts' : `Low Stock (${reportMedCategory})`;
+        generateLowStockReport(filteredMeds, settings, filterLabel);
         break;
       }
       case 'demand-forecast': {
@@ -1809,6 +1853,128 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           (!reportEndDate || e.date <= reportEndDate)
         );
         generateIndividualAnimalReport(animal, filteredRepros, filteredHealths, rangeLabel, settings);
+        break;
+      }
+    }
+  };
+
+  const executeReportWhatsAppShare = () => {
+    const rangeLabel = (reportStartDate || reportEndDate)
+      ? `${reportStartDate || 'Start'} to ${reportEndDate || 'End'}`
+      : 'Full History';
+
+    switch (selectedReportType) {
+      case 'summary': {
+        let text = `*📊 Executive Herd Summary Report*\n`;
+        if (settings?.farmName) text += `🏢 *${settings.farmName}*\n`;
+        text += `🐄 Total Herd: ${stats.total}\n`;
+        text += `🥛 Lactating/Milking: ${stats.milking}\n`;
+        text += `🤰 Pregnant: ${stats.pregnant}\n`;
+        text += `🏜️ Dry: ${stats.dry}\n`;
+        text += `🩺 Sick/Isolated: ${stats.sick}\n`;
+        text += `🎯 Conception Rate: ${stats.conceptionRate}%\n`;
+        text += `⏱️ Avg Days in Milk: ${stats.avgDim} days\n\n`;
+        text += `_Generated via AgroVet Pro Management_`;
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'repro': {
+        const filtered = reproEvents.filter(e =>
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate)
+        );
+        const items = filtered.map(e => {
+          const animal = animals.find(a => a.id === e.animalId);
+          return { tag: animal?.tag || 'Unk', value: `${e.type} (${e.date}) ${e.details || ''}` };
+        });
+        const text = generateListShareText(`Reproduction Activity (${rangeLabel})`, items);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'pd-check': {
+        const filtered = reproEvents.filter(e =>
+          e.type === ReproEventType.PREGNANCY_CHECK &&
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate)
+        );
+        const text = generatePdCheckShareText(filtered, animals, rangeLabel, settings?.farmName);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'health': {
+        const filtered = healthEvents.filter(e =>
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate) &&
+          (reportHealthType === 'All' || e.type === reportHealthType)
+        );
+        const healthScopeLabel = `${rangeLabel}${reportHealthType !== 'All' ? ` (${reportHealthType})` : ''}`;
+        const text = generateHealthReportShareText(filtered, animals, healthScopeLabel, settings?.farmName);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'treatment-analysis': {
+        const filtered = healthEvents.filter(e =>
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate)
+        );
+        const text = generateHealthReportShareText(filtered, animals, `Treatment Analysis (${rangeLabel})`, settings?.farmName);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'medicine-inventory': {
+        const filteredMeds = medicines.filter(m => {
+          const matchesCat = reportMedCategory === 'All' || m.category === reportMedCategory;
+          const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+          let matchesStock = true;
+          if (reportStockFilter === 'In Stock') {
+            matchesStock = totalUnits > 0 && totalUnits >= m.minStockLevel;
+          } else if (reportStockFilter === 'Low Stock') {
+            matchesStock = totalUnits > 0 && totalUnits < m.minStockLevel;
+          } else if (reportStockFilter === 'Out of Stock') {
+            matchesStock = totalUnits === 0;
+          }
+          return matchesCat && matchesStock;
+        });
+        const filterLabel = reportStockFilter === 'All'
+          ? (reportMedCategory === 'All' ? 'All Medicines' : `${reportMedCategory} Category`)
+          : `${reportStockFilter}${reportMedCategory !== 'All' ? ` - ${reportMedCategory}` : ''}`;
+        const text = generateMedicineInventoryShareText(filteredMeds, filterLabel, settings?.farmName);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'low-stock': {
+        const filteredMeds = medicines.filter(m => {
+          const matchesCat = reportMedCategory === 'All' || m.category === reportMedCategory;
+          const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+          return matchesCat && totalUnits < m.minStockLevel;
+        });
+        const text = generateLowStockAlertShareText(filteredMeds, settings?.farmName);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'demand-forecast': {
+        const text = generateDemandForecastShareText(demandPredictions, settings?.farmName);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'individual': {
+        const animal = animals.find(a => a.id === reportAnimalId);
+        if (!animal) {
+          alert('Please select an animal first.');
+          return;
+        }
+        const filteredRepros = reproEvents.filter(e =>
+          e.animalId === animal.id &&
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate)
+        );
+        const filteredHealths = healthEvents.filter(e =>
+          e.animalId === animal.id &&
+          (!reportStartDate || e.date >= reportStartDate) &&
+          (!reportEndDate || e.date <= reportEndDate)
+        );
+        const text = generateAnimalShareText(animal, filteredRepros, filteredHealths);
+        shareToWhatsApp(text);
         break;
       }
     }
@@ -2520,6 +2686,18 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     </div>
 
                     <button
+                      id="move-to-pen-header-btn"
+                      onClick={() => {
+                        setMoveToPenAnimalId(null);
+                        setIsMoveToPenModalOpen(true);
+                      }}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-indigo-50 text-indigo-700 border-2 border-indigo-100 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-indigo-100 transition-all cursor-pointer shadow-sm"
+                      title="Move single or multiple animals into a new pen / herd group"
+                    >
+                      <ArrowRightLeft className="w-5 h-5" /> Move to Pen
+                    </button>
+
+                    <button
                       onClick={() => {
                         const label = statusFilter === 'All' ? 'All Status' : statusFilter;
                         generateAnimalListReport(filteredAnimals, settings, label);
@@ -2623,8 +2801,23 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       <button
                         onClick={(e) => handleEditAnimal(animal, e)}
                         className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-all"
+                        title="Edit Animal"
                       >
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                    );
+
+                    const MovePenButton = () => (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMoveToPenAnimalId(animal.id);
+                          setIsMoveToPenModalOpen(true);
+                        }}
+                        className="p-2 hover:bg-indigo-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
+                        title="Move to Pen"
+                      >
+                        <ArrowRightLeft className="w-4 h-4" />
                       </button>
                     );
 
@@ -2674,6 +2867,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               >
                                 <MessageCircle className="w-4 h-4" />
                               </button>
+                              <MovePenButton />
                               <EditButton />
                               <button onClick={(e) => handleDeleteAnimal(animal, e)} className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all" title="Delete">
                                 <Trash2 className="w-4 h-4" />
@@ -2699,7 +2893,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           <p className="font-black text-slate-800 text-sm truncate">{animal.tag}</p>
                           <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
                             <div className={`w-2 h-2 rounded-full ${getStatusColor(animal.status).split(' ')[0]}`}></div>
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                              <MovePenButton />
                               <EditButton />
                             </div>
                           </div>
@@ -2730,7 +2925,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 </div>
                               </div>
                             </div>
-                            <EditButton />
+                            <div className="flex items-center gap-2">
+                              <MovePenButton />
+                              <EditButton />
+                            </div>
                           </div>
                           <div className="grid grid-cols-2 gap-6 mt-10">
                             <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100/50">
@@ -2798,6 +2996,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               >
                                 <MessageCircle className="w-4 h-4" />
                               </button>
+                              <MovePenButton />
                               <EditButton />
                             </div>
                           </div>
@@ -3202,16 +3401,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     <button
                       onClick={() => {
                         const label = (healthDateStart || healthDateEnd) ? `${healthDateStart || 'Start'} to ${healthDateEnd || 'End'}` : 'Clinical History';
-                        const items = filteredHealthEvents.map(e => {
-                          const animal = animals.find(a => a.id === e.animalId);
-                          return { tag: animal?.tag || 'Unk', value: `${e.type} - ${e.details || 'Checkup'}` };
-                        });
-                        const text = generateListShareText(label, items);
+                        const text = generateHealthReportShareText(filteredHealthEvents, animals, label, settings?.farmName);
                         shareToWhatsApp(text);
                       }}
-                      className="flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-100 px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                      className="flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-100 px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all cursor-pointer shadow-sm"
+                      title="Share filtered clinical treatments to WhatsApp"
                     >
-                      <MessageCircle className="w-4 h-4" /> Share List
+                      <MessageCircle className="w-4 h-4 text-emerald-600" /> WhatsApp Report
                     </button>
                     <button
                       onClick={() => {
@@ -3704,12 +3900,46 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
                           {/* Export PDF Button */}
                           <button
-                            onClick={() => generateMedicineInventoryReport(medicines, settings)}
-                            className="flex items-center gap-1.5 px-4 py-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border border-slate-200"
-                            title="Export Inventory PDF"
+                            onClick={() => {
+                              const label = medicineStockFilter === 'All'
+                                ? (medInventoryCat === 'All' ? (medInventorySearch ? `Search: ${medInventorySearch}` : 'All Stock') : `${medInventoryCat} Category`)
+                                : `${medicineStockFilter}${medInventoryCat !== 'All' ? ` - ${medInventoryCat}` : ''}`;
+                              generateMedicineInventoryReport(filteredMedicines, settings, label);
+                            }}
+                            className="flex items-center gap-1.5 px-4 py-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border border-slate-200 cursor-pointer shadow-sm"
+                            title="Export Filtered Inventory PDF"
                           >
-                            <Download className="w-3.5 h-3.5" /> PDF
+                            <Download className="w-3.5 h-3.5 text-blue-600" /> PDF
                           </button>
+
+                          {/* WhatsApp Share Button */}
+                          <button
+                            onClick={() => {
+                              const label = medicineStockFilter === 'All'
+                                ? (medInventoryCat === 'All' ? (medInventorySearch ? `Search: ${medInventorySearch}` : 'All Stock') : `${medInventoryCat} Category`)
+                                : `${medicineStockFilter}${medInventoryCat !== 'All' ? ` - ${medInventoryCat}` : ''}`;
+                              const text = generateMedicineInventoryShareText(filteredMedicines, label, settings?.farmName);
+                              shareToWhatsApp(text);
+                            }}
+                            className="flex items-center gap-1.5 px-4 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border border-emerald-200 cursor-pointer shadow-sm"
+                            title="Share filtered inventory via WhatsApp"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5 text-emerald-600" /> WhatsApp
+                          </button>
+
+                          {/* Quick Low Stock Alert for Pharmacy / Restock */}
+                          {totals.lowStockCount > 0 && (
+                            <button
+                              onClick={() => {
+                                const text = generateLowStockAlertShareText(medicines, settings?.farmName);
+                                shareToWhatsApp(text);
+                              }}
+                              className="flex items-center gap-1.5 px-4 py-3 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border border-amber-200 cursor-pointer shadow-sm"
+                              title="Share Urgent Low Stock Alert via WhatsApp"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Restock Alert
+                            </button>
+                          )}
 
                           {/* Add Medicine Button */}
                           <button
@@ -4288,20 +4518,39 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">View quantity reports across customized intervals</p>
                     </div>
 
-                    <div className="flex bg-slate-50 border border-slate-100 p-1 rounded-xl shadow-inner">
-                      {(['daily', 'weekly', 'monthly', 'yearly'] as const).map(p => (
-                        <button
-                          key={p}
-                          onClick={() => setReportsPeriod(p)}
-                          className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                            reportsPeriod === p
-                              ? 'bg-white text-rose-600 shadow-sm border border-slate-100'
-                              : 'text-slate-500 hover:text-slate-700'
-                          }`}
-                        >
-                          {p}
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex bg-slate-50 border border-slate-100 p-1 rounded-xl shadow-inner">
+                        {(['daily', 'weekly', 'monthly', 'yearly'] as const).map(p => (
+                          <button
+                            key={p}
+                            onClick={() => setReportsPeriod(p)}
+                            className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                              reportsPeriod === p
+                                ? 'bg-white text-rose-600 shadow-sm border border-slate-100'
+                                : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => generateDemandForecastReport(demandPredictions, settings)}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border border-slate-200 cursor-pointer shadow-sm"
+                        title="Export Forecast PDF"
+                      >
+                        <Download className="w-3.5 h-3.5 text-blue-600" /> PDF
+                      </button>
+                      <button
+                        onClick={() => {
+                          const text = generateDemandForecastShareText(demandPredictions, settings?.farmName);
+                          shareToWhatsApp(text);
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border border-emerald-200 cursor-pointer shadow-sm"
+                        title="Share 30-Day Demand Forecast to WhatsApp"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" /> WhatsApp
+                      </button>
                     </div>
                   </div>
 
@@ -5003,23 +5252,103 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Temporal Window</label>
-                      <div className="grid grid-cols-2 gap-4">
-                        <input
-                          type="date"
-                          className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-xs font-black shadow-inner"
-                          value={reportStartDate}
-                          onChange={e => setReportStartDate(e.target.value)}
-                        />
-                        <input
-                          type="date"
-                          className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-xs font-black shadow-inner"
-                          value={reportEndDate}
-                          onChange={e => setReportEndDate(e.target.value)}
-                        />
+                    {/* Temporal Window (for date-based reports) */}
+                    {(selectedReportType === 'repro' || selectedReportType === 'pd-check' || selectedReportType === 'health' || selectedReportType === 'treatment-analysis' || selectedReportType === 'individual') && (
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Temporal Window</label>
+                        <div className="grid grid-cols-2 gap-4">
+                          <input
+                            type="date"
+                            className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-xs font-black shadow-inner"
+                            value={reportStartDate}
+                            onChange={e => setReportStartDate(e.target.value)}
+                          />
+                          <input
+                            type="date"
+                            className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-xs font-black shadow-inner"
+                            value={reportEndDate}
+                            onChange={e => setReportEndDate(e.target.value)}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {/* Stock & Category Filters for Medicine Inventory Report */}
+                    {selectedReportType === 'medicine-inventory' && (
+                      <div className="space-y-4 p-5 bg-slate-50 rounded-2xl border border-slate-100 animate-in slide-in-from-top-2 duration-300">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Inventory Filter Options</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">Stock Status</span>
+                            <select
+                              value={reportStockFilter}
+                              onChange={e => setReportStockFilter(e.target.value as any)}
+                              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                            >
+                              <option value="All">All Items</option>
+                              <option value="In Stock">In Stock Only</option>
+                              <option value="Low Stock">⚠️ Low Stock Only</option>
+                              <option value="Out of Stock">❌ Depleted / Out of Stock</option>
+                            </select>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">Category</span>
+                            <select
+                              value={reportMedCategory}
+                              onChange={e => setReportMedCategory(e.target.value)}
+                              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                            >
+                              <option value="All">All Categories</option>
+                              <option value="Injection">💉 Injection</option>
+                              <option value="Liquid">🧴 Liquid</option>
+                              <option value="Powder">💊 Powder</option>
+                              <option value="Pill">💊 Pill</option>
+                              <option value="Topical">🧴 Topical</option>
+                              <option value="Other">📦 Other</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Category Filter for Low Stock Report */}
+                    {selectedReportType === 'low-stock' && (
+                      <div className="space-y-4 p-5 bg-amber-50/50 rounded-2xl border border-amber-200/60 animate-in slide-in-from-top-2 duration-300">
+                        <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest block">Filter by Medicine Category</label>
+                        <select
+                          value={reportMedCategory}
+                          onChange={e => setReportMedCategory(e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-amber-200 rounded-xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-amber-500/20"
+                        >
+                          <option value="All">All Categories</option>
+                          <option value="Injection">💉 Injection</option>
+                          <option value="Liquid">🧴 Liquid</option>
+                          <option value="Powder">💊 Powder</option>
+                          <option value="Pill">💊 Pill</option>
+                          <option value="Topical">🧴 Topical</option>
+                          <option value="Other">📦 Other</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Health Event Type Filter */}
+                    {selectedReportType === 'health' && (
+                      <div className="space-y-4 p-5 bg-slate-50 rounded-2xl border border-slate-100 animate-in slide-in-from-top-2 duration-300">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Clinical Case Filter</label>
+                        <select
+                          value={reportHealthType}
+                          onChange={e => setReportHealthType(e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                        >
+                          <option value="All">All Health Events</option>
+                          <option value={HealthEventType.ILLNESS}>Illness / Diagnosis</option>
+                          <option value={HealthEventType.TREATMENT}>Treatment Procedure</option>
+                          <option value={HealthEventType.RECOVERY}>Recovery</option>
+                          <option value={HealthEventType.CHECKUP}>Routine Checkup</option>
+                          <option value={HealthEventType.OBSERVATION}>Observation</option>
+                        </select>
+                      </div>
+                    )}
 
                     {selectedReportType === 'individual' && (
                       <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
@@ -5044,15 +5373,23 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       </div>
                     )}
 
-                    <div className="pt-8 border-t border-slate-50">
+                    <div className="pt-6 border-t border-slate-100 space-y-3">
                       <button
                         onClick={executeReportExport}
-                        className="w-full flex items-center justify-center gap-3 bg-blue-600 text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"
+                        className="w-full flex items-center justify-center gap-3 bg-blue-600 text-white py-4 sm:py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 cursor-pointer"
                       >
-                        <Download className="w-6 h-6" /> Export High-Fidelity PDF
+                        <Download className="w-5 h-5" /> Export High-Fidelity PDF
                       </button>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center mt-6 leading-relaxed">
-                        * Reports are generated locally and optimized for A4 printing. <br/> Reproduction reports include latest PD status logic.
+
+                      <button
+                        onClick={executeReportWhatsAppShare}
+                        className="w-full flex items-center justify-center gap-3 bg-emerald-600 text-white py-4 sm:py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 cursor-pointer"
+                      >
+                        <MessageCircle className="w-5 h-5" /> Share Report via WhatsApp
+                      </button>
+
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center mt-4 leading-relaxed">
+                        * Reports dynamically reflect your applied filters (All vs. Low Stock, Dates, Categories).
                       </p>
                     </div>
                   </div>
@@ -5061,23 +5398,45 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 <div className="hidden lg:grid grid-cols-1 gap-6">
                   <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-12 rounded-[3.5rem] text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
                     <FileText className="w-24 h-24 absolute -bottom-4 -right-4 opacity-10 rotate-12" />
-                    <h4 className="text-2xl font-black tracking-tight leading-tight mb-4">Aero PDF Engine</h4>
-                    <p className="text-sm text-blue-100 font-medium leading-relaxed opacity-80">
-                      Our proprietary export system generates optimized, tamper-evident documents for official farm records, insurance submissions, and veterinary audits.
+                    <h4 className="text-2xl font-black tracking-tight leading-tight mb-3">Live Dataset Preview</h4>
+                    <p className="text-sm text-blue-100 font-medium leading-relaxed opacity-90 mb-6">
+                      Export reports directly as downloadable vector PDFs or dispatch live message summaries instantly to your farm management team on WhatsApp.
                     </p>
-                  </div>
-                  <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm">
-                    <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 italic">Export Previews</h5>
-                    <div className="space-y-4">
-                      {[1, 2, 3].map(i => (
-                        <div key={i} className="flex gap-4 items-center">
-                          <div className="w-10 h-10 bg-slate-50 rounded-xl border border-slate-100"></div>
-                          <div className="flex-1 space-y-1">
-                            <div className="h-2 w-1/2 bg-slate-100 rounded"></div>
-                            <div className="h-1.5 w-1/3 bg-slate-50 rounded"></div>
-                          </div>
+                    <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 text-xs font-bold space-y-2">
+                      <div className="flex justify-between items-center text-blue-100">
+                        <span>Selected Mode:</span>
+                        <span className="font-black text-white uppercase">{selectedReportType.replace('-', ' ')}</span>
+                      </div>
+                      {selectedReportType === 'medicine-inventory' && (
+                        <div className="flex justify-between items-center text-blue-100">
+                          <span>Stock Scope:</span>
+                          <span className="font-black text-white uppercase">{reportStockFilter} ({reportMedCategory})</span>
                         </div>
-                      ))}
+                      )}
+                      {(reportStartDate || reportEndDate) && (
+                        <div className="flex justify-between items-center text-blue-100">
+                          <span>Date Range:</span>
+                          <span className="font-black text-white">{reportStartDate || 'Start'} to {reportEndDate || 'End'}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-4">
+                    <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Report Capabilities</h5>
+                    <div className="space-y-3 text-xs font-bold text-slate-600">
+                      <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-2xl">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <span><strong>Dynamic Stock Filter:</strong> Switch between All Stock, In Stock, Low Stock, or Depleted items effortlessly.</span>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-2xl">
+                        <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <span><strong>1-Click WhatsApp Dispatch:</strong> Sends clean markdown summary tables to veterinarians and suppliers.</span>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-2xl">
+                        <Printer className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                        <span><strong>A4 Vector PDF Engine:</strong> Generates high-resolution PDF tables with calculated totals and metrics.</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -5872,6 +6231,18 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
             </div>
 
             <div className="p-4 sm:p-8 border-t border-slate-100 bg-white flex gap-2 sm:gap-4 flex-wrap">
+              <button
+                id="detail-modal-move-pen-btn"
+                onClick={() => {
+                  setMoveToPenAnimalId(selectedAnimal.id);
+                  setIsMoveToPenModalOpen(true);
+                  setSelectedAnimal(null);
+                }}
+                className="py-3 sm:py-4 px-4 sm:px-6 bg-indigo-50 text-indigo-700 rounded-xl sm:rounded-[1.5rem] font-black text-[11px] sm:text-xs uppercase tracking-wider hover:bg-indigo-100 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                title="Move this animal to a different pen / herd group"
+              >
+                <ArrowRightLeft className="w-4 h-4" /> Move Pen
+              </button>
               <button
                 onClick={() => { setEditingReproId(null); setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0], animalId: selectedAnimal.id }); setReproAnimalSearch(selectedAnimal.tag); setIsReproFormOpen(true); setSelectedAnimal(null); }}
                 className="flex-1 min-w-[140px] py-3 sm:py-4 bg-blue-600 text-white rounded-xl sm:rounded-[1.5rem] font-black text-[11px] sm:text-xs uppercase tracking-wider hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
@@ -7189,6 +7560,19 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           onDispense={handleQuickDispense}
         />
       )}
+
+      {/* Move to Pen Modal */}
+      <MoveToPenModal
+        isOpen={isMoveToPenModalOpen}
+        onClose={() => {
+          setIsMoveToPenModalOpen(false);
+          setMoveToPenAnimalId(null);
+        }}
+        animals={animals}
+        settings={settings}
+        initialSelectedAnimalId={moveToPenAnimalId}
+        onConfirmMove={handleConfirmMoveToPen}
+      />
 
       {/* Floating Success Toast Notification */}
       {toastMessage && (
