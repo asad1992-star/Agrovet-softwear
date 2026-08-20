@@ -33,7 +33,8 @@ export const DEFAULT_SETTINGS: FarmSettings = {
     inseminated: '#06B6D4',
     observation: '#94A3B8'
   },
-  customGroups: ['Main Herd', 'Elite', 'High Group', 'Medium Group', 'Heifers', 'Breeding']
+  customGroups: ['Main Herd', 'Elite', 'High Group', 'Medium Group', 'Heifers', 'Breeding'],
+  autoBackupEnabled: true
 };
 
 export type SyncState = 'synced' | 'pending' | 'syncing' | 'offline' | 'error';

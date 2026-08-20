@@ -28,6 +28,7 @@ import {
   ArrowRight,
   Printer,
   Trash2,
+  Minus,
   Syringe,
   Thermometer,
   History,
@@ -91,6 +92,19 @@ import {
   MedicinePurchase
 } from './types';
 import { MedicineHistoryModal } from './components/MedicineHistoryModal';
+import { QuickRestockModal } from './components/QuickRestockModal';
+import { QuickDispenseModal } from './components/QuickDispenseModal';
+import { BackupSettingsSection } from './components/BackupSettingsSection';
+import { performAutomaticBackup, isDailyBackupDue } from './services/backupService';
+import {
+  deductMedicineStock,
+  refundMedicineStock,
+  adjustMedicineStockForEdit,
+  restockMedicineStock,
+  dispenseMedicineStock,
+  getMedicineStockStatus,
+  calculateMedicineTotals
+} from './services/medicineInventory';
 import { validations, dateUtils } from './services/businessLogic';
 import {
   generateReproSectionReport,
@@ -349,7 +363,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
   // Medicine Inventory & Usage states
   const [healthSubTab, setHealthSubTab] = useState<'treatments' | 'inventory' | 'reports'>('treatments');
+  const [medicineViewMode, setMedicineViewMode] = useState<HerdViewMode>('medium');
+  const [medicineStockFilter, setMedicineStockFilter] = useState<'All' | 'In Stock' | 'Low Stock' | 'Out of Stock'>('All');
   const [isMedicineFormOpen, setIsMedicineFormOpen] = useState(false);
+  const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
+  const [selectedMedicineForRestock, setSelectedMedicineForRestock] = useState<Medicine | null>(null);
+  const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
+  const [selectedMedicineForDispense, setSelectedMedicineForDispense] = useState<Medicine | null>(null);
   const [selectedMedicineForHistory, setSelectedMedicineForHistory] = useState<Medicine | null>(null);
   const [newMedicine, setNewMedicine] = useState<Partial<Medicine>>({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
   const [editingMedicineId, setEditingMedicineId] = useState<string | null>(null);
@@ -379,6 +399,95 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const handleDeletePurchaseWithConfirmation = (purchaseId: string) => {
     deletePurchase(purchaseId);
     setToastMessage('🗑️ Deleted purchase record.');
+  };
+
+  const handleQuickRestock = (
+    packsToAdd: number,
+    looseToAdd: number,
+    supplier?: string,
+    notes?: string,
+    invoiceNo?: string
+  ) => {
+    if (!selectedMedicineForRestock) return;
+    const { updatedMedicines, updatedMed } = restockMedicineStock(
+      medicines,
+      selectedMedicineForRestock.id,
+      packsToAdd,
+      looseToAdd
+    );
+
+    if (updatedMed) {
+      updateMedicine(updatedMed);
+
+      // Also create purchase history entry for complete audit trail
+      const newPurchase: MedicinePurchase = {
+        id: Math.random().toString(36).substr(2, 9),
+        medicineId: updatedMed.id,
+        medicineName: updatedMed.name,
+        packs: packsToAdd,
+        loose: looseToAdd,
+        totalUnits: (packsToAdd * (updatedMed.loosePerPack || 100)) + looseToAdd,
+        date: dateUtils.today(),
+        supplier: supplier || 'Farm Inventory Restock',
+        invoiceNumber: invoiceNo || undefined,
+        notes: notes || 'Quick Inventory Restock'
+      };
+      addPurchase(newPurchase);
+
+      setToastMessage(`✅ Restocked +${packsToAdd} packs and +${looseToAdd} ${updatedMed.unit} for "${updatedMed.name}".`);
+    }
+    setSelectedMedicineForRestock(null);
+  };
+
+  const handleQuickDispense = (
+    amountToDeduct: number,
+    reason: string,
+    patientTag?: string
+  ) => {
+    if (!selectedMedicineForDispense) return;
+
+    const result = dispenseMedicineStock(medicines, selectedMedicineForDispense.id, amountToDeduct);
+    saveMedicinesDirectly(result.updatedMedicines);
+
+    if (result.alerts.length > 0) {
+      setLowStockAlerts(prev => [
+        ...prev,
+        ...result.alerts.map(msg => ({ id: Math.random().toString(), msg }))
+      ]);
+    }
+
+    // If patient cow tag was provided, automatically record observation / treatment
+    if (patientTag) {
+      const animal = animals.find(a => a.tag.toLowerCase() === patientTag.toLowerCase());
+      const animalId = animal ? animal.id : Math.random().toString(36).substr(2, 9);
+      if (!animal) {
+        // Register cow if not yet existing
+        addAnimal({
+          id: animalId,
+          tag: patientTag,
+          name: patientTag,
+          breed: 'Holstein',
+          sex: 'Female',
+          dob: dateUtils.addDays(dateUtils.today(), -3 * 365),
+          herd: 'Main Herd',
+          isCalf: false
+        });
+      }
+
+      addHealthEvent({
+        id: Math.random().toString(36).substr(2, 9),
+        animalId,
+        date: dateUtils.today(),
+        type: HealthEventType.ILLNESS,
+        medication: selectedMedicineForDispense.name,
+        dosage: `${amountToDeduct} ${selectedMedicineForDispense.unit}`,
+        treatments: [{ name: selectedMedicineForDispense.name, dose: `${amountToDeduct} ${selectedMedicineForDispense.unit}` }],
+        details: `Dispensed: ${reason}`
+      } as HealthEvent);
+    }
+
+    setToastMessage(`💉 Dispensed ${amountToDeduct} ${selectedMedicineForDispense.unit} of "${selectedMedicineForDispense.name}" (${reason}).`);
+    setSelectedMedicineForDispense(null);
   };
   
   // Inventory Filtering & Period Reports
@@ -940,17 +1049,19 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     ].filter(item => item.value > 0);
   }, [dashboardStats]);
 
-  // Auto Backup System
+  // Daily Automatic Local Backup System
   useEffect(() => {
-    const lastBackup = localStorage.getItem('agrovet_backup_time');
-    const now = new Date().getTime();
-    if (!lastBackup || now - parseInt(lastBackup) > 24 * 60 * 60 * 1000) {
-      const data = {
-        exportDate: new Date().toISOString(),
-        animals, reproEvents, healthEvents, enrollments, settings
-      };
-      localStorage.setItem('agrovet_auto_backup', JSON.stringify(data));
-      localStorage.setItem('agrovet_backup_time', now.toString());
+    if (isDailyBackupDue(settings.autoBackupEnabled !== false) && animals.length > 0) {
+      performAutomaticBackup({
+        animals,
+        reproEvents,
+        healthEvents,
+        enrollments,
+        customProtocols,
+        medicines,
+        purchases,
+        settings
+      }, 'daily_automatic');
     }
 
     // Auto-Archive protocols > 100 days old
@@ -962,7 +1073,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         }
       }
     });
-  }, [animals, reproEvents, healthEvents, enrollments, settings]);
+  }, [animals, reproEvents, healthEvents, enrollments, customProtocols, medicines, purchases, settings]);
 
   const todaySteps = useMemo(() => {
     const today = dateUtils.today();
@@ -1047,75 +1158,39 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       ? newHealth.treatments
       : (newHealth.medication ? [{ name: newHealth.medication, dose: newHealth.dosage || '' }] : []);
 
-    const updatedMedicines = [...medicines];
-    const lowStockMessages: string[] = [];
+    if (editingHealthId) {
+      // Find original event before this edit to compute exact delta and prevent multiple deductions
+      const existingEvent = healthEvents.find(h => h.id === editingHealthId);
+      const previousTreatments = existingEvent?.treatments && existingEvent.treatments.length > 0
+        ? existingEvent.treatments
+        : (existingEvent?.medication ? [{ name: existingEvent.medication, dose: existingEvent.dosage || '' }] : []);
 
-    finalTreatments.forEach(treatment => {
-      if (!treatment.name) return;
-      
-      const parsed = treatment.dose.match(/^([\d.]+)/);
-      const singleDose = parsed ? parseFloat(parsed[1]) : 0;
-      const totalDose = singleDose * activeAnimals.length;
+      // Adjust medicine stock: accurately restores previous deduction, then applies new treatment
+      const adjustmentResult = adjustMedicineStockForEdit(
+        medicines,
+        previousTreatments,
+        finalTreatments,
+        1
+      );
+      saveMedicinesDirectly(adjustmentResult.updatedMedicines);
 
-      if (totalDose > 0) {
-        const medIndex = updatedMedicines.findIndex(m => m.name.toLowerCase() === treatment.name.trim().toLowerCase());
-        if (medIndex !== -1) {
-          const med = updatedMedicines[medIndex];
-          let currentPacks = med.packs;
-          let currentLoose = med.loose;
-          const totalStockUnits = (currentPacks * med.loosePerPack) + currentLoose;
-
-          if (totalStockUnits < totalDose) {
-            currentPacks = 0;
-            currentLoose = 0;
-          } else {
-            const packsToDeduct = Math.floor(totalDose / med.loosePerPack);
-            let remainingDose = totalDose % med.loosePerPack;
-
-            if (currentPacks >= packsToDeduct) {
-              currentPacks -= packsToDeduct;
-            } else {
-              const equivalentLoose = currentPacks * med.loosePerPack;
-              currentPacks = 0;
-              currentLoose += equivalentLoose;
-            }
-
-            if (currentLoose >= remainingDose) {
-              currentLoose -= remainingDose;
-            } else {
-              if (currentPacks > 0) {
-                currentPacks -= 1;
-                currentLoose += med.loosePerPack;
-                currentLoose -= remainingDose;
-              } else {
-                currentLoose = 0;
-              }
-            }
-          }
-
-          updatedMedicines[medIndex] = {
-            ...med,
-            packs: currentPacks,
-            loose: currentLoose
-          };
-
-          const newTotalUnits = (currentPacks * med.loosePerPack) + currentLoose;
-          if (newTotalUnits < med.minStockLevel) {
-            lowStockMessages.push(
-              `⚠️ Low Stock: ${med.name} is down to ${currentPacks} packs + ${currentLoose} ${med.unit} (minimum required: ${med.minStockLevel} ${med.unit})`
-            );
-          }
-        }
+      if (adjustmentResult.alerts.length > 0) {
+        setLowStockAlerts(prev => [
+          ...prev,
+          ...adjustmentResult.alerts.map(msg => ({ id: Math.random().toString(), msg }))
+        ]);
       }
-    });
+    } else {
+      // Perform high-precision deduction for new administrations across all selected animals
+      const deductionResult = deductMedicineStock(medicines, finalTreatments, activeAnimals.length);
+      saveMedicinesDirectly(deductionResult.updatedMedicines);
 
-    saveMedicinesDirectly(updatedMedicines);
-
-    if (lowStockMessages.length > 0) {
-      setLowStockAlerts(prev => [
-        ...prev,
-        ...lowStockMessages.map(msg => ({ id: Math.random().toString(), msg }))
-      ]);
+      if (deductionResult.alerts.length > 0) {
+        setLowStockAlerts(prev => [
+          ...prev,
+          ...deductionResult.alerts.map(msg => ({ id: Math.random().toString(), msg }))
+        ]);
+      }
     }
 
     activeAnimals.forEach(animalId => {
@@ -1146,7 +1221,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     setHealthAnimalSearch('');
     setSelectedMultipleAnimals([]);
     setTreatmentAnimalType('single');
-    setToastMessage(`Logged clinical entry for ${activeAnimals.length} animal(s). Stock updated.`);
+    setToastMessage(editingHealthId ? `Updated clinical entry. Inventory synchronized.` : `Logged clinical entry for ${activeAnimals.length} animal(s). Stock updated.`);
   };
 
   const handleAddMedicineSubmit = (e: React.FormEvent) => {
@@ -1483,8 +1558,20 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     const animal = animals.find(a => a.id === event.animalId);
     setConfirmDialog({
       isOpen: true,
-      message: `Delete ${event.type} record for ${animal?.tag || 'animal'} on ${event.date}?`,
-      onConfirm: () => { deleteHealthEvent(event.id); setConfirmDialog(d => ({ ...d, isOpen: false })); }
+      message: `Delete ${event.type} record for ${animal?.tag || 'animal'} on ${event.date}? Any medicine administered in this record will be restored to inventory.`,
+      onConfirm: () => {
+        const previousTreatments = event.treatments && event.treatments.length > 0
+          ? event.treatments
+          : (event.medication ? [{ name: event.medication, dose: event.dosage || '' }] : []);
+
+        if (previousTreatments.length > 0) {
+          const refundResult = refundMedicineStock(medicines, previousTreatments, 1);
+          saveMedicinesDirectly(refundResult.updatedMedicines);
+        }
+        deleteHealthEvent(event.id);
+        setConfirmDialog(d => ({ ...d, isOpen: false }));
+        setToastMessage(`Deleted health record and restored medicine stock.`);
+      }
     });
   };
 
@@ -3438,205 +3525,758 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               )}
 
               {/* SUB-TAB 2: MEDICINE INVENTORY */}
-              {healthSubTab === 'inventory' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  {/* Inventory controls header */}
-                  <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-                    {/* Search bar */}
-                    <div className="relative flex-1 w-full">
-                      <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search medicines by name..."
-                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                        value={medInventorySearch}
-                        onChange={e => setMedInventorySearch(e.target.value)}
-                      />
-                    </div>
-                    
-                    {/* Category Filter */}
-                    <div className="w-full md:w-48">
-                      <select
-                        className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                        value={medInventoryCat}
-                        onChange={e => setMedInventoryCat(e.target.value)}
+              {healthSubTab === 'inventory' && (() => {
+                const totals = calculateMedicineTotals(medicines);
+                const filteredMedicines = medicines.filter(m => {
+                  const matchesSearch = m.name.toLowerCase().includes(medInventorySearch.toLowerCase()) || m.category.toLowerCase().includes(medInventorySearch.toLowerCase());
+                  const matchesCat = medInventoryCat === 'All' || m.category === medInventoryCat;
+                  const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+                  let matchesStock = true;
+                  if (medicineStockFilter === 'In Stock') {
+                    matchesStock = totalUnits > 0 && totalUnits >= m.minStockLevel;
+                  } else if (medicineStockFilter === 'Low Stock') {
+                    matchesStock = totalUnits > 0 && totalUnits < m.minStockLevel;
+                  } else if (medicineStockFilter === 'Out of Stock') {
+                    matchesStock = totalUnits === 0;
+                  }
+                  return matchesSearch && matchesCat && matchesStock;
+                });
+
+                const getCategoryEmoji = (category: string) => {
+                  switch (category?.toLowerCase()) {
+                    case 'injection': return '💉';
+                    case 'liquid': return '🧴';
+                    case 'powder': return '🧪';
+                    case 'pill': return '💊';
+                    case 'topical': return '🩹';
+                    default: return '📦';
+                  }
+                };
+
+                return (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    {/* Top KPI Stat Summary Cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                      <div 
+                        onClick={() => setMedicineStockFilter('All')}
+                        className={`bg-white p-5 sm:p-6 rounded-2xl sm:rounded-[2rem] border transition-all cursor-pointer shadow-sm hover:shadow-md ${
+                          medicineStockFilter === 'All' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-100 hover:border-slate-200'
+                        }`}
                       >
-                        <option value="All">All Categories</option>
-                        <option value="Injection">💉 Injection</option>
-                        <option value="Liquid">🧴 Liquid</option>
-                        <option value="Powder">💊 Powder</option>
-                        <option value="Pill">💊 Pill</option>
-                        <option value="Topical">🧴 Topical</option>
-                        <option value="Other">📦 Other</option>
-                      </select>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registered SKUs</span>
+                          <div className="p-2.5 bg-rose-50 rounded-xl text-rose-600">
+                            <Pill className="w-4 h-4" />
+                          </div>
+                        </div>
+                        <p className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">{totals.totalItems}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">Active Pharmaceuticals</p>
+                      </div>
+
+                      <div 
+                        className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-[2rem] border border-slate-100 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Inventory</span>
+                          <div className="p-2.5 bg-blue-50 rounded-xl text-blue-600">
+                            <Package className="w-4 h-4" />
+                          </div>
+                        </div>
+                        <p className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">{totals.totalPacks} <span className="text-sm font-bold text-slate-400">pk</span></p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">+ {totals.totalLooseUnits.toLocaleString()} loose units</p>
+                      </div>
+
+                      <div 
+                        onClick={() => setMedicineStockFilter('Low Stock')}
+                        className={`bg-white p-5 sm:p-6 rounded-2xl sm:rounded-[2rem] border transition-all cursor-pointer shadow-sm hover:shadow-md ${
+                          medicineStockFilter === 'Low Stock' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-100 hover:border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Low Stock Items</span>
+                          <div className="p-2.5 bg-amber-50 rounded-xl text-amber-600">
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                        </div>
+                        <p className={`text-2xl sm:text-3xl font-black ${totals.lowStockCount > 0 ? 'text-amber-600' : 'text-slate-800'} tracking-tight`}>
+                          {totals.lowStockCount}
+                        </p>
+                        <p className="text-[10px] text-amber-600/80 font-bold uppercase tracking-wider mt-1">Below minimum threshold</p>
+                      </div>
+
+                      <div 
+                        onClick={() => setMedicineStockFilter('Out of Stock')}
+                        className={`bg-white p-5 sm:p-6 rounded-2xl sm:rounded-[2rem] border transition-all cursor-pointer shadow-sm hover:shadow-md ${
+                          medicineStockFilter === 'Out of Stock' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-slate-100 hover:border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Depleted / Empty</span>
+                          <div className="p-2.5 bg-rose-50 rounded-xl text-rose-600">
+                            <Trash2 className="w-4 h-4" />
+                          </div>
+                        </div>
+                        <p className={`text-2xl sm:text-3xl font-black ${totals.outOfStockCount > 0 ? 'text-rose-600' : 'text-slate-800'} tracking-tight`}>
+                          {totals.outOfStockCount}
+                        </p>
+                        <p className="text-[10px] text-rose-600/80 font-bold uppercase tracking-wider mt-1">Requires re-order</p>
+                      </div>
                     </div>
 
-                    <button
-                      onClick={() => {
-                        setEditingMedicineId(null);
-                        setNewMedicine({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
-                        setIsMedicineFormOpen(true);
-                      }}
-                      className="w-full md:w-auto flex items-center justify-center gap-2 bg-rose-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md shadow-rose-100"
-                    >
-                      <Plus className="w-4 h-4" /> Add Medicine
-                    </button>
-                  </div>
+                    {/* Inventory Controls & View Switcher Header */}
+                    <div className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+                      <div className="flex flex-col lg:flex-row gap-4 justify-between items-center">
+                        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+                          {/* Search bar */}
+                          <div className="relative w-full sm:w-72">
+                            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              placeholder="Search medicine name..."
+                              className="w-full pl-11 pr-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                              value={medInventorySearch}
+                              onChange={e => setMedInventorySearch(e.target.value)}
+                            />
+                          </div>
 
-                  {/* Medicines Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {medicines
-                      .filter(m => {
-                        const matchesSearch = m.name.toLowerCase().includes(medInventorySearch.toLowerCase());
-                        const matchesCat = medInventoryCat === 'All' || m.category === medInventoryCat;
-                        return matchesSearch && matchesCat;
-                      })
-                      .map(m => {
-                        const totalUnits = (m.packs * m.loosePerPack) + m.loose;
-                        const isLow = totalUnits < m.minStockLevel;
+                          {/* Category Filter */}
+                          <div className="w-full sm:w-44">
+                            <select
+                              className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                              value={medInventoryCat}
+                              onChange={e => setMedInventoryCat(e.target.value)}
+                            >
+                              <option value="All">All Categories</option>
+                              <option value="Injection">💉 Injection</option>
+                              <option value="Liquid">🧴 Liquid</option>
+                              <option value="Powder">💊 Powder</option>
+                              <option value="Pill">💊 Pill</option>
+                              <option value="Topical">🧴 Topical</option>
+                              <option value="Other">📦 Other</option>
+                            </select>
+                          </div>
+                        </div>
 
-                        const medPurchases = purchases.filter(p => p.medicineId === m.id || p.medicineName.toLowerCase() === m.name.toLowerCase());
-                        const medUsages = healthEvents.filter(h => {
-                          if (h.medication && h.medication.toLowerCase() === m.name.toLowerCase()) return true;
-                          if (h.treatments && h.treatments.some(t => t.name.toLowerCase() === m.name.toLowerCase())) return true;
-                          return false;
-                        });
-
-                        return (
-                          <div
-                            key={m.id}
-                            className={`bg-white rounded-[2rem] p-6 border-2 transition-all shadow-sm flex flex-col justify-between hover:shadow-lg ${
-                              isLow
-                                ? 'border-rose-400 bg-rose-50/10 shadow-rose-100/30'
-                                : 'border-slate-100 hover:border-blue-200'
-                            }`}
-                          >
-                            <div className="space-y-4">
-                              <div
-                                onClick={() => setSelectedMedicineForHistory(m)}
-                                className="flex items-start justify-between cursor-pointer group"
-                                title="Click to view full purchase and clinical usage history"
+                        {/* Stock Filter Pills & View Mode Switcher */}
+                        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                          {/* Stock Status Pills */}
+                          <div className="flex p-1 bg-slate-100 rounded-xl">
+                            {(['All', 'In Stock', 'Low Stock', 'Out of Stock'] as const).map(tab => (
+                              <button
+                                key={tab}
+                                onClick={() => setMedicineStockFilter(tab)}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                                  medicineStockFilter === tab
+                                    ? 'bg-white text-slate-800 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-800'
+                                }`}
                               >
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="text-lg font-black text-slate-800 tracking-tight group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
-                                      {m.name}
-                                    </h4>
-                                  </div>
-                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                    Category: {m.category}
-                                  </span>
+                                {tab}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Herd Hub-Style View Mode Switcher */}
+                          <div className="flex p-1 bg-slate-100 rounded-xl shadow-inner">
+                            {[
+                              { id: 'list', icon: LayoutList, label: 'List View' },
+                              { id: 'small', icon: LayoutGrid, label: 'Compact Grid' },
+                              { id: 'medium', icon: Grid2X2, label: 'Cards' },
+                              { id: 'large', icon: Square, label: 'Expanded' },
+                            ].map((mode) => {
+                              const IconComponent = mode.icon;
+                              return (
+                                <button
+                                  key={mode.id}
+                                  onClick={() => setMedicineViewMode(mode.id as HerdViewMode)}
+                                  title={mode.label}
+                                  className={`p-2.5 rounded-lg transition-all ${
+                                    medicineViewMode === mode.id
+                                      ? 'bg-white text-rose-600 shadow-sm'
+                                      : 'text-slate-400 hover:text-slate-600'
+                                  }`}
+                                >
+                                  <IconComponent className="w-4 h-4" />
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Export PDF Button */}
+                          <button
+                            onClick={() => generateMedicineInventoryReport(medicines, settings)}
+                            className="flex items-center gap-1.5 px-4 py-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border border-slate-200"
+                            title="Export Inventory PDF"
+                          >
+                            <Download className="w-3.5 h-3.5" /> PDF
+                          </button>
+
+                          {/* Add Medicine Button */}
+                          <button
+                            onClick={() => {
+                              setEditingMedicineId(null);
+                              setNewMedicine({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
+                              setIsMedicineFormOpen(true);
+                            }}
+                            className="flex items-center gap-2 bg-rose-600 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md shadow-rose-100"
+                          >
+                            <Plus className="w-4 h-4" /> Add Medicine
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* VIEW MODE 1: LIST VIEW */}
+                    {medicineViewMode === 'list' && (
+                      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-100 bg-slate-50/50">
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"># / Medicine</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Packs (Unopened)</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Loose In Open Pack</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Inventory</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {filteredMedicines.map((m, idx) => {
+                                const status = getMedicineStockStatus(m);
+                                const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+                                const medPurchases = purchases.filter(p => p.medicineId === m.id || p.medicineName.toLowerCase() === m.name.toLowerCase());
+                                const medUsages = healthEvents.filter(h => {
+                                  if (h.medication && h.medication.toLowerCase() === m.name.toLowerCase()) return true;
+                                  if (h.treatments && h.treatments.some(t => t.name.toLowerCase() === m.name.toLowerCase())) return true;
+                                  return false;
+                                });
+
+                                return (
+                                  <tr key={m.id} className="hover:bg-slate-50/70 transition-colors group">
+                                    <td className="px-6 py-4">
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-xs font-black text-slate-300 w-5">{idx + 1}</span>
+                                        <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-base flex-shrink-0">
+                                          {getCategoryEmoji(m.category)}
+                                        </div>
+                                        <div>
+                                          <button
+                                            onClick={() => setSelectedMedicineForHistory(m)}
+                                            className="text-sm font-black text-slate-800 hover:text-rose-600 transition-colors text-left flex items-center gap-1.5"
+                                          >
+                                            {m.name}
+                                          </button>
+                                          <p className="text-[10px] font-bold text-slate-400">
+                                            {m.loosePerPack} {m.unit} per pack • Min: {m.minStockLevel} {m.unit}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                                        {m.category}
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <span className="text-xs font-black text-slate-700">{m.packs} packs</span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <span className="text-xs font-black text-slate-700">{m.loose} {m.unit}</span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <span className={`text-sm font-black ${
+                                        status.isOutOfStock ? 'text-rose-600' : status.isLowStock ? 'text-amber-600' : 'text-slate-800'
+                                      }`}>
+                                        {totalUnits} {m.unit}
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {status.isOutOfStock ? (
+                                        <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                          <Trash2 className="w-3 h-3" /> Out of Stock
+                                        </span>
+                                      ) : status.isLowStock ? (
+                                        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                          <AlertTriangle className="w-3 h-3" /> Low Stock
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                          ✓ In Stock
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <button
+                                          onClick={() => {
+                                            setSelectedMedicineForRestock(m);
+                                            setIsRestockModalOpen(true);
+                                          }}
+                                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1"
+                                          title="Add Stock (Restock)"
+                                        >
+                                          <Plus className="w-3 h-3" /> Restock
+                                        </button>
+
+                                        <button
+                                          onClick={() => {
+                                            setSelectedMedicineForDispense(m);
+                                            setIsDispenseModalOpen(true);
+                                          }}
+                                          disabled={totalUnits <= 0}
+                                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 disabled:opacity-30 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1"
+                                          title="Dispense / Deduct Dose"
+                                        >
+                                          <Minus className="w-3 h-3" /> Dispense
+                                        </button>
+
+                                        <button
+                                          onClick={() => setSelectedMedicineForHistory(m)}
+                                          className="p-1.5 hover:bg-blue-50 text-slate-400 hover:text-blue-600 rounded-lg transition-colors"
+                                          title="View Audit & History"
+                                        >
+                                          <Clock className="w-4 h-4" />
+                                        </button>
+
+                                        <button
+                                          onClick={() => {
+                                            setEditingMedicineId(m.id);
+                                            setNewMedicine(m);
+                                            setIsMedicineFormOpen(true);
+                                          }}
+                                          className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-lg transition-colors"
+                                          title="Edit Medicine Config"
+                                        >
+                                          <Edit2 className="w-4 h-4" />
+                                        </button>
+
+                                        <button
+                                          onClick={() => {
+                                            setConfirmDialog({
+                                              isOpen: true,
+                                              message: `Are you sure you want to delete "${m.name}" from your active pharmacy inventory? This cannot be undone.`,
+                                              onConfirm: () => {
+                                                deleteMedicine(m.id);
+                                                setConfirmDialog(d => ({ ...d, isOpen: false }));
+                                                setToastMessage(`Removed "${m.name}" from inventory.`);
+                                              }
+                                            });
+                                          }}
+                                          className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                                          title="Delete Medicine"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* VIEW MODE 2: COMPACT GRID VIEW (SMALL) */}
+                    {medicineViewMode === 'small' && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        {filteredMedicines.map((m, idx) => {
+                          const status = getMedicineStockStatus(m);
+                          const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+
+                          return (
+                            <div
+                              key={m.id}
+                              className={`bg-white p-4 rounded-2xl border-2 transition-all shadow-sm flex flex-col justify-between hover:shadow-md group ${
+                                status.isOutOfStock ? 'border-rose-200 bg-rose-50/20' : status.isLowStock ? 'border-amber-200 bg-amber-50/20' : 'border-slate-100 hover:border-blue-200'
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black text-slate-300">#{idx + 1}</span>
+                                  <span className="text-lg">{getCategoryEmoji(m.category)}</span>
+                                  <div className={`w-2 h-2 rounded-full ${
+                                    status.isOutOfStock ? 'bg-rose-500' : status.isLowStock ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                                  }`} />
                                 </div>
-                                {isLow ? (
-                                  <span className="flex items-center gap-1 bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">
-                                    <AlertTriangle className="w-3 h-3" /> Low Stock
+                                <button
+                                  onClick={() => setSelectedMedicineForHistory(m)}
+                                  className="text-xs font-black text-slate-800 hover:text-rose-600 transition-colors text-left line-clamp-2"
+                                  title={m.name}
+                                >
+                                  {m.name}
+                                </button>
+                                <div>
+                                  <p className={`text-base font-black ${
+                                    status.isOutOfStock ? 'text-rose-600' : status.isLowStock ? 'text-amber-600' : 'text-slate-800'
+                                  }`}>
+                                    {totalUnits} <span className="text-[10px] font-bold text-slate-400">{m.unit}</span>
+                                  </p>
+                                  <p className="text-[9px] font-bold text-slate-400">{m.packs} pk • {m.loose} loose</p>
+                                </div>
+                              </div>
+
+                              <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between gap-1">
+                                <button
+                                  onClick={() => {
+                                    setSelectedMedicineForRestock(m);
+                                    setIsRestockModalOpen(true);
+                                  }}
+                                  className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black uppercase flex items-center justify-center flex-1"
+                                  title="Restock"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedMedicineForDispense(m);
+                                    setIsDispenseModalOpen(true);
+                                  }}
+                                  disabled={totalUnits <= 0}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 disabled:opacity-30 rounded-lg text-[9px] font-black uppercase flex items-center justify-center flex-1"
+                                  title="Dispense"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => setSelectedMedicineForHistory(m)}
+                                  className="p-1.5 hover:bg-blue-50 text-slate-400 hover:text-blue-600 rounded-lg"
+                                  title="History"
+                                >
+                                  <Clock className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* VIEW MODE 3: STANDARD CARDS (MEDIUM) */}
+                    {medicineViewMode === 'medium' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredMedicines.map(m => {
+                          const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+                          const status = getMedicineStockStatus(m);
+                          const medPurchases = purchases.filter(p => p.medicineId === m.id || p.medicineName.toLowerCase() === m.name.toLowerCase());
+                          const medUsages = healthEvents.filter(h => {
+                            if (h.medication && h.medication.toLowerCase() === m.name.toLowerCase()) return true;
+                            if (h.treatments && h.treatments.some(t => t.name.toLowerCase() === m.name.toLowerCase())) return true;
+                            return false;
+                          });
+
+                          return (
+                            <div
+                              key={m.id}
+                              className={`bg-white rounded-[2rem] p-6 border-2 transition-all shadow-sm flex flex-col justify-between hover:shadow-lg ${
+                                status.isOutOfStock
+                                  ? 'border-rose-400 bg-rose-50/10 shadow-rose-100/30'
+                                  : status.isLowStock
+                                  ? 'border-amber-400 bg-amber-50/10 shadow-amber-100/30'
+                                  : 'border-slate-100 hover:border-blue-200'
+                              }`}
+                            >
+                              <div className="space-y-4">
+                                <div
+                                  onClick={() => setSelectedMedicineForHistory(m)}
+                                  className="flex items-start justify-between cursor-pointer group"
+                                  title="Click to view full purchase and clinical usage history"
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xl">{getCategoryEmoji(m.category)}</span>
+                                      <h4 className="text-lg font-black text-slate-800 tracking-tight group-hover:text-rose-600 transition-colors">
+                                        {m.name}
+                                      </h4>
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5 block">
+                                      Category: {m.category}
+                                    </span>
+                                  </div>
+                                  {status.isOutOfStock ? (
+                                    <span className="flex items-center gap-1 bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                      <Trash2 className="w-3 h-3" /> Depleted
+                                    </span>
+                                  ) : status.isLowStock ? (
+                                    <span className="flex items-center gap-1 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                      <AlertTriangle className="w-3 h-3" /> Low Stock
+                                    </span>
+                                  ) : (
+                                    <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                      Good Stock
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Clickable Quick History Summary Badge */}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedMedicineForHistory(m)}
+                                  className="w-full flex items-center justify-between px-3.5 py-2 bg-blue-50/70 hover:bg-blue-100/80 text-blue-700 rounded-xl transition-all border border-blue-100 text-left group cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+                                    <Clock className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>History ({medPurchases.length} buys, {medUsages.length} uses)</span>
+                                  </div>
+                                  <span className="text-[10px] font-black text-blue-600 group-hover:translate-x-0.5 transition-transform">
+                                    View Audit →
+                                  </span>
+                                </button>
+
+                                <div
+                                  onClick={() => setSelectedMedicineForHistory(m)}
+                                  className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100/80 cursor-pointer hover:bg-slate-100/70 transition-colors"
+                                >
+                                  <div>
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Packs (Unopened)</p>
+                                    <p className="text-sm font-black text-slate-700">{m.packs} packs</p>
+                                    <p className="text-[9px] font-bold text-slate-400 italic">({m.loosePerPack} {m.unit} ea)</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Loose Qty (Open Pack)</p>
+                                    <p className="text-sm font-black text-slate-700">{m.loose} {m.unit}</p>
+                                  </div>
+                                </div>
+
+                                <div className="flex justify-between items-center text-xs pt-1">
+                                  <div>
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Inventory</p>
+                                    <p className={`text-lg font-black ${
+                                      status.isOutOfStock ? 'text-rose-600' : status.isLowStock ? 'text-amber-600' : 'text-slate-800'
+                                    }`}>
+                                      {totalUnits} {m.unit}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Alert Limit</p>
+                                    <p className="font-bold text-slate-600">
+                                      {m.minStockLevel} {m.unit}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 pt-5 mt-5 border-t border-slate-100">
+                                {/* Direct Quick Restock & Dispense action bar */}
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedMedicineForRestock(m);
+                                      setIsRestockModalOpen(true);
+                                    }}
+                                    className="py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" /> Restock
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedMedicineForDispense(m);
+                                      setIsDispenseModalOpen(true);
+                                    }}
+                                    disabled={totalUnits <= 0}
+                                    className="py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 disabled:opacity-30 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+                                  >
+                                    <Minus className="w-3.5 h-3.5" /> Dispense
+                                  </button>
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => setSelectedMedicineForHistory(m)}
+                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all"
+                                  >
+                                    <Clock className="w-3.5 h-3.5 text-blue-600" /> Audit History
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setEditingMedicineId(m.id);
+                                      setNewMedicine(m);
+                                      setIsMedicineFormOpen(true);
+                                    }}
+                                    className="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-black text-[10px] uppercase transition-all"
+                                    title="Edit Configuration"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setConfirmDialog({
+                                        isOpen: true,
+                                        message: `Are you sure you want to delete "${m.name}" from your active pharmacy database? This cannot be undone.`,
+                                        onConfirm: () => {
+                                          deleteMedicine(m.id);
+                                          setConfirmDialog(d => ({ ...d, isOpen: false }));
+                                          setToastMessage(`Removed "${m.name}" from active records.`);
+                                        }
+                                      });
+                                    }}
+                                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all flex items-center justify-center"
+                                    title="Delete Medicine Record"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* VIEW MODE 4: EXPANDED DETAILED CARDS (LARGE) */}
+                    {medicineViewMode === 'large' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {filteredMedicines.map(m => {
+                          const totalUnits = (m.packs * m.loosePerPack) + m.loose;
+                          const status = getMedicineStockStatus(m);
+                          const medPurchases = purchases.filter(p => p.medicineId === m.id || p.medicineName.toLowerCase() === m.name.toLowerCase());
+                          const medUsages = healthEvents.filter(h => {
+                            if (h.medication && h.medication.toLowerCase() === m.name.toLowerCase()) return true;
+                            if (h.treatments && h.treatments.some(t => t.name.toLowerCase() === m.name.toLowerCase())) return true;
+                            return false;
+                          });
+
+                          return (
+                            <div
+                              key={m.id}
+                              className={`bg-white rounded-[2.5rem] p-8 border-2 transition-all shadow-sm space-y-6 hover:shadow-xl ${
+                                status.isOutOfStock ? 'border-rose-300 bg-rose-50/10' : status.isLowStock ? 'border-amber-300 bg-amber-50/10' : 'border-slate-100'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-center gap-4">
+                                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl shadow-inner">
+                                    {getCategoryEmoji(m.category)}
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xl font-black text-slate-800 tracking-tight">{m.name}</h4>
+                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-0.5">
+                                      Category: {m.category} • Capacity: {m.loosePerPack} {m.unit}/pack
+                                    </p>
+                                  </div>
+                                </div>
+                                {status.isOutOfStock ? (
+                                  <span className="bg-rose-100 text-rose-700 px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                    Out of Stock
+                                  </span>
+                                ) : status.isLowStock ? (
+                                  <span className="bg-amber-100 text-amber-700 px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider animate-pulse">
+                                    Low Stock Alert
                                   </span>
                                 ) : (
-                                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
-                                    Good Stock
+                                  <span className="bg-emerald-100 text-emerald-700 px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                    Normal Inventory
                                   </span>
                                 )}
                               </div>
 
-                              {/* Clickable Quick History Summary Badge */}
-                              <button
-                                type="button"
-                                onClick={() => setSelectedMedicineForHistory(m)}
-                                className="w-full flex items-center justify-between px-3.5 py-2 bg-blue-50/70 hover:bg-blue-100/80 text-blue-700 rounded-xl transition-all border border-blue-100 text-left group cursor-pointer"
-                              >
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider">
-                                  <Clock className="w-3.5 h-3.5 text-blue-600" />
-                                  <span>History ({medPurchases.length} buys, {medUsages.length} uses)</span>
-                                </div>
-                                <span className="text-[10px] font-black text-blue-600 group-hover:translate-x-0.5 transition-transform">
-                                  View Audit →
-                                </span>
-                              </button>
-
-                              <div
-                                onClick={() => setSelectedMedicineForHistory(m)}
-                                className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100/80 cursor-pointer hover:bg-slate-100/70 transition-colors"
-                              >
+                              <div className="grid grid-cols-3 gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
                                 <div>
-                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Packs (Unopened)</p>
-                                  <p className="text-sm font-black text-slate-700">{m.packs} packs</p>
-                                  <p className="text-[9px] font-bold text-slate-400 italic">({m.loosePerPack} {m.unit} ea)</p>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Unopened Packs</p>
+                                  <p className="text-lg font-black text-slate-800">{m.packs} packs</p>
                                 </div>
                                 <div>
-                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Loose Qty (Open Pack)</p>
-                                  <p className="text-sm font-black text-slate-700">{m.loose} {m.unit}</p>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Loose Units</p>
+                                  <p className="text-lg font-black text-slate-800">{m.loose} {m.unit}</p>
                                 </div>
-                              </div>
-
-                              <div className="flex justify-between items-center text-xs pt-1">
                                 <div>
-                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Inventory</p>
-                                  <p className={`text-lg font-black ${isLow ? 'text-rose-600' : 'text-slate-800'}`}>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Active Volume</p>
+                                  <p className={`text-lg font-black ${
+                                    status.isOutOfStock ? 'text-rose-600' : status.isLowStock ? 'text-amber-600' : 'text-emerald-600'
+                                  }`}>
                                     {totalUnits} {m.unit}
                                   </p>
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Alert Limit</p>
-                                  <p className="font-bold text-slate-600">
-                                    {m.minStockLevel} {m.unit}
+                              </div>
+
+                              <div className="flex items-center justify-between p-4 bg-blue-50/60 rounded-2xl border border-blue-100 text-xs">
+                                <div>
+                                  <p className="text-[10px] font-black text-blue-600 uppercase tracking-wider">Lifetime Activity</p>
+                                  <p className="font-bold text-slate-700 mt-0.5">
+                                    {medPurchases.length} Restocks Recorded • {medUsages.length} Clinical Administrations
                                   </p>
                                 </div>
+                                <button
+                                  onClick={() => setSelectedMedicineForHistory(m)}
+                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shadow-md shadow-blue-100"
+                                >
+                                  View Audit Trail →
+                                </button>
                               </div>
-                            </div>
 
-                            <div className="space-y-2 pt-5 mt-5 border-t border-slate-100">
-                              <button
-                                onClick={() => setSelectedMedicineForHistory(m)}
-                                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shadow-md shadow-blue-100 cursor-pointer"
-                              >
-                                <Clock className="w-3.5 h-3.5" /> Purchase & Usage History
-                              </button>
-                              
-                              <div className="flex gap-2">
+                              <div className="flex items-center gap-3 pt-2">
+                                <button
+                                  onClick={() => {
+                                    setSelectedMedicineForRestock(m);
+                                    setIsRestockModalOpen(true);
+                                  }}
+                                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100"
+                                >
+                                  <Plus className="w-4 h-4" /> Quick Restock
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedMedicineForDispense(m);
+                                    setIsDispenseModalOpen(true);
+                                  }}
+                                  disabled={totalUnits <= 0}
+                                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-30 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-100"
+                                >
+                                  <Minus className="w-4 h-4" /> Dispense Dose
+                                </button>
                                 <button
                                   onClick={() => {
                                     setEditingMedicineId(m.id);
                                     setNewMedicine(m);
                                     setIsMedicineFormOpen(true);
                                   }}
-                                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-800 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all"
+                                  className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all"
+                                  title="Edit"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" /> Edit Stock
+                                  <Edit2 className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => {
                                     setConfirmDialog({
                                       isOpen: true,
-                                      message: `Are you sure you want to delete "${m.name}" from your active pharmacy database? This cannot be undone.`,
+                                      message: `Are you sure you want to delete "${m.name}"?`,
                                       onConfirm: () => {
                                         deleteMedicine(m.id);
                                         setConfirmDialog(d => ({ ...d, isOpen: false }));
-                                        setToastMessage(`Removed "${m.name}" from active records.`);
+                                        setToastMessage(`Removed "${m.name}".`);
                                       }
                                     });
                                   }}
-                                  className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all flex items-center justify-center"
-                                  title="Delete Medicine Record"
+                                  className="p-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all"
+                                  title="Delete"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    {medicines.length === 0 && (
-                      <div className="col-span-full bg-white p-16 rounded-[2.5rem] border border-slate-100 text-center space-y-4">
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {filteredMedicines.length === 0 && (
+                      <div className="bg-white p-16 rounded-[2.5rem] border border-slate-100 text-center space-y-4 shadow-sm">
                         <Pill className="w-12 h-12 text-slate-300 mx-auto" />
-                        <h4 className="text-base font-black text-slate-700">No Medicines Registered</h4>
+                        <h4 className="text-base font-black text-slate-700">No Medicines Found</h4>
                         <p className="text-xs text-slate-400 font-bold max-w-sm mx-auto uppercase tracking-wider leading-relaxed">
-                          Your pharmacy is empty! Register vaccines, antibiotics, and supplements to enable automated dose tracking.
+                          {medicines.length === 0 
+                            ? 'Your pharmacy is empty! Register vaccines, antibiotics, and supplements to enable automated dose tracking.'
+                            : 'No medicines match the selected filter criteria.'}
                         </p>
                       </div>
                     )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* SUB-TAB 3: REPORTS & ANALYTICS */}
               {healthSubTab === 'reports' && (
@@ -4596,46 +5236,20 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     </div>
                   </div>
                 </div>
-                {/* Backup & Restore */}
-                <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 mt-6">
-                  <h4 className="text-xs font-black text-emerald-700 uppercase tracking-widest mb-3">Backup & Restore</h4>
-                  <p className="text-[10px] text-emerald-600 font-bold mb-4">Download or restore a full JSON backup of your farm data.</p>
-                  <div className="flex gap-3 flex-wrap">
-                    <button onClick={exportBackup} className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md">
-                      <Download className="w-4 h-4" /> Export Backup
-                    </button>
-                    <label className="flex items-center gap-2 bg-white border border-emerald-200 text-emerald-700 px-5 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 transition-all shadow-sm cursor-pointer">
-                      <Upload className="w-4 h-4" /> Restore from File
-                      <input
-                        type="file"
-                        accept=".json"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const text = await file.text();
-                          try {
-                            const data = JSON.parse(text);
-                            if (confirm(`Restore backup from "${file.name}"? This will overwrite all current data.`)) {
-                              const { storageService } = await import('./services/storage');
-                              if (data.animals) await storageService.saveAnimals(data.animals);
-                              if (data.reproEvents) await storageService.saveReproEvents(data.reproEvents);
-                              if (data.healthEvents) await storageService.saveHealthEvents(data.healthEvents);
-                              if (data.enrollments) await storageService.saveEnrollments(data.enrollments);
-                              if (data.customProtocols) await storageService.saveCustomProtocols(data.customProtocols);
-                              if (data.settings) await storageService.saveSettings(data.settings);
-                              alert('Backup restored successfully! Reloading...');
-                              window.location.reload();
-                            }
-                          } catch {
-                            alert('Invalid backup file. Please use a valid JSON export.');
-                          }
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
+                {/* Farm Data Protection & Auto-Backup */}
+                <BackupSettingsSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                  animals={animals}
+                  reproEvents={reproEvents}
+                  healthEvents={healthEvents}
+                  enrollments={enrollments}
+                  customProtocols={customProtocols}
+                  medicines={medicines}
+                  purchases={purchases}
+                  onShowToast={(msg) => setToastMessage(msg)}
+                  setConfirmDialog={setConfirmDialog}
+                />
               </div>
             </div>
           )}
@@ -6546,6 +7160,33 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
             setSelectedMedicineForHistory(null);
             setSelectedAnimal(animal);
           }}
+        />
+      )}
+
+      {/* Quick Restock Inventory Modal */}
+      {selectedMedicineForRestock && (
+        <QuickRestockModal
+          isOpen={isRestockModalOpen}
+          medicine={selectedMedicineForRestock}
+          onClose={() => {
+            setIsRestockModalOpen(false);
+            setSelectedMedicineForRestock(null);
+          }}
+          onRestock={handleQuickRestock}
+        />
+      )}
+
+      {/* Quick Dispense Dose Modal */}
+      {selectedMedicineForDispense && (
+        <QuickDispenseModal
+          isOpen={isDispenseModalOpen}
+          medicine={selectedMedicineForDispense}
+          animals={animals}
+          onClose={() => {
+            setIsDispenseModalOpen(false);
+            setSelectedMedicineForDispense(null);
+          }}
+          onDispense={handleQuickDispense}
         />
       )}
 

@@ -75,6 +75,8 @@ export interface FarmSettings {
   farmName: string;
   statusColors: StatusColors;
   customGroups?: string[];
+  autoBackupEnabled?: boolean;
+  lastBackupDate?: string;
 }
 
 export interface Animal {
@@ -168,6 +170,7 @@ export interface MedicinePurchase {
   loose: number;
   totalUnits: number;
   supplier?: string;
+  invoiceNumber?: string;
   batchNumber?: string;
   expiryDate?: string;
   notes?: string;
