@@ -289,7 +289,7 @@ export const validations = {
       }
     }
     if (event.type === ReproEventType.PREGNANCY_CHECK) {
-      if (currentStatus !== AnimalStatus.INSEMINATED) {
+      if (currentStatus !== AnimalStatus.INSEMINATED && currentStatus !== AnimalStatus.PREGNANT && currentStatus !== AnimalStatus.ACTIVE) {
         throw new Error(`Pregnancy check requires cow to be Inseminated first. Current status: ${currentStatus}.`);
       }
     }

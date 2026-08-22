@@ -64,7 +64,8 @@ import {
   Pill,
   Package,
   ArrowRightLeft,
-  Warehouse
+  Warehouse,
+  Lock
 } from 'lucide-react';
 import {
   BarChart,
@@ -614,7 +615,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
   // Form states
   const [newAnimal, setNewAnimal] = useState<Partial<Animal>>({ sex: 'Female', breed: 'Holstein', herd: 'Main Herd' });
-  const [newRepro, setNewRepro] = useState<Partial<ReproductionEvent>>({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0] });
+  const [newRepro, setNewRepro] = useState<Partial<ReproductionEvent>>({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0] });
   const [newHealth, setNewHealth] = useState<Partial<HealthEvent>>({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0] });
   const [newEnrollment, setNewEnrollment] = useState<Partial<ProtocolEnrollment> & { animalIds?: string[] }>({ startDate: new Date().toISOString().split('T')[0], animalIds: [] });
   const [newTemplate, setNewTemplate] = useState<Partial<ProtocolTemplate>>({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false });
@@ -1294,47 +1295,66 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     if (newRepro.animalId && newRepro.type) {
       try {
         const animal = animals.find(a => a.id === newRepro.animalId);
+        const isCalfExpired = newRepro.type === ReproEventType.CALVING && (newRepro.calfStatus === 'Expired');
         const normalizedRepro = {
           ...newRepro,
           technician: newRepro.technician ? dateUtils.normalizeName(newRepro.technician) : '',
           semenName: newRepro.semenName ? dateUtils.normalizeName(newRepro.semenName) : '',
-          bullId: newRepro.bullId ? dateUtils.normalizeName(newRepro.bullId) : ''
+          bullId: newRepro.bullId ? dateUtils.normalizeName(newRepro.bullId) : '',
+          calfStatus: newRepro.type === ReproEventType.CALVING ? (newRepro.calfStatus || 'Alive') : undefined,
         };
         validations.validateReproductionEvent(normalizedRepro, animal?.status || AnimalStatus.ACTIVE);
-        const reproId = Math.random().toString(36).substr(2, 9);
-        addReproEvent({
-          ...normalizedRepro,
-          id: reproId,
-          date: normalizedRepro.date || new Date().toISOString().split('T')[0],
-        } as ReproductionEvent);
-        // Auto Remove After Insemination
-        if (newRepro.type === ReproEventType.INSEMINATION) {
-          const activeEnrolls = enrollments.filter(e => e.animalId === newRepro.animalId && e.status === 'Active');
-          activeEnrolls.forEach(enr => {
-            updateEnrollment({ ...enr, status: 'Completed' });
-          });
-        }
 
-        // Auto-add calf if calving event
-        if (newRepro.type === ReproEventType.CALVING) {
-          const calfTag = newRepro.offspringTag || `CALF-${animal?.tag}-${Date.now().toString().slice(-4)}`;
-          const calfId = Math.random().toString(36).substr(2, 9);
-          addAnimal({
-            id: calfId,
-            tag: calfTag,
-            name: '',
-            breed: animal?.breed || 'Unknown',
-            sex: (newRepro.offspringGender as 'Male' | 'Female') || 'Female',
-            dob: newRepro.date || new Date().toISOString().split('T')[0],
-            herd: animal?.herd || 'Main Herd',
-            motherId: newRepro.animalId,
-            fatherId: newRepro.bullId,
-            isCalf: true,
-          } as Animal);
+        if (editingReproId) {
+          updateReproEvent({
+            ...normalizedRepro,
+            id: editingReproId,
+            date: normalizedRepro.date || new Date().toISOString().split('T')[0],
+          } as ReproductionEvent);
+          setEditingReproId(null);
+          setToastMessage(`Updated ${normalizedRepro.type} record.`);
+        } else {
+          const reproId = Math.random().toString(36).substr(2, 9);
+          addReproEvent({
+            ...normalizedRepro,
+            id: reproId,
+            date: normalizedRepro.date || new Date().toISOString().split('T')[0],
+          } as ReproductionEvent);
+
+          // Auto Remove After Insemination
+          if (newRepro.type === ReproEventType.INSEMINATION) {
+            const activeEnrolls = enrollments.filter(e => e.animalId === newRepro.animalId && e.status === 'Active');
+            activeEnrolls.forEach(enr => {
+              updateEnrollment({ ...enr, status: 'Completed' });
+            });
+          }
+
+          // Auto-add calf if calving event AND calf is NOT expired
+          if (newRepro.type === ReproEventType.CALVING) {
+            if (!isCalfExpired) {
+              const calfTag = newRepro.offspringTag?.trim() || `CALF-${animal?.tag}-${Date.now().toString().slice(-4)}`;
+              const calfId = Math.random().toString(36).substr(2, 9);
+              addAnimal({
+                id: calfId,
+                tag: calfTag,
+                name: '',
+                breed: animal?.breed || 'Unknown',
+                sex: (newRepro.offspringGender as 'Male' | 'Female') || 'Female',
+                dob: newRepro.date || new Date().toISOString().split('T')[0],
+                herd: animal?.herd || 'Main Herd',
+                motherId: newRepro.animalId,
+                fatherId: newRepro.bullId,
+                isCalf: true,
+              } as Animal);
+              setToastMessage(`Calving logged! New calf (${calfTag}) auto-added to herd.`);
+            } else {
+              setToastMessage(`Calving recorded (Calf Expired/Stillborn - not added to herd).`);
+            }
+          }
         }
         setIsReproFormOpen(false);
         setSelectedAnimal(null); // Auto-close animal profile when form is submitted
-        setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0] });
+        setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0], calfStatus: 'Alive' });
         setReproAnimalSearch('');
       } catch (err: any) {
         alert(err.message);
@@ -1556,10 +1576,16 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
   const handleDeleteAnimal = (animal: Animal, e: React.MouseEvent) => {
     e.stopPropagation();
+    const animalType = animal.isCalf ? 'Calf' : 'Cow';
     setConfirmDialog({
       isOpen: true,
-      message: `Are you sure you want to delete Cow ${animal.tag}? This action cannot be undone.`,
-      onConfirm: () => { deleteAnimal(animal.id); setSelectedAnimal(null); setConfirmDialog(d => ({ ...d, isOpen: false })); }
+      message: `Are you sure you want to delete ${animalType} ${animal.tag}? This action cannot be undone.`,
+      onConfirm: () => {
+        deleteAnimal(animal.id);
+        setSelectedAnimal(null);
+        setConfirmDialog(d => ({ ...d, isOpen: false }));
+        setToastMessage(`Deleted ${animalType} ${animal.tag} successfully.`);
+      }
     });
   };
 
@@ -1741,7 +1767,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       }
       updateEnrollment(updated as ProtocolEnrollment);
       setAiWorkflow(null);
-      setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0] });
+      setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0] });
     }
   };
 
@@ -2757,20 +2783,66 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   ) : calfAnimals.map((calf, index) => {
                     const mother = animals.find(a => a.id === calf.motherId);
                     return (
-                      <div key={calf.id} className="bg-white p-8 rounded-[3rem] border-2 border-emerald-50 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden">
+                      <div
+                        key={calf.id}
+                        onClick={() => setSelectedAnimal(calf)}
+                        className="group bg-white p-8 rounded-[3rem] border-2 border-emerald-50 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden cursor-pointer"
+                      >
                         <div className="absolute top-0 left-0 w-2 h-full bg-emerald-400" />
-                        <div className="absolute top-6 right-8 text-[10px] font-black text-slate-300">#{index + 1}</div>
                         <div className="flex items-start justify-between mb-6">
                           <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 font-black text-xl border border-emerald-100">
+                            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 font-black text-xl border border-emerald-100 group-hover:bg-emerald-600 group-hover:text-white transition-all">
                               {calf.tag.slice(-2)}
                             </div>
                             <div>
-                              <h4 className="font-black text-slate-800 text-xl tracking-tighter">{calf.tag}</h4>
-                              <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-emerald-100">{calf.sex} Calf</span>
+                              <h4 className="font-black text-slate-800 text-xl tracking-tighter group-hover:text-emerald-600 transition-colors">{calf.tag}</h4>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-emerald-100">{calf.sex} Calf</span>
+                                {calf.breed && <span className="text-[9px] font-bold text-slate-400 uppercase">{calf.breed}</span>}
+                              </div>
                             </div>
                           </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const text = generateAnimalShareText(calf, reproEvents, healthEvents);
+                                shareToWhatsApp(text);
+                              }}
+                              className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-all"
+                              title="Share Calf on WhatsApp"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMoveToPenAnimalId(calf.id);
+                                setIsMoveToPenModalOpen(true);
+                              }}
+                              className="p-2 hover:bg-indigo-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
+                              title="Move Calf to Pen"
+                            >
+                              <ArrowRightLeft className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => handleEditAnimal(calf, e)}
+                              className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-all"
+                              title="Edit Calf"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteAnimal(calf, e)}
+                              className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
+                              title="Delete Calf"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
+
                         <div className="space-y-3">
                           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mother</span>
@@ -2782,8 +2854,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           </div>
                           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Born</span>
-                            <span className="text-xs font-black text-slate-700">{calf.dob}</span>
+                            <span className="text-xs font-black text-slate-700">{calf.dob || '—'}</span>
                           </div>
+                          {calf.herd && (
+                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pen / Location</span>
+                              <span className="text-xs font-black text-slate-700 flex items-center gap-1"><MapPin className="w-3 h-3 text-emerald-500" /> {calf.herd}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -2818,6 +2896,16 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         title="Move to Pen"
                       >
                         <ArrowRightLeft className="w-4 h-4" />
+                      </button>
+                    );
+
+                    const DeleteButton = () => (
+                      <button
+                        onClick={(e) => handleDeleteAnimal(animal, e)}
+                        className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
+                        title="Delete Animal"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     );
 
@@ -2869,9 +2957,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               </button>
                               <MovePenButton />
                               <EditButton />
-                              <button onClick={(e) => handleDeleteAnimal(animal, e)} className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all" title="Delete">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <DeleteButton />
                               <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                             </div>
                           </div>
@@ -2896,6 +2982,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
                               <MovePenButton />
                               <EditButton />
+                              <DeleteButton />
                             </div>
                           </div>
                         </div>
@@ -2928,6 +3015,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                             <div className="flex items-center gap-2">
                               <MovePenButton />
                               <EditButton />
+                              <DeleteButton />
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-6 mt-10">
@@ -2998,6 +3086,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               </button>
                               <MovePenButton />
                               <EditButton />
+                              <DeleteButton />
                             </div>
                           </div>
                         </div>
@@ -3072,7 +3161,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     <MessageCircle className="w-5 h-5" /> Share List
                   </button>
                   <button
-                    onClick={() => { setEditingReproId(null); setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0] }); setIsReproFormOpen(true); }}
+                    onClick={() => { setEditingReproId(null); setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0] }); setIsReproFormOpen(true); }}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-blue-600 text-white px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"
                   >
                     <Plus className="w-5 h-5" /> Record Event
@@ -3264,7 +3353,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                   {res}
                                 </span>
                               );
-                            })() : (
+                            })() : event.type === ReproEventType.CALVING ? (
+                              <span className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${event.calfStatus === 'Expired' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                <div className={`w-2 h-2 rounded-full ${event.calfStatus === 'Expired' ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
+                                {event.calfStatus === 'Expired' ? 'Expired' : (event.offspringTag ? `Calf ${event.offspringTag}` : 'Alive')}
+                              </span>
+                            ) : (
                               <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
                                 <div className="w-2 h-2 rounded-full bg-slate-300"></div>
                                 Done
@@ -6006,7 +6100,21 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 sm:gap-4 flex-shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+                <button
+                  onClick={(e) => handleEditAnimal(selectedAnimal, e)}
+                  className="p-2.5 sm:p-4 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl sm:rounded-[1.5rem] transition-all"
+                  title="Edit Animal"
+                >
+                  <Edit2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+                <button
+                  onClick={(e) => handleDeleteAnimal(selectedAnimal, e)}
+                  className="p-2.5 sm:p-4 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-xl sm:rounded-[1.5rem] transition-all"
+                  title={`Delete ${selectedAnimal.isCalf ? 'Calf' : 'Cow'}`}
+                >
+                  <Trash2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
                 <button
                   onClick={() => {
                     const repros = reproEvents.filter(e => e.animalId === selectedAnimal.id)
@@ -6018,23 +6126,23 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       : 'Full History';
                     generateIndividualAnimalReport(selectedAnimal, repros, healths, label, settings);
                   }}
-                  className="p-2.5 sm:p-5 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl sm:rounded-[1.5rem] transition-all"
+                  className="p-2.5 sm:p-4 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl sm:rounded-[1.5rem] transition-all"
                   title="Download Filtered Report"
                 >
-                  <Download className="w-5 h-5 sm:w-7 sm:h-7" />
+                  <Download className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
                 <button
                   onClick={() => {
                     const text = generateAnimalShareText(selectedAnimal, reproEvents, healthEvents);
                     shareToWhatsApp(text);
                   }}
-                  className="p-2.5 sm:p-5 text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl sm:rounded-[1.5rem] transition-all"
+                  className="p-2.5 sm:p-4 text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl sm:rounded-[1.5rem] transition-all"
                   title="Share on WhatsApp"
                 >
-                  <MessageCircle className="w-5 h-5 sm:w-7 sm:h-7" />
+                  <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
-                <button onClick={() => setSelectedAnimal(null)} className="p-2.5 sm:p-5 hover:bg-slate-100 rounded-xl sm:rounded-[1.5rem] transition-all text-slate-400">
-                  <X className="w-6 h-6 sm:w-8 sm:h-8" />
+                <button onClick={() => setSelectedAnimal(null)} className="p-2.5 sm:p-4 hover:bg-slate-100 rounded-xl sm:rounded-[1.5rem] transition-all text-slate-400">
+                  <X className="w-6 h-6 sm:w-7 sm:h-7" />
                 </button>
               </div>
             </div>
@@ -6106,24 +6214,68 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   {reproEvents.filter(e => e.animalId === selectedAnimal.id)
                     .filter(e => (!animalReportStart || e.date >= animalReportStart) && (!animalReportEnd || e.date <= animalReportEnd))
                     .map(e => (
-                      <div key={e.id} className="flex items-center gap-6 p-6 rounded-[2rem] border border-slate-100 bg-white hover:bg-slate-50 transition-all shadow-sm">
-                        <div className="p-4 rounded-2xl bg-slate-50 text-slate-400 transition-all">
+                      <div key={e.id} className="flex items-center gap-4 sm:gap-6 p-4 sm:p-6 rounded-[2rem] border border-slate-100 bg-white hover:bg-slate-50 transition-all shadow-sm">
+                        <div className={`p-3.5 sm:p-4 rounded-2xl transition-all ${
+                          e.type === ReproEventType.INSEMINATION ? 'bg-blue-50 text-blue-600' :
+                          e.type === ReproEventType.PREGNANCY_CHECK ? (e.success ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600') :
+                          e.type === ReproEventType.CALVING ? (e.calfStatus === 'Expired' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600') :
+                          e.type === ReproEventType.ABORTION ? 'bg-rose-50 text-rose-600' :
+                          'bg-slate-50 text-slate-400'
+                        }`}>
                           <Activity className="w-5 h-5" />
                         </div>
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <p className="text-base font-black text-slate-800">{e.type}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <p className="text-base font-black text-slate-800">{e.type}</p>
+                              {e.type === ReproEventType.CALVING && (
+                                <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider border ${
+                                  e.calfStatus === 'Expired'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}>
+                                  {e.calfStatus === 'Expired' ? '🔴 Expired' : `🟢 Calf: ${e.offspringTag || 'Alive'}${e.offspringGender ? ` (${e.offspringGender})` : ''}`}
+                                </span>
+                              )}
+                              {e.type === ReproEventType.PREGNANCY_CHECK && (
+                                <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider border flex items-center gap-1.5 ${
+                                  e.success === true
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : e.success === false
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}>
+                                  <span className={`w-2 h-2 rounded-full ${e.success === true ? 'bg-emerald-500' : e.success === false ? 'bg-rose-500' : 'bg-slate-400'}`}></span>
+                                  {e.success === true ? '+ve (Pregnant)' : e.success === false ? '-ve (Open)' : 'Pending'}
+                                </span>
+                              )}
+                              {e.type === ReproEventType.INSEMINATION && (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {e.semenName && (
+                                    <span className="px-2.5 py-1 rounded-xl text-[11px] font-black bg-purple-50 text-purple-700 border border-purple-200">
+                                      Semen: {e.semenName}
+                                    </span>
+                                  )}
+                                  {e.technician && (
+                                    <span className="px-2.5 py-1 rounded-xl text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-200">
+                                      Tech: {e.technician}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              {e.type === ReproEventType.ABORTION && (
+                                <span className="px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200">
+                                  ⚠️ Aborted
+                                </span>
+                              )}
+                            </div>
                             <button onClick={(event) => handleEditRepro(e, event)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600">
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                          <p className="text-xs text-slate-500 font-semibold">{e.details}</p>
-                          <div className="flex gap-4 mt-2">
-                            {e.technician && <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Tech: {e.technician}</span>}
-                            {e.semenName && <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-2 py-1 rounded-md">Semen: {e.semenName}</span>}
-                          </div>
+                          {e.details && <p className="text-xs text-slate-500 font-semibold mt-1">{e.details}</p>}
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex-shrink-0">
                           <p className="text-xs font-black text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">{e.date}</p>
                         </div>
                       </div>
@@ -6244,7 +6396,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 <ArrowRightLeft className="w-4 h-4" /> Move Pen
               </button>
               <button
-                onClick={() => { setEditingReproId(null); setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0], animalId: selectedAnimal.id }); setReproAnimalSearch(selectedAnimal.tag); setIsReproFormOpen(true); setSelectedAnimal(null); }}
+                onClick={() => { setEditingReproId(null); setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0], animalId: selectedAnimal.id }); setReproAnimalSearch(selectedAnimal.tag); setIsReproFormOpen(true); setSelectedAnimal(null); }}
                 className="flex-1 min-w-[140px] py-3 sm:py-4 bg-blue-600 text-white rounded-xl sm:rounded-[1.5rem] font-black text-[11px] sm:text-xs uppercase tracking-wider hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
               >
                 Log Repro Event
@@ -6408,49 +6560,175 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       </FormModal>
 
       <FormModal title={editingReproId ? "Modify Repro Record" : "Log Repro Event"} isOpen={isReproFormOpen} onClose={() => { setIsReproFormOpen(false); setReproAnimalSearch(''); }}>
-        <form onSubmit={handleAddRepro} className="space-y-6">
-          {/* Cow Tag Searchable Autocomplete */}
-          <div className="space-y-2 relative">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cow Tag *</label>
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                required={!newRepro.animalId}
-                placeholder="Search and select cow..."
-                className="w-full pl-12 pr-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
-                value={reproAnimalSearch}
-                onChange={e => { setReproAnimalSearch(e.target.value); setReproAnimalDropdown(true); if (!e.target.value) setNewRepro({ ...newRepro, animalId: '' }); }}
-                onFocus={() => setReproAnimalDropdown(true)}
-                disabled={!!editingReproId}
-              />
-              {newRepro.animalId && <CheckCircle2 className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500" />}
-            </div>
-            {reproAnimalDropdown && reproAnimalSearch && !editingReproId && (
-              <div className="absolute z-20 top-full mt-1 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                {animals.filter(a => a.tag.toLowerCase().includes(reproAnimalSearch.toLowerCase()) || (a.name && a.name.toLowerCase().includes(reproAnimalSearch.toLowerCase()))).slice(0, 8).map(a => (
-                  <button key={a.id} type="button"
-                    onClick={() => { setNewRepro({ ...newRepro, animalId: a.id }); setReproAnimalSearch(a.tag); setReproAnimalDropdown(false); }}
-                    className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left ${newRepro.animalId === a.id ? 'bg-blue-50' : ''}`}
-                  >
-                    <div>
-                      <p className="text-sm font-black text-slate-800">{a.tag}</p>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} • {a.breed}</p>
-                    </div>
-                    {newRepro.animalId === a.id && <Check className="w-4 h-4 text-blue-600" />}
-                  </button>
-                ))}
-                {animals.filter(a => a.tag.toLowerCase().includes(reproAnimalSearch.toLowerCase())).length === 0 && (
-                  <p className="text-center py-4 text-xs text-slate-400 font-bold">No animals found</p>
+        {(() => {
+          const latestInsemForRepro = newRepro.animalId
+            ? reproEvents
+                .filter(e => e.animalId === newRepro.animalId && e.type === ReproEventType.INSEMINATION)
+                .sort((a, b) => b.date.localeCompare(a.date))[0] || null
+            : null;
+
+          const handleSelectReproAnimal = (animalId: string, tag: string) => {
+            setReproAnimalSearch(tag);
+            setReproAnimalDropdown(false);
+            const insem = reproEvents
+              .filter(e => e.animalId === animalId && e.type === ReproEventType.INSEMINATION)
+              .sort((a, b) => b.date.localeCompare(a.date))[0];
+
+            if (newRepro.type === ReproEventType.PREGNANCY_CHECK) {
+              if (insem) {
+                const checkDays = Number(settings.pregnancyCheckDays) || 30;
+                const targetDate = dateUtils.addDays(insem.date, checkDays);
+                setNewRepro(prev => ({ ...prev, animalId, date: targetDate }));
+              } else {
+                setNewRepro(prev => ({ ...prev, animalId, date: '' }));
+              }
+            } else {
+              setNewRepro(prev => ({ ...prev, animalId }));
+            }
+          };
+
+          const handleReproTypeChange = (typeVal: ReproEventType) => {
+            if (typeVal === ReproEventType.PREGNANCY_CHECK) {
+              if (newRepro.animalId) {
+                const insem = reproEvents
+                  .filter(e => e.animalId === newRepro.animalId && e.type === ReproEventType.INSEMINATION)
+                  .sort((a, b) => b.date.localeCompare(a.date))[0];
+                if (insem) {
+                  const checkDays = Number(settings.pregnancyCheckDays) || 30;
+                  const targetDate = dateUtils.addDays(insem.date, checkDays);
+                  setNewRepro(prev => ({ ...prev, type: typeVal, date: targetDate }));
+                } else {
+                  setNewRepro(prev => ({ ...prev, type: typeVal, date: '' }));
+                }
+              } else {
+                setNewRepro(prev => ({ ...prev, type: typeVal, date: '' }));
+              }
+            } else {
+              setNewRepro(prev => ({
+                ...prev,
+                type: typeVal,
+                date: prev.date || new Date().toISOString().split('T')[0]
+              }));
+            }
+          };
+
+          return (
+            <form onSubmit={handleAddRepro} className="space-y-6">
+              {/* Cow Tag Searchable Autocomplete */}
+              <div className="space-y-2 relative">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cow Tag *</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    required={!newRepro.animalId}
+                    placeholder="Search and select cow..."
+                    className="w-full pl-12 pr-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+                    value={reproAnimalSearch}
+                    onChange={e => {
+                      setReproAnimalSearch(e.target.value);
+                      setReproAnimalDropdown(true);
+                      if (!e.target.value) {
+                        setNewRepro(prev => ({
+                          ...prev,
+                          animalId: '',
+                          date: prev.type === ReproEventType.PREGNANCY_CHECK ? '' : (prev.date || new Date().toISOString().split('T')[0])
+                        }));
+                      }
+                    }}
+                    onFocus={() => setReproAnimalDropdown(true)}
+                    disabled={!!editingReproId}
+                  />
+                  {newRepro.animalId && <CheckCircle2 className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500" />}
+                </div>
+                {reproAnimalDropdown && reproAnimalSearch && !editingReproId && (
+                  <div className="absolute z-20 top-full mt-1 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                    {animals.filter(a => a.tag.toLowerCase().includes(reproAnimalSearch.toLowerCase()) || (a.name && a.name.toLowerCase().includes(reproAnimalSearch.toLowerCase()))).slice(0, 8).map(a => (
+                      <button key={a.id} type="button"
+                        onClick={() => handleSelectReproAnimal(a.id, a.tag)}
+                        className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left ${newRepro.animalId === a.id ? 'bg-blue-50' : ''}`}
+                      >
+                        <div>
+                          <p className="text-sm font-black text-slate-800">{a.tag}</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} • {a.breed}</p>
+                        </div>
+                        {newRepro.animalId === a.id && <Check className="w-4 h-4 text-blue-600" />}
+                      </button>
+                    ))}
+                    {animals.filter(a => a.tag.toLowerCase().includes(reproAnimalSearch.toLowerCase())).length === 0 && (
+                      <p className="text-center py-4 text-xs text-slate-400 font-bold">No animals found</p>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <select className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newRepro.type || ReproEventType.ESTRUS} onChange={e => setNewRepro({ ...newRepro, type: e.target.value as any })}>
-              {Object.values(ReproEventType).map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input type="date" className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newRepro.date || ''} onChange={e => setNewRepro({ ...newRepro, date: e.target.value })} />
-          </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Event Type *</label>
+                  <select
+                    className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                    value={newRepro.type || ReproEventType.INSEMINATION}
+                    onChange={e => handleReproTypeChange(e.target.value as ReproEventType)}
+                  >
+                    <option value={ReproEventType.INSEMINATION}>Insemination</option>
+                    <option value={ReproEventType.PREGNANCY_CHECK}>Pregnancy Check</option>
+                    <option value={ReproEventType.CALVING}>Calving</option>
+                    <option value={ReproEventType.ABORTION}>Abortion</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                    <span>Date *</span>
+                    {newRepro.type === ReproEventType.PREGNANCY_CHECK && (
+                      <span className="text-[9px] font-black text-blue-600 uppercase flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" /> Locked
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="date"
+                    disabled={newRepro.type === ReproEventType.PREGNANCY_CHECK}
+                    className={`w-full px-5 py-3.5 border-none rounded-2xl text-sm font-black shadow-inner transition-all ${
+                      newRepro.type === ReproEventType.PREGNANCY_CHECK
+                        ? 'bg-slate-100 text-slate-500 cursor-not-allowed select-none opacity-90'
+                        : 'bg-slate-50 text-slate-800'
+                    }`}
+                    value={newRepro.date || ''}
+                    onChange={e => setNewRepro({ ...newRepro, date: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {newRepro.type === ReproEventType.PREGNANCY_CHECK && (
+                <div className={`p-4 rounded-2xl border text-xs font-bold transition-all ${
+                  !newRepro.animalId
+                    ? 'bg-blue-50/70 border-blue-200 text-blue-800'
+                    : latestInsemForRepro
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}>
+                  {!newRepro.animalId ? (
+                    <div className="flex items-center gap-2.5">
+                      <Clock className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <span>Select a cow above to detect past insemination and auto-calculate check date ({settings.pregnancyCheckDays || 30} days).</span>
+                    </div>
+                  ) : latestInsemForRepro ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 font-black text-emerald-700">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span>Insemination Detected: {latestInsemForRepro.date}</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-700/90 font-medium">
+                        Pregnancy check date automatically locked to <strong>{newRepro.date}</strong> (+{settings.pregnancyCheckDays || 30} days per farm settings).
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 font-black text-amber-800">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>No insemination found for this cow.</span>
+                    </div>
+                  )}
+                </div>
+              )}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Technician Name</label>
@@ -6467,31 +6745,112 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           </div>
           <textarea className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="Field notes..." value={newRepro.details || ''} onChange={e => setNewRepro({ ...newRepro, details: e.target.value })} />
           {newRepro.type === ReproEventType.CALVING && (
-            <div className="space-y-4 p-5 bg-emerald-50 rounded-2xl border border-emerald-200">
-              <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">🐄 Calf Details (auto-added to herd)</p>
+            <div className={`space-y-4 p-5 rounded-2xl border transition-all ${
+              newRepro.calfStatus === 'Expired'
+                ? 'bg-rose-50 border-rose-200'
+                : 'bg-emerald-50 border-emerald-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <p className={`text-[10px] font-black uppercase tracking-widest ${
+                  newRepro.calfStatus === 'Expired' ? 'text-rose-700' : 'text-emerald-700'
+                }`}>
+                  {newRepro.calfStatus === 'Expired' ? '⚠️ Calf Outcome: Expired / Stillborn' : '🐄 Calf Details (auto-added to herd)'}
+                </p>
+
+                {/* Quick Toggle for Alive vs Expired */}
+                <div className="flex bg-white/80 p-1 rounded-xl border border-slate-200 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setNewRepro({ ...newRepro, calfStatus: 'Alive' })}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                      (newRepro.calfStatus || 'Alive') === 'Alive'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Alive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewRepro({ ...newRepro, calfStatus: 'Expired' })}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                      newRepro.calfStatus === 'Expired'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Expired
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Outcome Dropdown & Gender */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calf Tag *</label>
-                  <input className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner" placeholder="e.g. CALF-001" value={newRepro.offspringTag || ''} onChange={e => setNewRepro({ ...newRepro, offspringTag: e.target.value })} />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calf Status / Condition</label>
+                  <select
+                    className={`w-full px-4 py-3 border-none rounded-xl text-sm font-black shadow-inner outline-none transition-all ${
+                      newRepro.calfStatus === 'Expired'
+                        ? 'bg-white text-rose-700'
+                        : 'bg-white text-emerald-800'
+                    }`}
+                    value={newRepro.calfStatus || 'Alive'}
+                    onChange={e => setNewRepro({ ...newRepro, calfStatus: e.target.value as any })}
+                  >
+                    <option value="Alive">🟢 Alive (Add to Herd)</option>
+                    <option value="Expired">🔴 Expired / Stillborn (No Herd Entry)</option>
+                  </select>
                 </div>
+
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calf Sex</label>
-                  <select className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner" value={newRepro.offspringGender || 'Female'} onChange={e => setNewRepro({ ...newRepro, offspringGender: e.target.value as any })}>
-                    <option value="Female">Female</option>
-                    <option value="Male">Male</option>
+                  <select
+                    className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+                    value={newRepro.offspringGender || 'Female'}
+                    onChange={e => setNewRepro({ ...newRepro, offspringGender: e.target.value as any })}
+                  >
+                    <option value="Female">Female (Heifer)</option>
+                    <option value="Male">Male (Bull)</option>
                   </select>
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Father (Bull / Semen ID)</label>
-                <input className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner" placeholder="Bull ID or Semen name" value={newRepro.bullId || ''} onChange={e => setNewRepro({ ...newRepro, bullId: e.target.value })} />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {newRepro.calfStatus === 'Expired' ? 'Calf Tag (Optional)' : 'Calf Tag *'}
+                  </label>
+                  <input
+                    className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner"
+                    placeholder={newRepro.calfStatus === 'Expired' ? 'e.g. Expired (Optional)' : 'e.g. CALF-001'}
+                    value={newRepro.offspringTag || ''}
+                    onChange={e => setNewRepro({ ...newRepro, offspringTag: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Father (Bull / Semen ID)</label>
+                  <input
+                    className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner"
+                    placeholder="Bull ID or Semen name"
+                    value={newRepro.bullId || ''}
+                    onChange={e => setNewRepro({ ...newRepro, bullId: e.target.value })}
+                  />
+                </div>
               </div>
+
+              {newRepro.calfStatus === 'Expired' && (
+                <div className="p-3 bg-rose-100/60 rounded-xl text-[11px] text-rose-800 font-bold flex items-center gap-2">
+                  <span>ℹ️</span> This calving record will note the expired/stillborn calf without creating an active animal in the living herd.
+                </div>
+              )}
             </div>
           )}
           <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest">
             {editingReproId ? "Update Record" : "Persist Record"}
           </button>
         </form>
+        );
+      })()}
       </FormModal>
 
       <FormModal title="Protocol Enrollment" isOpen={isEnrollmentFormOpen} onClose={() => setIsEnrollmentFormOpen(false)}>
@@ -7674,7 +8033,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               </button>
 
               <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingReproId(null); setNewRepro({ type: ReproEventType.ESTRUS, date: new Date().toISOString().split('T')[0] }); setReproAnimalSearch(''); setIsReproFormOpen(true); }}
+                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingReproId(null); setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0] }); setReproAnimalSearch(''); setIsReproFormOpen(true); }}
                 className="p-4 bg-indigo-50/70 hover:bg-indigo-100 rounded-2xl border border-indigo-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
               >
                 <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">

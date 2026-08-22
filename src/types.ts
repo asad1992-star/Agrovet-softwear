@@ -108,6 +108,7 @@ export interface ReproductionEvent {
   success?: boolean;
   offspringGender?: 'Male' | 'Female';
   offspringTag?: string;
+  calfStatus?: 'Alive' | 'Expired';
   protocolId?: string; // Link to enrollment if step
   technician?: string;
   semenName?: string;
