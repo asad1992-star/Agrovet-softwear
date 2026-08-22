@@ -27,11 +27,12 @@ interface MoveToPenModalProps {
   onConfirmMove: (animalIds: string[], targetGroup: string, reason?: string) => void;
 }
 
-const DEFAULT_GROUPS = ['Main Herd', 'Elite', 'High Group', 'Medium Group', 'Heifers', 'Breeding'];
+const DEFAULT_GROUPS = ['Main Herd', 'Growing Heifers', 'Post Weaning', 'Suckling', 'Elite', 'High Group', 'Medium Group', 'Breeding Pen', 'Dry Cows'];
 
 const getStatusColorBadge = (status?: AnimalStatus) => {
   switch (status) {
     case AnimalStatus.PREGNANT: return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case AnimalStatus.YOUNG_STOCK: return 'bg-orange-50 text-orange-700 border-orange-200';
     case AnimalStatus.SICK: return 'bg-rose-50 text-rose-700 border-rose-200';
     case AnimalStatus.IN_PROTOCOL: return 'bg-amber-50 text-amber-700 border-amber-200';
     case AnimalStatus.INSEMINATED: return 'bg-blue-50 text-blue-700 border-blue-200';

@@ -1,6 +1,7 @@
 
 export enum AnimalStatus {
   ACTIVE = 'Active',
+  YOUNG_STOCK = 'Young Stock',
   IN_PROTOCOL = 'In Protocol',
   INSEMINATED = 'Inseminated',
   PREGNANT = 'Pregnant',
@@ -56,6 +57,7 @@ export interface ProtocolEnrollment {
 
 export interface StatusColors {
   active: string;
+  youngStock?: string;
   pregnant: string;
   sick: string;
   dry: string;
@@ -75,6 +77,8 @@ export interface FarmSettings {
   farmName: string;
   statusColors: StatusColors;
   customGroups?: string[];
+  technicians?: string[];
+  semenCatalog?: string[];
   autoBackupEnabled?: boolean;
   lastBackupDate?: string;
 }
@@ -108,6 +112,7 @@ export interface ReproductionEvent {
   success?: boolean;
   offspringGender?: 'Male' | 'Female';
   offspringTag?: string;
+  calfTag?: string;
   calfStatus?: 'Alive' | 'Expired';
   protocolId?: string; // Link to enrollment if step
   technician?: string;

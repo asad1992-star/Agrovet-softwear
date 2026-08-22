@@ -65,11 +65,15 @@ export const PREDEFINED_PROTOCOLS: ProtocolTemplate[] = [
 ];
 
 export const MOCK_ANIMALS: Animal[] = [
-  { id: '1', tag: 'TAG-001', name: 'Bessie', breed: 'Holstein', sex: 'Female', dob: '2020-05-15', status: AnimalStatus.PREGNANT, herd: 'Herd A' },
-  { id: '2', tag: 'TAG-002', name: 'Daisy', breed: 'Jersey', sex: 'Female', dob: '2021-02-10', status: AnimalStatus.ACTIVE, herd: 'Herd A' },
-  { id: '3', tag: 'TAG-003', name: 'Molly', breed: 'Holstein', sex: 'Female', dob: '2019-11-20', status: AnimalStatus.SICK, herd: 'Herd B' },
-  { id: '4', tag: 'TAG-004', name: 'Bella', breed: 'Angus', sex: 'Female', dob: '2022-01-05', status: AnimalStatus.DRY, herd: 'Herd B' },
-  { id: '5', tag: 'TAG-005', name: 'Lucy', breed: 'Holstein', sex: 'Female', dob: '2021-08-12', status: AnimalStatus.ACTIVE, herd: 'Herd A' },
+  { id: '1', tag: 'TAG-001', name: 'Bessie', breed: 'Holstein', sex: 'Female', dob: '2020-05-15', status: AnimalStatus.PREGNANT, herd: 'Main Herd' },
+  { id: '2', tag: 'TAG-002', name: 'Daisy', breed: 'Jersey', sex: 'Female', dob: '2021-02-10', status: AnimalStatus.ACTIVE, herd: 'Main Herd' },
+  { id: '3', tag: 'TAG-003', name: 'Molly', breed: 'Holstein', sex: 'Female', dob: '2019-11-20', status: AnimalStatus.SICK, herd: 'Main Herd' },
+  { id: '4', tag: 'TAG-004', name: 'Bella', breed: 'Angus', sex: 'Female', dob: '2022-01-05', status: AnimalStatus.DRY, herd: 'Elite' },
+  { id: '5', tag: 'TAG-005', name: 'Lucy', breed: 'Holstein', sex: 'Female', dob: '2021-08-12', status: AnimalStatus.ACTIVE, herd: 'Main Herd' },
+  { id: '6', tag: 'TAG-006', name: 'Rosie', breed: 'Holstein', sex: 'Female', dob: '2023-08-10', status: AnimalStatus.YOUNG_STOCK, herd: 'Growing Heifers' },
+  { id: '7', tag: 'TAG-007', name: 'Buttercup', breed: 'Jersey', sex: 'Female', dob: '2023-11-20', status: AnimalStatus.YOUNG_STOCK, herd: 'Post Weaning' },
+  { id: '8', tag: 'TAG-008', name: 'Luna', breed: 'Holstein', sex: 'Female', dob: '2024-03-15', status: AnimalStatus.YOUNG_STOCK, herd: 'Suckling' },
+  { id: '9', tag: 'CALF-101', name: 'Milo', breed: 'Holstein', sex: 'Male', dob: '2024-07-01', isCalf: true, herd: 'Calf Nursery', motherId: '1' },
 ];
 
 export const MOCK_REPRO_EVENTS: ReproductionEvent[] = [

@@ -65,6 +65,7 @@ import {
   Package,
   ArrowRightLeft,
   Warehouse,
+  Sprout,
   Lock
 } from 'lucide-react';
 import {
@@ -109,7 +110,20 @@ import {
   getMedicineStockStatus,
   calculateMedicineTotals
 } from './services/medicineInventory';
-import { validations, dateUtils } from './services/businessLogic';
+import { 
+  validations, 
+  dateUtils,
+  isYoungStockHerdGroup,
+  isCalfHerdGroup,
+  isYoungStockAnimal,
+  isCalfAnimal,
+  isBreedingEligibleAnimal,
+  findFreshPen,
+  findPregnantPen,
+  isBreedingHeiferPen,
+  normalizeTechnicianName,
+  normalizeSemenName
+} from './services/businessLogic';
 import {
   generateReproSectionReport,
   generateHealthSectionReport,
@@ -184,6 +198,7 @@ const FormModal = ({ title, isOpen, onClose, children }: any) => {
 const getStatusColor = (status?: AnimalStatus) => {
   switch (status) {
     case AnimalStatus.PREGNANT: return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case AnimalStatus.YOUNG_STOCK: return 'bg-amber-50 text-amber-700 border-amber-200';
     case AnimalStatus.SICK: return 'bg-rose-50 text-rose-700 border-rose-200';
     case AnimalStatus.IN_PROTOCOL: return 'bg-amber-50 text-amber-700 border-amber-200';
     case AnimalStatus.INSEMINATED: return 'bg-blue-50 text-blue-700 border-blue-200';
@@ -197,7 +212,7 @@ const getStatusColor = (status?: AnimalStatus) => {
 type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'reports' | 'settings' | 'pd-check';
 type HerdViewMode = 'list' | 'small' | 'medium' | 'large';
 type ReportType = 'summary' | 'repro' | 'health' | 'individual' | 'pd-check' | 'treatment-analysis' | 'medicine-inventory' | 'low-stock' | 'demand-forecast';
-type HerdTab = 'adults' | 'calves';
+type HerdTab = 'adults' | 'youngstock' | 'calves';
 
 const formatDateReadable = (dateStr: string) => {
   if (!dateStr) return '';
@@ -553,13 +568,19 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     
     if (metric === 'Pregnant') {
       setView('animals');
+      setHerdTab('adults');
       setStatusFilter('Pregnant');
     } else if (metric === 'Sick') {
       setView('animals');
       setStatusFilter('Sick');
     } else if (metric === 'Open') {
       setView('animals');
+      setHerdTab('adults');
       setStatusFilter('Active');
+    } else if (metric === 'Young Stock' || metric === 'Youngstock') {
+      setView('animals');
+      setHerdTab('youngstock');
+      setStatusFilter('All');
     } else if (metric === 'In Lab' || metric === 'Protocol') {
       setProtocolView('active');
       setView('protocols');
@@ -602,6 +623,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [selectedHistoryProtocolId, setSelectedHistoryProtocolId] = useState<string | null>(null);
   // Group management in settings
   const [newGroupName, setNewGroupName] = useState('');
+  const [newTechnicianName, setNewTechnicianName] = useState('');
+  const [newSemenName, setNewSemenName] = useState('');
   // Dashboard status filter navigation
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState<string | null>(null);
 
@@ -698,6 +721,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
   const protocolEligibleAnimals = useMemo(() => {
     return animals
+      .filter(a => isBreedingEligibleAnimal(a))
       .filter(a => a.status !== AnimalStatus.PREGNANT && a.status !== AnimalStatus.IN_PROTOCOL)
       .filter(a => a.tag.toLowerCase().includes(protocolAnimalSearch.toLowerCase()) || a.breed.toLowerCase().includes(protocolAnimalSearch.toLowerCase()));
   }, [animals, protocolAnimalSearch]);
@@ -714,8 +738,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     let filtered = reproEvents.filter(e => {
       const animal = animals.find(a => a.id === e.animalId);
       const matchesTag = !reproTagSearch || (animal?.tag.toLowerCase().includes(reproTagSearch.toLowerCase()));
-      const matchesTech = reproTechFilter === 'All' || dateUtils.normalizeName(e.technician) === reproTechFilter;
-      const matchesSemen = reproSemenFilter === 'All' || dateUtils.normalizeName(e.semenName || e.bullId) === reproSemenFilter;
+      const matchesTech = reproTechFilter === 'All' || normalizeTechnicianName(e.technician, settings.technicians) === reproTechFilter;
+      const matchesSemen = reproSemenFilter === 'All' || normalizeSemenName(e.semenName || e.bullId, settings.semenCatalog) === reproSemenFilter;
       const matchesStart = !reproDateStart || e.date >= reproDateStart;
       const matchesEnd = !reproDateEnd || e.date <= reproDateEnd;
       return matchesTag && matchesTech && matchesSemen && matchesStart && matchesEnd;
@@ -728,7 +752,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         return a.date.localeCompare(b.date);
       }
     });
-  }, [reproEvents, animals, reproTagSearch, reproTechFilter, reproSemenFilter, reproDateStart, reproDateEnd, reproSort]);
+  }, [reproEvents, animals, reproTagSearch, reproTechFilter, reproSemenFilter, reproDateStart, reproDateEnd, reproSort, settings.technicians, settings.semenCatalog]);
 
   const pdChecks = useMemo(() => {
     return reproEvents.filter(e => e.type === ReproEventType.PREGNANCY_CHECK);
@@ -781,13 +805,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       const animal = animals.find(a => a.id === e.animalId);
       const matchesTag = !healthTagSearch || (animal?.tag.toLowerCase().includes(healthTagSearch.toLowerCase()));
       const matchesType = healthTypeFilter === 'All' || e.type === healthTypeFilter;
-      const matchesTech = healthTechFilter === 'All' || dateUtils.normalizeName(e.technician) === healthTechFilter;
+      const matchesTech = healthTechFilter === 'All' || normalizeTechnicianName(e.technician, settings.technicians) === healthTechFilter;
       const matchesMed = healthMedFilter === 'All' || dateUtils.normalizeName(e.medication) === healthMedFilter;
       const matchesStart = !healthDateStart || e.date >= healthDateStart;
       const matchesEnd = !healthDateEnd || e.date <= healthDateEnd;
       return matchesTag && matchesType && matchesTech && matchesMed && matchesStart && matchesEnd;
     }).sort((a, b) => a.date.localeCompare(b.date));
-  }, [healthEvents, animals, healthTagSearch, healthTypeFilter, healthTechFilter, healthMedFilter, healthDateStart, healthDateEnd]);
+  }, [healthEvents, animals, healthTagSearch, healthTypeFilter, healthTechFilter, healthMedFilter, healthDateStart, healthDateEnd, settings.technicians]);
 
   // 1. Grouped usage data for reports chart
   const usageChartData = useMemo(() => {
@@ -886,10 +910,19 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     });
   }, [healthEvents, medicines]);
 
-  const uniqueReproTechs = useMemo(() => dateUtils.getUniqueNormalized(reproEvents.map(e => e.technician)), [reproEvents]);
-  const uniqueHealthTechs = useMemo(() => dateUtils.getUniqueNormalized(healthEvents.map(e => e.technician)), [healthEvents]);
+  const uniqueReproTechs = useMemo(() => dateUtils.getUniqueNormalized(
+    [...(settings.technicians || ['Asad', 'Faisal Sb']), ...reproEvents.map(e => e.technician)],
+    settings.technicians
+  ), [reproEvents, settings.technicians]);
+  const uniqueHealthTechs = useMemo(() => dateUtils.getUniqueNormalized(
+    [...(settings.technicians || ['Asad', 'Faisal Sb']), ...healthEvents.map(e => e.technician)],
+    settings.technicians
+  ), [healthEvents, settings.technicians]);
   const uniqueMedications = useMemo(() => dateUtils.getUniqueNormalized(healthEvents.map(e => e.medication)), [healthEvents]);
-  const uniqueSemens = useMemo(() => dateUtils.getUniqueNormalized(reproEvents.map(e => e.semenName || e.bullId)), [reproEvents]);
+  const uniqueSemens = useMemo(() => dateUtils.getUniqueNormalized(
+    [...(settings.semenCatalog || []), ...reproEvents.map(e => e.semenName || e.bullId)],
+    settings.semenCatalog
+  ), [reproEvents, settings.semenCatalog]);
 
   // Inseminated animals awaiting pregnancy check
   const inseminatedAnimals = useMemo(() => {
@@ -905,12 +938,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     ).slice(0, 6);
   }, [animals, healthPatientSearch]);
 
-  // Adults and Calves separation
-  const adultAnimals = useMemo(() => filteredAnimals.filter(a => !a.isCalf), [filteredAnimals]);
-  const calfAnimals = useMemo(() => animals.filter(a => a.isCalf && (
+  // Adults, Young Stock, and Calves separation
+  const adultAnimals = useMemo(() => filteredAnimals.filter(a => isBreedingEligibleAnimal(a)), [filteredAnimals]);
+  const youngStockAnimals = useMemo(() => filteredAnimals.filter(a => isYoungStockAnimal(a)), [filteredAnimals]);
+  const calfAnimals = useMemo(() => animals.filter(a => isCalfAnimal(a) && (
     !searchTerm ||
     a.tag.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (a.name?.toLowerCase().includes(searchTerm.toLowerCase()))
+    (a.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (a.herd?.toLowerCase().includes(searchTerm.toLowerCase()))
   )), [animals, searchTerm]);
 
   const recentLogs = useMemo(() => {
@@ -1041,9 +1076,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     const relevantAlerts = alerts.filter(al => al.animalId ? filtered.some(a => a.id === al.animalId) : true);
 
     return {
-      total: filtered.filter(a => !a.isCalf).length,
+      total: filtered.filter(a => !isCalfAnimal(a)).length,
       pregnant,
-      open: statuses.filter(s => s === AnimalStatus.ACTIVE || s === AnimalStatus.IN_PROTOCOL || s === AnimalStatus.INSEMINATED).length,
+      // Open animals: Exclude Young Stock (growing heifer, suckling, post-weaning) and calves
+      open: filtered.filter(a => isBreedingEligibleAnimal(a) && (a.status === AnimalStatus.ACTIVE || a.status === AnimalStatus.IN_PROTOCOL || a.status === AnimalStatus.INSEMINATED)).length,
+      youngStock: filtered.filter(a => isYoungStockAnimal(a)).length,
       repeatBreeders,
       inHeat: inHeatCount,
       heatDue: relevantAlerts.filter(al => al.title.includes('Heat Check')).length,
@@ -1054,7 +1091,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       underObservation: statuses.filter(s => s === AnimalStatus.OBSERVATION).length,
       recentlyTreated,
       conceptionRate,
-      calves: filtered.filter(a => a.isCalf).length,
+      calves: filtered.filter(a => isCalfAnimal(a)).length,
       inProtocol: statuses.filter(s => s === AnimalStatus.IN_PROTOCOL).length,
       totalFemales: filtered.filter(a => a.sex === 'Female').length,
     };
@@ -1133,8 +1170,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const handleAddAnimal = (e: React.FormEvent) => {
     e.preventDefault();
     if (newAnimal.tag) {
+      const isTargetYoungStock = isYoungStockHerdGroup(newAnimal.herd);
+      const isTargetCalf = isCalfHerdGroup(newAnimal.herd) || !!newAnimal.isCalf;
+
       const normalizedAnimal = {
         ...newAnimal,
+        isCalf: isTargetYoungStock ? false : isTargetCalf,
+        status: isTargetYoungStock ? AnimalStatus.YOUNG_STOCK : newAnimal.status,
         tag: dateUtils.normalizeName(newAnimal.tag),
         name: newAnimal.name ? dateUtils.normalizeName(newAnimal.name) : newAnimal.name,
         herd: newAnimal.herd ? dateUtils.normalizeName(newAnimal.herd) : newAnimal.herd
@@ -1146,7 +1188,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         addAnimal({
           ...normalizedAnimal,
           id: Math.random().toString(36).substr(2, 9),
-          dob: normalizedAnimal.isCalf ? (normalizedAnimal.dob || new Date().toISOString().split('T')[0]) : '',
+          dob: normalizedAnimal.dob || (normalizedAnimal.isCalf ? new Date().toISOString().split('T')[0] : ''),
         } as Animal);
       }
       setIsAnimalFormOpen(false);
@@ -1219,7 +1261,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         ...newHealth,
         animalId,
         treatments: finalTreatments,
-        technician: newHealth.technician ? dateUtils.normalizeName(newHealth.technician) : '',
+        technician: newHealth.technician ? normalizeTechnicianName(newHealth.technician, settings.technicians) : '',
         medication: finalTreatments[0]?.name || '',
         dosage: finalTreatments[0]?.dose || ''
       };
@@ -1285,6 +1327,17 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       success: isPregnant,
       pregnancyResult: pregnancyCheckResult,
     } as ReproductionEvent);
+
+    if (isPregnant && isBreedingHeiferPen(pregnancyCheckTarget.herd)) {
+      const pregnantPen = findPregnantPen(settings.customGroups);
+      updateAnimal({ ...pregnancyCheckTarget, herd: pregnantPen });
+      setToastMessage(`🎉 Breeding heifer ${pregnancyCheckTarget.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+    } else if (isPregnant) {
+      setToastMessage(`🤰 Saved pregnancy check: Cow ${pregnancyCheckTarget.tag} confirmed Pregnant (+ve).`);
+    } else {
+      setToastMessage(`📋 Saved pregnancy check: Cow ${pregnancyCheckTarget.tag} is Open (-ve). Remains in ${pregnancyCheckTarget.herd || 'current pen'}.`);
+    }
+
     setIsPregnancyCheckModalOpen(false);
     setPregnancyCheckTarget(null);
     setPregnancyCheckResult('');
@@ -1298,9 +1351,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         const isCalfExpired = newRepro.type === ReproEventType.CALVING && (newRepro.calfStatus === 'Expired');
         const normalizedRepro = {
           ...newRepro,
-          technician: newRepro.technician ? dateUtils.normalizeName(newRepro.technician) : '',
-          semenName: newRepro.semenName ? dateUtils.normalizeName(newRepro.semenName) : '',
-          bullId: newRepro.bullId ? dateUtils.normalizeName(newRepro.bullId) : '',
+          technician: newRepro.technician ? normalizeTechnicianName(newRepro.technician, settings.technicians) : '',
+          semenName: newRepro.semenName ? normalizeSemenName(newRepro.semenName, settings.semenCatalog) : '',
+          bullId: newRepro.bullId ? normalizeSemenName(newRepro.bullId, settings.semenCatalog) : '',
           calfStatus: newRepro.type === ReproEventType.CALVING ? (newRepro.calfStatus || 'Alive') : undefined,
         };
         validations.validateReproductionEvent(normalizedRepro, animal?.status || AnimalStatus.ACTIVE);
@@ -1329,8 +1382,28 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
             });
           }
 
-          // Auto-add calf if calving event AND calf is NOT expired
+          // Pregnancy check auto-move for breeding heifers
+          if (newRepro.type === ReproEventType.PREGNANCY_CHECK) {
+            if (newRepro.success) {
+              if (animal && isBreedingHeiferPen(animal.herd)) {
+                const pregnantPen = findPregnantPen(settings.customGroups);
+                updateAnimal({ ...animal, herd: pregnantPen });
+                setToastMessage(`🎉 Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+              } else {
+                setToastMessage(`🤰 Pregnancy check saved: ${animal?.tag || ''} confirmed Pregnant (+ve).`);
+              }
+            } else {
+              setToastMessage(`📋 Pregnancy check saved: ${animal?.tag || ''} is Open (-ve). Remains in ${animal?.herd || 'current group'}.`);
+            }
+          }
+
+          // Auto-add calf and auto-move mother to Fresh group if calving event
           if (newRepro.type === ReproEventType.CALVING) {
+            const freshPen = findFreshPen(settings.customGroups);
+            if (animal) {
+              updateAnimal({ ...animal, herd: freshPen });
+            }
+
             if (!isCalfExpired) {
               const calfTag = newRepro.offspringTag?.trim() || `CALF-${animal?.tag}-${Date.now().toString().slice(-4)}`;
               const calfId = Math.random().toString(36).substr(2, 9);
@@ -1346,9 +1419,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 fatherId: newRepro.bullId,
                 isCalf: true,
               } as Animal);
-              setToastMessage(`Calving logged! New calf (${calfTag}) auto-added to herd.`);
+              setToastMessage(`🐄 Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group! New calf (${calfTag}) registered.`);
             } else {
-              setToastMessage(`Calving recorded (Calf Expired/Stillborn - not added to herd).`);
+              setToastMessage(`🐄 Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group (Calf Expired/Stillborn).`);
             }
           }
         }
@@ -1403,7 +1476,16 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     };
 
     addReproEvent(newEvent);
-    setToastMessage(`🤰 Saved check for Cow ${pdAnimalId}!`);
+
+    if (isPregnant && isBreedingHeiferPen(animal.herd)) {
+      const pregnantPen = findPregnantPen(settings.customGroups);
+      updateAnimal({ ...animal, herd: pregnantPen });
+      setToastMessage(`🎉 Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+    } else if (isPregnant) {
+      setToastMessage(`🤰 Saved check: Cow ${pdAnimalId} confirmed Pregnant (+ve).`);
+    } else {
+      setToastMessage(`📋 Saved check: Cow ${pdAnimalId} is Open (-ve). Remains in ${animal.herd}.`);
+    }
     
     // Reset form states
     setPdAnimalId('');
@@ -1463,7 +1545,15 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     
     // Format the date for the success message e.g., "June 30, 2026"
     const formattedDate = formatDateReadable(oldPdDate);
-    setToastMessage(`✅ Added check for ${formattedDate}!`);
+    if (isPregnant && isBreedingHeiferPen(animal.herd)) {
+      const pregnantPen = findPregnantPen(settings.customGroups);
+      updateAnimal({ ...animal, herd: pregnantPen });
+      setToastMessage(`🎉 Breeding heifer ${animal.tag} checked on ${formattedDate} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+    } else if (isPregnant) {
+      setToastMessage(`✅ Added check for ${formattedDate} (Pregnant +ve)!`);
+    } else {
+      setToastMessage(`✅ Added check for ${formattedDate} (Open -ve). Remains in ${animal.herd}.`);
+    }
 
     // Reset form states
     setOldPdAnimalId('');
@@ -1741,8 +1831,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       type: ReproEventType.INSEMINATION,
       date: newRepro.date || new Date().toISOString().split('T')[0],
       details: newRepro.details || 'AI Step in Protocol',
-      technician: newRepro.technician,
-      semenName: newRepro.semenName,
+      technician: newRepro.technician ? normalizeTechnicianName(newRepro.technician, settings.technicians) : '',
+      semenName: newRepro.semenName ? normalizeSemenName(newRepro.semenName, settings.semenCatalog) : '',
       success: true,
       protocolId: enrollment.id
     } as ReproductionEvent);
@@ -2085,12 +2175,19 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         ))}
       </datalist>
       <datalist id="all-technicians">
-        {Array.from(new Set([...reproEvents.map(e => e.technician), ...healthEvents.map(e => e.technician)])).filter(Boolean).map((t, i) => (
+        {Array.from(new Set([
+          ...(settings.technicians || ['Asad', 'Faisal Sb']),
+          ...reproEvents.map(e => normalizeTechnicianName(e.technician, settings.technicians)),
+          ...healthEvents.map(e => normalizeTechnicianName(e.technician, settings.technicians))
+        ])).filter(Boolean).map((t, i) => (
           <option key={i} value={t as string} />
         ))}
       </datalist>
       <datalist id="all-semen">
-        {Array.from(new Set(reproEvents.map(e => e.semenName || e.bullId))).filter(Boolean).map((s, i) => (
+        {Array.from(new Set([
+          ...(settings.semenCatalog || []),
+          ...reproEvents.map(e => normalizeSemenName(e.semenName || e.bullId, settings.semenCatalog))
+        ])).filter(Boolean).map((s, i) => (
           <option key={i} value={s as string} />
         ))}
       </datalist>
@@ -2565,11 +2662,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   </div>
                   <h3 className="text-xl font-black text-slate-800 tracking-tight">Calving & Dry Management</h3>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-6">
                   <StatCard title="Dry Animals" value={dashboardStats.dry} icon={Droplets} colorClass="bg-slate-500" trend="Rest Period" onClick={() => handleMetricClick('Dry')} />
                   <StatCard title="Calving Due" value={dashboardStats.calvingDue} icon={Clock} colorClass="bg-emerald-500" trend="Next 7 Days" onClick={() => handleMetricClick('Calving Due')} />
                   <StatCard title="Overdue Calving" value={dashboardStats.overdueCalving} icon={AlertTriangle} colorClass="bg-rose-500" trend="Urgent Action" onClick={() => handleMetricClick('Overdue')} />
-                  <StatCard title="Calf Population" value={dashboardStats.calves} icon={BabyIcon} colorClass="bg-amber-500" trend="Health Support" onClick={() => { setView('animals'); setHerdTab('calves'); }} />
+                  <StatCard title="Young Stock" value={dashboardStats.youngStock} icon={Sprout} colorClass="bg-amber-500" trend="Growing / Pre-Breeding" onClick={() => { setView('animals'); setHerdTab('youngstock'); }} />
+                  <StatCard title="Calf Nursery" value={dashboardStats.calves} icon={BabyIcon} colorClass="bg-teal-500" trend="Health Support" onClick={() => { setView('animals'); setHerdTab('calves'); }} />
                 </div>
               </section>
 
@@ -2755,14 +2853,21 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 </div>
               </div>
 
-              {/* Adults / Calves Tab Switcher */}
-              <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl w-fit shadow-inner">
+              {/* Herd View Category Tabs: Adults / Young Stock / Calves */}
+              <div className="flex flex-wrap gap-2 p-1 bg-slate-100 rounded-2xl w-fit shadow-inner">
                 <button
                   onClick={() => setHerdTab('adults')}
                   className={`px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${herdTab === 'adults' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                     }`}
                 >
-                  Adults ({adultAnimals.length})
+                  Adults / Breeding ({adultAnimals.length})
+                </button>
+                <button
+                  onClick={() => setHerdTab('youngstock')}
+                  className={`px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${herdTab === 'youngstock' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                    }`}
+                >
+                  🌱 Young Stock ({youngStockAnimals.length})
                 </button>
                 <button
                   onClick={() => setHerdTab('calves')}
@@ -2773,7 +2878,127 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 </button>
               </div>
 
-              {herdTab === 'calves' ? (
+              {herdTab === 'youngstock' ? (
+                <div className="space-y-6">
+                  {/* Young Stock Guidance Banner */}
+                  <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border border-amber-200/80 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="p-3 bg-amber-500 text-white rounded-xl shadow-md shadow-amber-200">
+                        <Sprout className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-800 tracking-tight">Young Stock Management Section</h4>
+                        <p className="text-xs text-slate-600 font-medium mt-0.5">
+                          Includes <strong>Growing Heifers</strong>, <strong>Post-Weaning</strong>, and <strong>Suckling</strong> groups. These animals are growing/underweight and are excluded from open breeding records.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setEditingAnimalId(null); setNewAnimal({ sex: 'Female', breed: 'Holstein', herd: 'Growing Heifers' }); setIsAnimalFormOpen(true); }}
+                      className="px-4 py-2 bg-amber-500 text-white rounded-xl font-black text-xs uppercase tracking-wider hover:bg-amber-600 transition-all shadow-md shadow-amber-100 flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                      <Plus className="w-4 h-4" /> Add Young Stock
+                    </button>
+                  </div>
+
+                  {/* Young Stock Animals Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {youngStockAnimals.length === 0 ? (
+                      <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border border-dashed border-slate-200">
+                        <Sprout className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                        <p className="text-slate-500 font-black uppercase tracking-widest text-sm">No young stock found in this view</p>
+                        <p className="text-slate-400 text-xs mt-1">Animals assigned to Growing Heifers, Post-Weaning, or Suckling pens appear here automatically.</p>
+                      </div>
+                    ) : (
+                      youngStockAnimals.map((animal, index) => {
+                        return (
+                          <div
+                            key={animal.id}
+                            onClick={() => setSelectedAnimal(animal)}
+                            className="group bg-white p-8 rounded-[3rem] border-2 border-amber-100/80 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden cursor-pointer"
+                          >
+                            <div className="absolute top-0 left-0 w-2 h-full bg-amber-400" />
+                            <div className="flex items-start justify-between mb-6">
+                              <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 font-black text-xl border border-amber-200/70 group-hover:bg-amber-500 group-hover:text-white transition-all">
+                                  {animal.tag.slice(-2)}
+                                </div>
+                                <div>
+                                  <h4 className="font-black text-slate-800 text-xl tracking-tighter group-hover:text-amber-600 transition-colors">{animal.tag}</h4>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                    <span className="text-[9px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-amber-200">
+                                      🌱 {animal.herd || 'Young Stock'}
+                                    </span>
+                                    {animal.breed && <span className="text-[9px] font-bold text-slate-400 uppercase">{animal.breed}</span>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const text = generateAnimalShareText(animal, reproEvents, healthEvents);
+                                    shareToWhatsApp(text);
+                                  }}
+                                  className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-all"
+                                  title="Share on WhatsApp"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMoveToPenAnimalId(animal.id);
+                                    setIsMoveToPenModalOpen(true);
+                                  }}
+                                  className="p-2 hover:bg-indigo-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
+                                  title="Move to Pen (e.g. Post-Weaning / Main Herd)"
+                                >
+                                  <ArrowRightLeft className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => handleEditAnimal(animal, e)}
+                                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-all"
+                                  title="Edit Animal"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => handleDeleteAnimal(animal, e)}
+                                  className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
+                                  title="Delete Animal"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between p-3 bg-amber-50/50 rounded-xl border border-amber-100/50">
+                                <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Breeding Readiness</span>
+                                <span className="text-xs font-black text-amber-800">Under Development (Not in Open list)</span>
+                              </div>
+                              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pen / Group</span>
+                                <span className="text-xs font-black text-slate-700 flex items-center gap-1"><MapPin className="w-3 h-3 text-amber-500" /> {animal.herd || 'Young Stock Pen'}</span>
+                              </div>
+                              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sex & Breed</span>
+                                <span className="text-xs font-black text-slate-700">{animal.sex || 'Female'} • {animal.breed || 'Standard'}</span>
+                              </div>
+                              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</span>
+                                <span className="text-xs font-black text-slate-700">{animal.dob || '—'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              ) : herdTab === 'calves' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {calfAnimals.length === 0 ? (
                     <div className="col-span-full py-20 text-center">
@@ -3330,8 +3555,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               {event.type}
                             </span>
                           </td>
-                          <td className="px-8 py-6 text-sm text-slate-700 font-bold">{event.technician ? dateUtils.normalizeName(event.technician) : '--'}</td>
-                          <td className="px-8 py-6 text-sm text-slate-500 font-black">{event.semenName ? dateUtils.normalizeName(event.semenName) : (event.bullId ? dateUtils.normalizeName(event.bullId) : '--')}</td>
+                          <td className="px-8 py-6 text-sm text-slate-700 font-bold">{event.technician ? normalizeTechnicianName(event.technician, settings.technicians) : '--'}</td>
+                          <td className="px-8 py-6 text-sm text-slate-500 font-black">{event.semenName ? normalizeSemenName(event.semenName, settings.semenCatalog) : (event.bullId ? normalizeSemenName(event.bullId, settings.semenCatalog) : '--')}</td>
                           <td className="px-8 py-6">
                             {event.type === ReproEventType.PREGNANCY_CHECK ? (
                               <span className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${event.success ? 'text-emerald-600' : 'text-rose-500'}`}>
@@ -3735,7 +3960,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 </td>
                                 <td className="px-8 py-6 max-w-[200px]">
                                   <p className="text-xs text-slate-600 font-bold truncate" title={event.details}>{event.details || '--'}</p>
-                                  {event.technician && <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1 block">Tech: {dateUtils.normalizeName(event.technician)}</span>}
+                                  {event.technician && <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1 block">Tech: {normalizeTechnicianName(event.technician, settings.technicians)}</span>}
 
                                   {event.treatmentDays && (() => {
                                     const today = new Date().toISOString().split('T')[0];
@@ -5689,6 +5914,146 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     </div>
                   </div>
                 </div>
+
+                {/* Farm Technicians & Doctors Management */}
+                <div className="mt-8 pt-8 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Farm Technicians & Doctors</h4>
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg">Quick-Select Dropdowns</span>
+                  </div>
+                  <p className="text-xs text-slate-400 font-medium mb-4">
+                    Configure fixed technician/doctor names (e.g. Asad, Faisal Sb). Variations in spelling and capitalization will be automatically merged to these fixed names. Removing a name only removes it from the active dropdown list; historical entries are safely preserved.
+                  </p>
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        placeholder="New technician or doctor (e.g. Asad, Faisal Sb, Dr. Waqas)"
+                        className="flex-1 px-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
+                        value={newTechnicianName}
+                        onChange={e => setNewTechnicianName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && newTechnicianName.trim()) {
+                            e.preventDefault();
+                            const current = settings.technicians || ['Asad', 'Faisal Sb'];
+                            const trimmed = newTechnicianName.trim();
+                            if (!current.some(t => t.toLowerCase() === trimmed.toLowerCase())) {
+                              updateSettings({ ...settings, technicians: [...current, trimmed] });
+                            }
+                            setNewTechnicianName('');
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newTechnicianName.trim()) {
+                            const current = settings.technicians || ['Asad', 'Faisal Sb'];
+                            const trimmed = newTechnicianName.trim();
+                            if (!current.some(t => t.toLowerCase() === trimmed.toLowerCase())) {
+                              updateSettings({ ...settings, technicians: [...current, trimmed] });
+                            }
+                            setNewTechnicianName('');
+                          }
+                        }}
+                        className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(settings.technicians || ['Asad', 'Faisal Sb']).map((tech, idx) => (
+                        <div key={tech} className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                          <span className="text-[10px] font-black text-slate-300">#{idx + 1}</span>
+                          <span className="text-xs font-black text-slate-700">{tech}</span>
+                          <button
+                            type="button"
+                            title="Remove from active dropdown (historical logs preserved)"
+                            onClick={() => {
+                              const current = settings.technicians || ['Asad', 'Faisal Sb'];
+                              updateSettings({ ...settings, technicians: current.filter(t => t !== tech) });
+                            }}
+                            className="text-slate-300 hover:text-rose-500 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Semen Stock / Catalogue Management */}
+                <div className="mt-8 pt-8 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Semen Stock / Catalogue</h4>
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg">Quick-Select Dropdowns</span>
+                  </div>
+                  <p className="text-xs text-slate-400 font-medium mb-4">
+                    Manage active semen stock names and codes for fast selection during insemination entries. Removing out-of-stock semen only removes it from active dropdowns; all historical breeding entries remain untouched.
+                  </p>
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        placeholder="New semen code or bull name (e.g. Captain, AltaRobson, CRV-542)"
+                        className="flex-1 px-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
+                        value={newSemenName}
+                        onChange={e => setNewSemenName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && newSemenName.trim()) {
+                            e.preventDefault();
+                            const current = settings.semenCatalog || [];
+                            const trimmed = newSemenName.trim();
+                            if (!current.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+                              updateSettings({ ...settings, semenCatalog: [...current, trimmed] });
+                            }
+                            setNewSemenName('');
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newSemenName.trim()) {
+                            const current = settings.semenCatalog || [];
+                            const trimmed = newSemenName.trim();
+                            if (!current.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+                              updateSettings({ ...settings, semenCatalog: [...current, trimmed] });
+                            }
+                            setNewSemenName('');
+                          }
+                        }}
+                        className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(settings.semenCatalog || []).map((semen, idx) => (
+                        <div key={semen} className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                          <span className="text-[10px] font-black text-slate-300">#{idx + 1}</span>
+                          <span className="text-xs font-black text-slate-700">{semen}</span>
+                          <button
+                            type="button"
+                            title="Remove from active dropdown (historical logs preserved)"
+                            onClick={() => {
+                              const current = settings.semenCatalog || [];
+                              updateSettings({ ...settings, semenCatalog: current.filter(s => s !== semen) });
+                            }}
+                            className="text-slate-300 hover:text-rose-500 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {(!settings.semenCatalog || settings.semenCatalog.length === 0) && (
+                        <p className="text-xs text-slate-300 font-bold italic">No semen stock registered yet. Add one above.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Farm Data Protection & Auto-Backup */}
                 <BackupSettingsSection
                   settings={settings}
@@ -6253,12 +6618,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {e.semenName && (
                                     <span className="px-2.5 py-1 rounded-xl text-[11px] font-black bg-purple-50 text-purple-700 border border-purple-200">
-                                      Semen: {e.semenName}
+                                      Semen: {normalizeSemenName(e.semenName, settings.semenCatalog)}
                                     </span>
                                   )}
                                   {e.technician && (
                                     <span className="px-2.5 py-1 rounded-xl text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-200">
-                                      Tech: {e.technician}
+                                      Tech: {normalizeTechnicianName(e.technician, settings.technicians)}
                                     </span>
                                   )}
                                 </div>
@@ -6305,7 +6670,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           </div>
                           <p className="text-xs text-slate-500 font-semibold">{e.details || '--'}</p>
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {e.technician && <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-md">Vet: {e.technician}</span>}
+                            {e.technician && <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-md">Vet: {normalizeTechnicianName(e.technician, settings.technicians)}</span>}
                             {(e.treatments && e.treatments.length > 0) ? (
                               e.treatments.map((t, tidx) => {
                                 const match = medicines.find(m => m.name.toLowerCase() === (t.name || '').toLowerCase());
@@ -6446,13 +6811,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {/* DOB only for calves */}
-            {newAnimal.isCalf && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</label>
-                <input type="date" className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newAnimal.dob || ''} onChange={e => setNewAnimal({ ...newAnimal, dob: e.target.value })} />
-              </div>
-            )}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</label>
+              <input type="date" className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newAnimal.dob || ''} onChange={e => setNewAnimal({ ...newAnimal, dob: e.target.value })} />
+            </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sex</label>
               <select className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newAnimal.sex || 'Female'} onChange={e => setNewAnimal({ ...newAnimal, sex: e.target.value as any })}>
@@ -6462,14 +6824,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Herd / Group</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Herd / Pen Group</label>
             <select
               className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
               value={newAnimal.herd || ''}
               onChange={e => setNewAnimal({ ...newAnimal, herd: e.target.value })}
             >
-              <option value="">Select group...</option>
-              {(settings.customGroups || ['Main Herd', 'Elite', 'High Group', 'Medium Group', 'Heifers', 'Breeding']).map(g => (
+              <option value="">Select group / pen...</option>
+              {(settings.customGroups || ['Main Herd', 'Growing Heifers', 'Post Weaning', 'Suckling', 'Elite', 'High Group', 'Medium Group', 'Breeding Pen', 'Dry Cows']).map(g => (
                 <option key={g} value={g}>{g}</option>
               ))}
             </select>
@@ -6731,12 +7093,66 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               )}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Technician Name</label>
-              <input className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="Dr. Smith" value={newRepro.technician || ''} onChange={e => setNewRepro({ ...newRepro, technician: e.target.value })} />
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                <span>Technician Name</span>
+                <span className="text-[9px] text-blue-600 font-bold">Quick Select</span>
+              </label>
+              <input
+                list="all-technicians"
+                className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+                placeholder="Dr. Smith / Asad / Faisal Sb"
+                value={newRepro.technician || ''}
+                onChange={e => setNewRepro({ ...newRepro, technician: e.target.value })}
+              />
+              {(settings.technicians && settings.technicians.length > 0) && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {settings.technicians.map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setNewRepro({ ...newRepro, technician: t })}
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
+                        newRepro.technician?.toLowerCase() === t.toLowerCase()
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Semen / Bull Name</label>
-              <input className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="Bull ID or Semen Code" value={newRepro.semenName || ''} onChange={e => setNewRepro({ ...newRepro, semenName: e.target.value })} />
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                <span>Semen / Bull Name</span>
+                <span className="text-[9px] text-blue-600 font-bold">Quick Select</span>
+              </label>
+              <input
+                list="all-semen"
+                className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+                placeholder="Bull ID or Semen Code"
+                value={newRepro.semenName || ''}
+                onChange={e => setNewRepro({ ...newRepro, semenName: e.target.value })}
+              />
+              {(settings.semenCatalog && settings.semenCatalog.length > 0) && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {settings.semenCatalog.map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setNewRepro({ ...newRepro, semenName: s })}
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
+                        newRepro.semenName?.toLowerCase() === s.toLowerCase()
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-4">
@@ -7145,7 +7561,37 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
             </select>
             <input type="date" className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newHealth.date || ''} onChange={e => setNewHealth({ ...newHealth, date: e.target.value })} />
           </div>
-          <input className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="Technician / Veterinarian" value={newHealth.technician || ''} onChange={e => setNewHealth({ ...newHealth, technician: e.target.value })} />
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+              <span>Technician / Veterinarian</span>
+              <span className="text-[9px] text-blue-600 font-bold">Quick Select</span>
+            </label>
+            <input
+              list="all-technicians"
+              className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
+              placeholder="Technician / Veterinarian (e.g. Asad, Faisal Sb)"
+              value={newHealth.technician || ''}
+              onChange={e => setNewHealth({ ...newHealth, technician: e.target.value })}
+            />
+            {(settings.technicians && settings.technicians.length > 0) && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {settings.technicians.map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setNewHealth({ ...newHealth, technician: t })}
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
+                      newHealth.technician?.toLowerCase() === t.toLowerCase()
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           
           {/* Treatments & Injections with search autocomplete */}
           <div className="space-y-3 p-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm relative">

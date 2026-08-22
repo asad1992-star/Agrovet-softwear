@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: FarmSettings = {
   farmName: "Asad's Farm",
   statusColors: {
     active: '#10B981',
+    youngStock: '#F97316',
     pregnant: '#3B82F6',
     sick: '#EF4444',
     dry: '#64748B',
@@ -33,7 +34,9 @@ export const DEFAULT_SETTINGS: FarmSettings = {
     inseminated: '#06B6D4',
     observation: '#94A3B8'
   },
-  customGroups: ['Main Herd', 'Elite', 'High Group', 'Medium Group', 'Heifers', 'Breeding'],
+  customGroups: ['Main Herd', 'Growing Heifers', 'Post Weaning', 'Suckling', 'Elite', 'High Group', 'Medium Group', 'Breeding Pen', 'Dry Cows', 'Fresh', 'Pregnant'],
+  technicians: ['Asad', 'Faisal Sb'],
+  semenCatalog: [],
   autoBackupEnabled: true
 };
 

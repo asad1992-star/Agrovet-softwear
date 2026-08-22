@@ -32,15 +32,18 @@ export const dateUtils = {
   today: () => new Date().toISOString().split('T')[0],
   normalizeName: (name: string) => {
     if (!name) return '';
-    return name.trim().split(/\s+/).map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    ).join(' ');
+    return name.trim().split(/\s+/).map(word => {
+      const lower = word.toLowerCase();
+      if (lower === 'sb' || lower === 'sb.') return 'Sb';
+      if (lower === 'dr' || lower === 'dr.') return 'Dr.';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }).join(' ');
   },
-  getUniqueNormalized: (values: (string | undefined | null)[]) => {
+  getUniqueNormalized: (values: (string | undefined | null)[], knownList?: string[]) => {
     const normalizedMap = new Map<string, string>();
     values.forEach(v => {
       if (!v) return;
-      const n = dateUtils.normalizeName(v);
+      const n = normalizeTechnicianName(v, knownList);
       const lower = n.toLowerCase();
       if (!normalizedMap.has(lower)) {
         normalizedMap.set(lower, n);
@@ -48,6 +51,114 @@ export const dateUtils = {
     });
     return Array.from(normalizedMap.values()).sort();
   }
+};
+
+/**
+ * Smart Group / Pen Matching Helpers
+ */
+export const findFreshPen = (customGroups?: string[]): string => {
+  const groups = customGroups || ['Fresh', 'Main Herd'];
+  const match = groups.find(g => g.toLowerCase().includes('fresh'));
+  return match || 'Fresh';
+};
+
+export const findPregnantPen = (customGroups?: string[]): string => {
+  const groups = customGroups || ['Pregnant', 'Main Herd'];
+  const match = groups.find(g => g.toLowerCase().includes('pregnant'));
+  return match || 'Pregnant';
+};
+
+export const isBreedingHeiferPen = (herdName?: string): boolean => {
+  if (!herdName) return false;
+  const h = herdName.toLowerCase().trim();
+  return (
+    h.includes('heifer') ||
+    h.includes('breeding') ||
+    h.includes('growing') ||
+    h === 'heifers' ||
+    h === 'breeding pen' ||
+    h === 'growing heifers'
+  );
+};
+
+/**
+ * Smart Name Normalization & Auto-Merging for Technicians & Semen
+ */
+export const normalizeTechnicianName = (rawTech?: string, knownTechs?: string[]): string => {
+  if (!rawTech) return '';
+  const trimmed = rawTech.trim();
+  if (!trimmed) return '';
+
+  const defaultKnown = ['Asad', 'Faisal Sb'];
+  const fullKnown = Array.from(new Set([...(knownTechs || []), ...defaultKnown]));
+
+  // Check case-insensitive match against configured list
+  const match = fullKnown.find(k => k.toLowerCase() === trimmed.toLowerCase());
+  if (match) return match;
+
+  // Otherwise format cleanly in proper title case
+  return dateUtils.normalizeName(trimmed);
+};
+
+export const normalizeSemenName = (rawSemen?: string, knownSemenList?: string[]): string => {
+  if (!rawSemen) return '';
+  const trimmed = rawSemen.trim();
+  if (!trimmed) return '';
+
+  if (knownSemenList && knownSemenList.length > 0) {
+    const match = knownSemenList.find(k => k.toLowerCase() === trimmed.toLowerCase());
+    if (match) return match;
+  }
+
+  return dateUtils.normalizeName(trimmed);
+};
+
+/**
+ * Smart Group & Young Stock Detection Helpers
+ * Recognizes growing heifers, suckling, post-weaning pens (with flexible spellings)
+ * and distinguishes young stock from breeding-ready adult cows.
+ */
+export const isYoungStockHerdGroup = (herdName?: string): boolean => {
+  if (!herdName) return false;
+  const h = herdName.toLowerCase().trim();
+  return (
+    h.includes('growing') ||
+    h.includes('heifer') ||
+    h.includes('suckl') || // matches suckling, sucklin, suckler, etc.
+    h.includes('post wean') ||
+    h.includes('post-wean') ||
+    h.includes('postwean') ||
+    h.includes('post ween') ||
+    h.includes('post-ween') ||
+    h.includes('postween') ||
+    h.includes('young stock') ||
+    h.includes('youngstock') ||
+    h.includes('juvenile')
+  );
+};
+
+export const isCalfHerdGroup = (herdName?: string): boolean => {
+  if (!herdName) return false;
+  const h = herdName.toLowerCase().trim();
+  if (isYoungStockHerdGroup(herdName)) return false;
+  return h.includes('calf') || h.includes('calves') || h.includes('nursery') || h.includes('pre-wean') || h.includes('prewean');
+};
+
+export const isYoungStockAnimal = (animal?: { herd?: string; isCalf?: boolean; status?: AnimalStatus } | null): boolean => {
+  if (!animal) return false;
+  return isYoungStockHerdGroup(animal.herd) || animal.status === AnimalStatus.YOUNG_STOCK;
+};
+
+export const isCalfAnimal = (animal?: { herd?: string; isCalf?: boolean; status?: AnimalStatus } | null): boolean => {
+  if (!animal) return false;
+  if (isYoungStockAnimal(animal)) return false;
+  return !!animal.isCalf || isCalfHerdGroup(animal.herd);
+};
+
+export const isBreedingEligibleAnimal = (animal?: { herd?: string; isCalf?: boolean; status?: AnimalStatus } | null): boolean => {
+  if (!animal) return false;
+  if (isCalfAnimal(animal) || isYoungStockAnimal(animal)) return false;
+  return true;
 };
 
 /**
@@ -91,14 +202,17 @@ export const computeAnimalStatus = (
     return { status: AnimalStatus.IN_PROTOCOL, activeProtocol: activeEnrollment };
   }
 
-  // 3. Check Repro Cycle
+  // 3. Check Young Stock status (if assigned to growing / suckling / post-weaning pen)
+  const isYoungStock = isYoungStockAnimal(animal);
+
+  // 4. Check Repro Cycle
   const sortedRepro = [...reproEvents]
     .filter(e => e.animalId === animal.id)
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const latest = sortedRepro[0];
   if (!latest) {
-    return { status: AnimalStatus.ACTIVE };
+    return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
   }
 
   switch (latest.type) {
@@ -123,19 +237,19 @@ export const computeAnimalStatus = (
         }
         return { status: AnimalStatus.PREGNANT, expectedCalving, pregnancyDays, serviceDate };
       }
-      return { status: AnimalStatus.ACTIVE };
+      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
 
     case ReproEventType.CALVING:
-      return { status: AnimalStatus.ACTIVE };
+      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
 
     case ReproEventType.DRY_OFF:
       return { status: AnimalStatus.DRY };
 
     case ReproEventType.ABORTION:
-      return { status: AnimalStatus.ACTIVE };
+      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
 
     default:
-      return { status: AnimalStatus.ACTIVE };
+      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
   }
 };
 

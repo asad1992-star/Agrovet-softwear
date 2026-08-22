@@ -40,10 +40,20 @@ export const generateReproEventShareText = (event: ReproductionEvent, animalTag:
   if (event.technician) text += `Technician: ${event.technician}\n`;
   if (event.semenName) text += `Semen: ${event.semenName}\n`;
   if (event.bullId) text += `Bull: ${event.bullId}\n`;
-  if (event.details) text += `Details: ${event.details}\n`;
-  if (event.type === ReproEventType.PREGNANCY_CHECK) {
-    text += `Result: ${event.success ? 'PREGNANT' : 'NON-PREGNANT'}\n`;
+  
+  if (event.type === ReproEventType.CALVING) {
+    if (event.calfTag) {
+      text += `Calf Tag: ${event.calfTag} (${event.calfStatus || 'Alive'})\n`;
+    } else {
+      text += `Calf Status: ${event.calfStatus || 'Alive'}\n`;
+    }
   }
+
+  if (event.type === ReproEventType.PREGNANCY_CHECK) {
+    text += `Result: ${event.success ? '+ve (Pregnant)' : '-ve (Open)'}\n`;
+  }
+  
+  if (event.details) text += `Details: ${event.details}\n`;
   return text;
 };
 

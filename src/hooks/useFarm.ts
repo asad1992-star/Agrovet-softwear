@@ -2,7 +2,16 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Animal, ReproductionEvent, HealthEvent, Alert, FarmSettings, ProtocolEnrollment, ProtocolTemplate, ReproEventType, AnimalStatus, Medicine, MedicinePurchase } from '../types';
 import { storageService, DEFAULT_SETTINGS } from '../services/storage';
-import { computeAnimalStatus, generateAlerts, dateUtils } from '../services/businessLogic';
+import { 
+  computeAnimalStatus, 
+  generateAlerts, 
+  dateUtils,
+  isYoungStockHerdGroup,
+  isCalfHerdGroup,
+  isYoungStockAnimal,
+  isCalfAnimal,
+  isBreedingEligibleAnimal
+} from '../services/businessLogic';
 import { PREDEFINED_PROTOCOLS } from '../data';
 
 export const useFarm = () => {
@@ -125,11 +134,13 @@ export const useFarm = () => {
     const recentlyTreated = Array.from(new Set(healthEvents.filter(e => e.date >= sevenDaysAgo).map(e => e.animalId))).length;
 
     return {
-      total: animals.filter(a => !a.isCalf).length,
+      total: animals.filter(a => !isCalfAnimal(a)).length,
       pregnant,
-      open: statuses.filter(s => s === AnimalStatus.ACTIVE || s === AnimalStatus.IN_PROTOCOL).length,
+      // Open animals: Exclude Young Stock (growing heifers, suckling, post-weaning) and calves
+      open: animalsWithStatus.filter(a => isBreedingEligibleAnimal(a) && (a.status === AnimalStatus.ACTIVE || a.status === AnimalStatus.IN_PROTOCOL)).length,
+      youngStock: animals.filter(a => isYoungStockAnimal(a)).length,
       repeatBreeders,
-      inHeat: statuses.filter(s => s === AnimalStatus.ACTIVE).length, // Simplified
+      inHeat: animalsWithStatus.filter(a => isBreedingEligibleAnimal(a) && a.status === AnimalStatus.ACTIVE).length,
       heatDue: heatDueCount,
       dry: statuses.filter(s => s === AnimalStatus.DRY).length,
       calvingDue: calvingDueCount,
@@ -137,8 +148,8 @@ export const useFarm = () => {
       sick: statuses.filter(s => s === AnimalStatus.SICK).length,
       recentlyTreated,
       conceptionRate,
-      active: statuses.filter(s => s === AnimalStatus.ACTIVE).length,
-      calves: animals.filter(a => a.isCalf).length,
+      active: animalsWithStatus.filter(a => isBreedingEligibleAnimal(a) && a.status === AnimalStatus.ACTIVE).length,
+      calves: animals.filter(a => isCalfAnimal(a)).length,
       inProtocol: statuses.filter(s => s === AnimalStatus.IN_PROTOCOL).length,
       inseminated: statuses.filter(s => s === AnimalStatus.INSEMINATED).length
     };
@@ -148,7 +159,22 @@ export const useFarm = () => {
   const addAnimal = (a: Animal) => setAnimals(prev => [a, ...prev]);
   const updateAnimal = (updated: Animal) => setAnimals(prev => prev.map(a => a.id === updated.id ? updated : a));
   const updateAnimalsHerd = (animalIds: string[], targetHerd: string) => {
-    setAnimals(prev => prev.map(a => animalIds.includes(a.id) ? { ...a, herd: targetHerd } : a));
+    const isTargetYoungStock = isYoungStockHerdGroup(targetHerd);
+    const isTargetCalf = isCalfHerdGroup(targetHerd);
+
+    setAnimals(prev => prev.map(a => {
+      if (!animalIds.includes(a.id)) return a;
+      let newIsCalf = a.isCalf;
+      if (isTargetYoungStock) {
+        newIsCalf = false;
+      } else if (isTargetCalf) {
+        newIsCalf = true;
+      } else if (a.isCalf) {
+        // If moved to general adult herd, remove calf flag
+        newIsCalf = false;
+      }
+      return { ...a, herd: targetHerd, isCalf: newIsCalf };
+    }));
   };
   const deleteAnimal = (id: string) => setAnimals(prev => prev.filter(a => a.id !== id));
 
