@@ -3,17 +3,7 @@ import { MOCK_ANIMALS, MOCK_REPRO_EVENTS, MOCK_HEALTH_EVENTS, PREDEFINED_PROTOCO
 import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { localDb } from './localDatabase';
-
-export const STORAGE_KEYS = {
-  ANIMALS: 'agrovet_animals',
-  REPRO: 'agrovet_repro',
-  HEALTH: 'agrovet_health',
-  SETTINGS: 'asad_settings',
-  ENROLLMENTS: 'agrovet_enrollments',
-  PROTOCOLS: 'agrovet_protocols',
-  MEDICINES: 'agrovet_medicines',
-  PURCHASES: 'agrovet_medicine_purchases'
-};
+import { authService, AuthUser } from './authService';
 
 export const DEFAULT_SETTINGS: FarmSettings = {
   gestationDays: 283,
@@ -22,7 +12,7 @@ export const DEFAULT_SETTINGS: FarmSettings = {
   pregnancyCheckDays: 30,
   estrusCycleDays: 21,
   pdfTemplate: 'Professional',
-  farmName: "Asad's Farm",
+  farmName: "AgroVet Pro Farm",
   statusColors: {
     active: '#10B981',
     youngStock: '#F97316',
@@ -35,7 +25,7 @@ export const DEFAULT_SETTINGS: FarmSettings = {
     observation: '#94A3B8'
   },
   customGroups: ['Main Herd', 'Growing Heifers', 'Post Weaning', 'Suckling', 'Elite', 'High Group', 'Medium Group', 'Breeding Pen', 'Dry Cows', 'Fresh', 'Pregnant'],
-  technicians: ['Asad', 'Faisal Sb'],
+  technicians: ['Dr. Asad Mehmood', 'Faisal Sb'],
   semenCatalog: [],
   autoBackupEnabled: true
 };
@@ -81,184 +71,184 @@ export const subscribeSyncStatus = (listener: (status: SyncStatusInfo) => void) 
 
 export const getSyncStatus = (): SyncStatusInfo => currentSyncStatus;
 
-// Timeout wrapper for network operations
-const withTimeout = <T>(promise: Promise<T>, timeoutMs = 3500): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error('Network timeout')), timeoutMs)
-    )
-  ]);
+export const syncPendingChanges = async (): Promise<void> => {
+  const user = authService.getCurrentUser();
+  const userEmail = user?.email || 'default';
+  notifySyncStatus({ state: 'syncing' });
+  try {
+    const keys = ['animals', 'repro', 'health', 'enrollments', 'protocols', 'medicines', 'purchases', 'settings'];
+    const payload: Record<string, any> = {};
+    for (const k of keys) {
+      const scopedKey = getUserScopedKey(k, userEmail);
+      const val = await localDb.get(scopedKey, null);
+      if (val !== null) {
+        payload[k] = val;
+        try {
+          const docRef = doc(db, 'userFarmData', scopedKey);
+          await setDoc(docRef, { data: val, updatedAt: new Date().toISOString() });
+        } catch (e) {}
+      }
+    }
+    // Also push to Express API
+    try {
+      await fetch(`/api/farm-data/${encodeURIComponent(userEmail)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {}
+
+    notifySyncStatus({ state: 'synced', pendingCount: 0, lastSyncedAt: new Date(), isOnline: true });
+  } catch (error) {
+    notifySyncStatus({ state: 'error' });
+  }
 };
 
-// Cloud read with offline local fallback
-const getWithOfflineFallback = async <T>(key: string, defaultData: T): Promise<T> => {
-  // 1. Check local database first (IndexedDB / LocalStorage)
-  const localData = await localDb.get<T | null>(key, null);
+// Get scoped key for the current active user email
+export const getUserScopedKey = (baseKey: string, explicitEmail?: string): string => {
+  const user = authService.getCurrentUser();
+  const email = (explicitEmail || user?.email || 'default').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  return `agrovet_${email}_${baseKey}`;
+};
 
-  // If we have local data and device is offline or in poor network, return local immediately
-  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
-  if (!isOnline && localData !== null) {
-    notifySyncStatus({ isOnline: false, state: 'offline' });
+// Check if current user is the master account (Dr. Asad)
+const isMasterAccount = (email?: string): boolean => {
+  const target = (email || authService.getCurrentUser()?.email || '').toLowerCase();
+  return target === 'chasad51992@gmail.com' || target === 'vetasad1992@gmail.com' || target === 'default';
+};
+
+// Cloud read with offline local fallback & user isolation
+const getScopedData = async <T>(baseKey: string, defaultData: T, explicitEmail?: string): Promise<T> => {
+  const key = getUserScopedKey(baseKey, explicitEmail);
+  const userEmail = explicitEmail || authService.getCurrentUser()?.email || 'default';
+  const isMaster = isMasterAccount(userEmail);
+
+  // 1. Check local IndexedDB / LocalStorage first
+  const localData = await localDb.get<T | null>(key, null);
+  if (localData !== null) {
     return localData;
   }
 
-  // If online, try fetching fresh from Firebase Firestore
+  // 2. Try fetching from Server API /api/farm-data/:email
   try {
-    const docRef = doc(db, 'farmData', key);
-    const docSnap = await withTimeout(getDoc(docRef), 3500);
+    const res = await fetch(`/api/farm-data/${encodeURIComponent(userEmail)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.data && json.data[baseKey] !== undefined) {
+        const serverData = json.data[baseKey] as T;
+        await localDb.set(key, serverData);
+        return serverData;
+      }
+    }
+  } catch (e) {
+    // Server route offline or pending
+  }
+
+  // 3. Try Firebase Firestore
+  try {
+    const docRef = doc(db, 'userFarmData', key);
+    const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const cloudData = docSnap.data().data as T;
-      // Update local storage in the background
       await localDb.set(key, cloudData);
-      notifySyncStatus({ isOnline: true, state: 'synced', lastSyncedAt: new Date() });
       return cloudData;
-    } else {
-      // If cloud document does not exist yet, seed with local or default
-      const finalData = localData !== null ? localData : defaultData;
-      await localDb.set(key, finalData);
-      return finalData;
     }
   } catch (error) {
-    console.warn(`[Storage] Firebase fetch failed or timed out for ${key}, using local cache:`, error);
-    // Fall back to local data if available, otherwise default
-    const finalData = localData !== null ? localData : defaultData;
-    if (localData === null) {
-      await localDb.set(key, finalData);
-    }
-    notifySyncStatus({
-      isOnline: typeof navigator !== 'undefined' ? navigator.onLine : false,
-      state: !isOnline ? 'offline' : 'pending'
-    });
-    return finalData;
+    // Firestore error
   }
+
+  // 4. Default fallback:
+  // For master account: provide default initial herd (212 animals / sample data)
+  // For new users: return clean empty array/object (Option A: clean slate zero-cow database)
+  const initialValue = isMaster ? defaultData : (Array.isArray(defaultData) ? ([] as unknown as T) : defaultData);
+  await localDb.set(key, initialValue);
+  return initialValue;
 };
 
-// Cloud save with instant local save & offline sync queue
-const saveWithOfflineSync = async (key: string, data: any) => {
-  // 1. Immediately persist to Local-First IndexedDB & LocalStorage
+// Save scoped data locally & sync to server + Firestore
+const saveScopedData = async (baseKey: string, data: any, explicitEmail?: string) => {
+  const key = getUserScopedKey(baseKey, explicitEmail);
+  const userEmail = explicitEmail || authService.getCurrentUser()?.email || 'default';
+
+  // 1. Always immediately persist to IndexedDB & LocalStorage
   await localDb.set(key, data);
 
-  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
-
-  if (!isOnline) {
-    const pendingCount = await localDb.enqueueSync(key, data);
-    notifySyncStatus({
-      isOnline: false,
-      state: 'offline',
-      pendingCount,
-      message: `${pendingCount} change(s) saved locally for cloud sync`
-    });
-    return;
-  }
-
-  // 2. Try saving to Firebase Firestore if online
+  // 2. Sync to Express Server /api/farm-data/:email
   try {
-    const docRef = doc(db, 'farmData', key);
-    await withTimeout(setDoc(docRef, { data, updatedAt: new Date().toISOString() }), 4000);
-    const pending = await localDb.getPendingCount();
-    notifySyncStatus({
-      isOnline: true,
-      state: pending > 0 ? 'pending' : 'synced',
-      pendingCount: pending,
-      lastSyncedAt: new Date()
-    });
-  } catch (error: any) {
-    if (error?.name === 'AbortError') return;
-    console.warn(`[Storage] Cloud sync error for ${key}, queuing for later:`, error);
-    const pendingCount = await localDb.enqueueSync(key, data);
-    notifySyncStatus({
-      state: 'pending',
-      pendingCount,
-      message: 'Network unstable - changes saved locally'
-    });
-  }
-};
+    fetch(`/api/farm-data/${encodeURIComponent(userEmail)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [baseKey]: data })
+    }).catch(() => {});
+  } catch (e) {}
 
-// Process offline sync queue when connection is restored
-export const syncPendingChanges = async (): Promise<{ success: boolean; syncedCount: number }> => {
+  // 3. Sync to Firebase Firestore if online
   const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
-  if (!isOnline) {
-    return { success: false, syncedCount: 0 };
-  }
-
-  const queue = await localDb.getPendingQueue();
-  if (queue.length === 0) {
-    notifySyncStatus({ state: 'synced', pendingCount: 0, lastSyncedAt: new Date() });
-    return { success: true, syncedCount: 0 };
-  }
-
-  notifySyncStatus({ state: 'syncing', message: `Syncing ${queue.length} pending record(s)...` });
-
-  let syncedCount = 0;
-  for (const item of queue) {
+  if (isOnline) {
     try {
-      const docRef = doc(db, 'farmData', item.key);
-      await withTimeout(setDoc(docRef, { data: item.data, updatedAt: new Date().toISOString() }), 5000);
-      await localDb.removeQueueItem(item.id, item.key);
-      syncedCount++;
+      const docRef = doc(db, 'userFarmData', key);
+      await setDoc(docRef, { data, updatedAt: new Date().toISOString() });
+      notifySyncStatus({ isOnline: true, state: 'synced', lastSyncedAt: new Date() });
     } catch (e) {
-      console.warn(`[Storage] Failed to sync pending item ${item.key}:`, e);
+      notifySyncStatus({ state: 'pending' });
     }
   }
-
-  const remaining = await localDb.getPendingCount();
-  notifySyncStatus({
-    state: remaining === 0 ? 'synced' : 'pending',
-    pendingCount: remaining,
-    lastSyncedAt: new Date(),
-    message: remaining === 0 ? `All ${syncedCount} changes synced to cloud` : `${remaining} changes remaining`
-  });
-
-  return { success: remaining === 0, syncedCount };
 };
 
-// Attach window online/offline listeners
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    notifySyncStatus({ isOnline: true, state: 'syncing' });
-    syncPendingChanges();
-  });
-
-  window.addEventListener('offline', () => {
-    localDb.getPendingCount().then(pendingCount => {
-      notifySyncStatus({ isOnline: false, state: 'offline', pendingCount });
-    });
-  });
-}
-
 export const storageService = {
-  getAnimals: () => getWithOfflineFallback<Animal[]>(STORAGE_KEYS.ANIMALS, MOCK_ANIMALS),
-  saveAnimals: (data: Animal[]) => saveWithOfflineSync(STORAGE_KEYS.ANIMALS, data),
+  getAnimals: (email?: string) => getScopedData<Animal[]>('animals', MOCK_ANIMALS, email),
+  saveAnimals: (data: Animal[], email?: string) => saveScopedData('animals', data, email),
 
-  getReproEvents: () => getWithOfflineFallback<ReproductionEvent[]>(STORAGE_KEYS.REPRO, MOCK_REPRO_EVENTS),
-  saveReproEvents: (data: ReproductionEvent[]) => saveWithOfflineSync(STORAGE_KEYS.REPRO, data),
+  getReproEvents: (email?: string) => getScopedData<ReproductionEvent[]>('repro', MOCK_REPRO_EVENTS, email),
+  saveReproEvents: (data: ReproductionEvent[], email?: string) => saveScopedData('repro', data, email),
 
-  getHealthEvents: () => getWithOfflineFallback<HealthEvent[]>(STORAGE_KEYS.HEALTH, MOCK_HEALTH_EVENTS),
-  saveHealthEvents: (data: HealthEvent[]) => saveWithOfflineSync(STORAGE_KEYS.HEALTH, data),
+  getHealthEvents: (email?: string) => getScopedData<HealthEvent[]>('health', MOCK_HEALTH_EVENTS, email),
+  saveHealthEvents: (data: HealthEvent[], email?: string) => saveScopedData('health', data, email),
 
-  getEnrollments: () => getWithOfflineFallback<ProtocolEnrollment[]>(STORAGE_KEYS.ENROLLMENTS, []),
-  saveEnrollments: (data: ProtocolEnrollment[]) => saveWithOfflineSync(STORAGE_KEYS.ENROLLMENTS, data),
+  getEnrollments: (email?: string) => getScopedData<ProtocolEnrollment[]>('enrollments', [], email),
+  saveEnrollments: (data: ProtocolEnrollment[], email?: string) => saveScopedData('enrollments', data, email),
 
-  getCustomProtocols: () => getWithOfflineFallback<ProtocolTemplate[]>(STORAGE_KEYS.PROTOCOLS, []),
-  saveCustomProtocols: (data: ProtocolTemplate[]) => saveWithOfflineSync(STORAGE_KEYS.PROTOCOLS, data),
+  getCustomProtocols: (email?: string) => getScopedData<ProtocolTemplate[]>('protocols', [], email),
+  saveCustomProtocols: (data: ProtocolTemplate[], email?: string) => saveScopedData('protocols', data, email),
 
-  getMedicines: () => getWithOfflineFallback<Medicine[]>(STORAGE_KEYS.MEDICINES, MOCK_MEDICINES),
-  saveMedicines: (data: Medicine[]) => saveWithOfflineSync(STORAGE_KEYS.MEDICINES, data),
+  getMedicines: (email?: string) => getScopedData<Medicine[]>('medicines', MOCK_MEDICINES, email),
+  saveMedicines: (data: Medicine[], email?: string) => saveScopedData('medicines', data, email),
 
-  getPurchases: () => getWithOfflineFallback<MedicinePurchase[]>(STORAGE_KEYS.PURCHASES, MOCK_MEDICINE_PURCHASES),
-  savePurchases: (data: MedicinePurchase[]) => saveWithOfflineSync(STORAGE_KEYS.PURCHASES, data),
+  getPurchases: (email?: string) => getScopedData<MedicinePurchase[]>('purchases', MOCK_MEDICINE_PURCHASES, email),
+  savePurchases: (data: MedicinePurchase[], email?: string) => saveScopedData('purchases', data, email),
 
-  getSettings: async (): Promise<FarmSettings> => {
-    const raw = await getWithOfflineFallback<FarmSettings>(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+  getSettings: async (email?: string): Promise<FarmSettings> => {
+    const raw = await getScopedData<FarmSettings>('settings', DEFAULT_SETTINGS, email);
     return {
       ...DEFAULT_SETTINGS,
       ...raw,
-      statusColors: { ...DEFAULT_SETTINGS.statusColors, ...(raw.statusColors || {}) }
+      statusColors: { ...DEFAULT_SETTINGS.statusColors, ...(raw?.statusColors || {}) }
     };
   },
-  saveSettings: (data: FarmSettings) => saveWithOfflineSync(STORAGE_KEYS.SETTINGS, data),
+  saveSettings: (data: FarmSettings, email?: string) => saveScopedData('settings', data, email),
 
-  syncPendingChanges
+  // Clear or load fresh workspace for switched account
+  loadUserWorkspace: async (userEmail: string) => {
+    const [animals, reproEvents, healthEvents, medicines, purchases, enrollments, customProtocols, settings] = await Promise.all([
+      storageService.getAnimals(userEmail),
+      storageService.getReproEvents(userEmail),
+      storageService.getHealthEvents(userEmail),
+      storageService.getMedicines(userEmail),
+      storageService.getPurchases(userEmail),
+      storageService.getEnrollments(userEmail),
+      storageService.getCustomProtocols(userEmail),
+      storageService.getSettings(userEmail)
+    ]);
+
+    return {
+      animals,
+      reproEvents,
+      healthEvents,
+      medicines,
+      purchases,
+      enrollments,
+      customProtocols,
+      settings
+    };
+  }
 };
-

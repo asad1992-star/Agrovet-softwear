@@ -152,6 +152,9 @@ import {
 } from './utils/shareUtils';
 import { auth } from './services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { AuthScreen } from './components/AuthScreen';
+import { WhatsAppFooter } from './components/WhatsAppFooter';
+import { authService, AuthUser } from './services/authService';
 
 const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any) => (
   <div
@@ -279,7 +282,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     addCustomProtocol,
     deleteProtocolTemplate,
     updateSettings
-  } = useFarm();
+  } = useFarm(user?.email);
 
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
 
@@ -6303,6 +6306,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               </div>
             </div>
           )}
+
+          {/* WhatsApp Support & Feedback Footer */}
+          <WhatsAppFooter />
         </div>
 
         {/* Mobile/Tablet Bottom Navigation Bar */}
@@ -8551,112 +8557,34 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
   const [authLoading, setAuthLoading] = useState(true);
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsub = authService.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
     });
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    try {
-      if (isLoginMode) {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-      }
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
   const handleLogout = async () => {
-    await signOut(auth);
+    await authService.logout();
+    setUser(null);
   };
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-inter">
-        <Activity className="w-16 h-16 text-blue-600 animate-pulse mb-6" />
-        <h2 className="text-2xl font-black text-slate-800 tracking-tighter">Connecting...</h2>
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans">
+        <Activity className="w-14 h-14 text-blue-600 animate-pulse mb-4" />
+        <h2 className="text-2xl font-black text-slate-800 tracking-tight">Loading AgroVet Pro...</h2>
+        <p className="text-xs font-bold text-slate-400 mt-1">Connecting to private farm database</p>
       </div>
     );
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 bg-[url('https://images.unsplash.com/photo-1596700810165-22d71625d033?auto=format&fit=crop&q=80')] bg-cover bg-center font-inter">
-        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
-        <div className="relative z-10 bg-white w-full max-w-md p-10 rounded-[3rem] shadow-2xl">
-          <div className="flex items-center gap-4 mb-8">
-            <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100">
-              <Activity className="w-8 h-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-black text-slate-800 tracking-tighter">Asad's<span className="text-blue-600">Farm</span></h1>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Management</p>
-            </div>
-          </div>
-
-          <h2 className="text-2xl font-black text-slate-800 mb-6">{isLoginMode ? 'Welcome Back' : 'Create Account'}</h2>
-
-          {error && (
-            <div className="bg-rose-50 text-rose-600 p-4 rounded-2xl mb-6 text-sm font-bold border border-rose-100 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <p>{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleAuth} className="space-y-5">
-            <div>
-              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Email</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all outline-none"
-                placeholder="operative@farm.com"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Password</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all outline-none"
-                placeholder="••••••••"
-              />
-            </div>
-            <button type="submit" className="w-full py-4 mt-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-200 transition-all">
-              {isLoginMode ? 'Sign In' : 'Sign Up'}
-            </button>
-          </form>
-
-          <div className="mt-8 text-center text-sm font-bold text-slate-500">
-            {isLoginMode ? "Don't have an account? " : "Already have an account? "}
-            <button
-              onClick={() => { setIsLoginMode(!isLoginMode); setError(''); }}
-              className="text-blue-600 hover:text-blue-700 underline underline-offset-4"
-            >
-              {isLoginMode ? 'Sign Up' : 'Log In'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return <AuthScreen onLoginSuccess={(loggedInUser) => setUser(loggedInUser)} />;
   }
 
   return (

@@ -1,5 +1,4 @@
-
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Animal, ReproductionEvent, HealthEvent, Alert, FarmSettings, ProtocolEnrollment, ProtocolTemplate, ReproEventType, AnimalStatus, Medicine, MedicinePurchase } from '../types';
 import { storageService, DEFAULT_SETTINGS } from '../services/storage';
 import { 
@@ -14,7 +13,7 @@ import {
 } from '../services/businessLogic';
 import { PREDEFINED_PROTOCOLS } from '../data';
 
-export const useFarm = () => {
+export const useFarm = (currentUserEmail?: string) => {
   const [animals, setAnimals] = useState<Animal[]>([]);
   const [reproEvents, setReproEvents] = useState<ReproductionEvent[]>([]);
   const [healthEvents, setHealthEvents] = useState<HealthEvent[]>([]);
@@ -25,74 +24,88 @@ export const useFarm = () => {
   const [settings, setSettings] = useState<FarmSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
-  const isInitialMount = useRef(true);
+  const isDataLoaded = useRef(false);
 
   const allTemplates = useMemo(() => [...PREDEFINED_PROTOCOLS, ...customProtocols], [customProtocols]);
 
-  // Initialize
+  const loadData = useCallback(async (emailToUse?: string) => {
+    const targetEmail = emailToUse || currentUserEmail;
+    try {
+      setLoading(true);
+      isDataLoaded.current = false;
+      const workspace = await storageService.loadUserWorkspace(targetEmail || 'default');
+      
+      setAnimals(workspace.animals);
+      setReproEvents(workspace.reproEvents);
+      setHealthEvents(workspace.healthEvents);
+      setMedicines(workspace.medicines);
+      setPurchases(workspace.purchases);
+      setEnrollments(workspace.enrollments);
+      setCustomProtocols(workspace.customProtocols);
+      setSettings(workspace.settings);
+    } catch (error) {
+      console.error("Error loading farm data", error);
+    } finally {
+      setLoading(false);
+      setTimeout(() => {
+        isDataLoaded.current = true;
+      }, 100);
+    }
+  }, [currentUserEmail]);
+
+  // Initial load or user change
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const fetchedAnimals = await storageService.getAnimals();
-        const fetchedReproEvents = await storageService.getReproEvents();
-        const fetchedHealthEvents = await storageService.getHealthEvents();
-        const fetchedMedicines = await storageService.getMedicines();
-        const fetchedPurchases = await storageService.getPurchases();
-        const fetchedEnrollments = await storageService.getEnrollments();
-        const fetchedCustomProtocols = await storageService.getCustomProtocols();
-        const fetchedSettings = await storageService.getSettings();
-
-        setAnimals(fetchedAnimals);
-        setReproEvents(fetchedReproEvents);
-        setHealthEvents(fetchedHealthEvents);
-        setMedicines(fetchedMedicines);
-        setPurchases(fetchedPurchases);
-        setEnrollments(fetchedEnrollments);
-        setCustomProtocols(fetchedCustomProtocols);
-        setSettings(fetchedSettings);
-      } catch (error) {
-        console.error("Error loading farm data", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadData();
-  }, []);
+  }, [loadData, currentUserEmail]);
 
-  // Save on change
+  // Save changes when user actively modifies state (only after data is safely loaded)
   useEffect(() => {
-    if (!loading && animals.length) storageService.saveAnimals(animals);
-  }, [animals, loading]);
-
-  useEffect(() => {
-    if (!loading && reproEvents.length) storageService.saveReproEvents(reproEvents);
-  }, [reproEvents, loading]);
+    if (isDataLoaded.current && !loading) {
+      storageService.saveAnimals(animals, currentUserEmail);
+    }
+  }, [animals, loading, currentUserEmail]);
 
   useEffect(() => {
-    if (!loading && healthEvents.length) storageService.saveHealthEvents(healthEvents);
-  }, [healthEvents, loading]);
+    if (isDataLoaded.current && !loading) {
+      storageService.saveReproEvents(reproEvents, currentUserEmail);
+    }
+  }, [reproEvents, loading, currentUserEmail]);
 
   useEffect(() => {
-    if (!loading && medicines.length) storageService.saveMedicines(medicines);
-  }, [medicines, loading]);
+    if (isDataLoaded.current && !loading) {
+      storageService.saveHealthEvents(healthEvents, currentUserEmail);
+    }
+  }, [healthEvents, loading, currentUserEmail]);
 
   useEffect(() => {
-    if (!loading && purchases.length) storageService.savePurchases(purchases);
-  }, [purchases, loading]);
+    if (isDataLoaded.current && !loading) {
+      storageService.saveMedicines(medicines, currentUserEmail);
+    }
+  }, [medicines, loading, currentUserEmail]);
 
   useEffect(() => {
-    if (!loading) storageService.saveEnrollments(enrollments);
-  }, [enrollments, loading]);
+    if (isDataLoaded.current && !loading) {
+      storageService.savePurchases(purchases, currentUserEmail);
+    }
+  }, [purchases, loading, currentUserEmail]);
 
   useEffect(() => {
-    if (!loading) storageService.saveCustomProtocols(customProtocols);
-  }, [customProtocols, loading]);
+    if (isDataLoaded.current && !loading) {
+      storageService.saveEnrollments(enrollments, currentUserEmail);
+    }
+  }, [enrollments, loading, currentUserEmail]);
 
   useEffect(() => {
-    if (!loading) storageService.saveSettings(settings);
-  }, [settings, loading]);
+    if (isDataLoaded.current && !loading) {
+      storageService.saveCustomProtocols(customProtocols, currentUserEmail);
+    }
+  }, [customProtocols, loading, currentUserEmail]);
+
+  useEffect(() => {
+    if (isDataLoaded.current && !loading) {
+      storageService.saveSettings(settings, currentUserEmail);
+    }
+  }, [settings, loading, currentUserEmail]);
 
   // Derived Data
   const animalsWithStatus = useMemo(() => {
@@ -110,33 +123,26 @@ export const useFarm = () => {
     const statuses = animalsWithStatus.map(a => a.status);
     const today = dateUtils.today();
     
-    // Conception Rate Calculation
-    // We need "Total Bred Animals" vs "Pregnant Animals"
-    // For simplicity, let's count animals that have at least one insemination record since their last calving (or ever if no calving)
     const bredAnimalIds = new Set(reproEvents.filter(e => e.type === ReproEventType.INSEMINATION).map(e => e.animalId));
     const totalBred = bredAnimalIds.size;
     const pregnant = statuses.filter(s => s === AnimalStatus.PREGNANT || s === AnimalStatus.CLOSEUP).length;
     const conceptionRate = totalBred > 0 ? Math.round((pregnant / totalBred) * 100) : 0;
 
-    // Repeat Breeders: Animals with > 2 inseminations in the current cycle
     const repeatBreeders = animalsWithStatus.filter(a => {
       const insemCount = reproEvents.filter(e => e.animalId === a.id && e.type === ReproEventType.INSEMINATION).length;
       return insemCount >= 3 && a.status !== AnimalStatus.PREGNANT;
     }).length;
 
-    // Heat Due & Calving Due from alerts
     const heatDueCount = alerts.filter(al => al.title.includes('Heat Check')).length;
     const calvingDueCount = alerts.filter(al => al.title.includes('Calving') && !al.title.includes('OVERDUE')).length;
     const overdueCalvingCount = alerts.filter(al => al.title.includes('Calving OVERDUE')).length;
     
-    // Recently Treated (last 7 days)
     const sevenDaysAgo = dateUtils.addDays(today, -7);
     const recentlyTreated = Array.from(new Set(healthEvents.filter(e => e.date >= sevenDaysAgo).map(e => e.animalId))).length;
 
     return {
       total: animals.filter(a => !isCalfAnimal(a)).length,
       pregnant,
-      // Open animals: Exclude Young Stock (growing heifers, suckling, post-weaning) and calves
       open: animalsWithStatus.filter(a => isBreedingEligibleAnimal(a) && (a.status === AnimalStatus.ACTIVE || a.status === AnimalStatus.IN_PROTOCOL)).length,
       youngStock: animals.filter(a => isYoungStockAnimal(a)).length,
       repeatBreeders,
@@ -170,7 +176,6 @@ export const useFarm = () => {
       } else if (isTargetCalf) {
         newIsCalf = true;
       } else if (a.isCalf) {
-        // If moved to general adult herd, remove calf flag
         newIsCalf = false;
       }
       return { ...a, herd: targetHerd, isCalf: newIsCalf };
@@ -222,6 +227,7 @@ export const useFarm = () => {
     alerts,
     stats,
     settings,
+    reloadFarmData: loadData,
     addAnimal,
     updateAnimal,
     updateAnimalsHerd,
