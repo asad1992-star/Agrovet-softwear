@@ -2792,8 +2792,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     </select>
                   </div>
 
-                  <div className="flex items-center gap-4 w-full lg:w-auto">
-                    <div className="flex p-1 bg-slate-100 rounded-2xl shadow-inner flex-1 sm:flex-none">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full lg:w-auto">
+                    <div className="flex p-1 bg-slate-100 rounded-2xl shadow-inner shrink-0">
                       {[
                         { id: 'list', icon: LayoutList },
                         { id: 'small', icon: LayoutGrid },
@@ -2803,13 +2803,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         <button
                           key={mode.id}
                           onClick={() => setHerdViewMode(mode.id as HerdViewMode)}
-                          className={`p-3 rounded-xl transition-all ${herdViewMode === mode.id
+                          className={`p-2.5 sm:p-3 rounded-xl transition-all ${herdViewMode === mode.id
                             ? 'bg-white text-blue-600 shadow-sm'
                             : 'text-slate-400 hover:text-slate-600'
                             }`}
                           title={`${mode.id.charAt(0).toUpperCase() + mode.id.slice(1)} View`}
                         >
-                          <mode.icon className="w-5 h-5" />
+                          <mode.icon className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                       ))}
                     </div>
@@ -2820,10 +2820,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         setMoveToPenAnimalId(null);
                         setIsMoveToPenModalOpen(true);
                       }}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-indigo-50 text-indigo-700 border-2 border-indigo-100 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-indigo-100 transition-all cursor-pointer shadow-sm"
+                      className="flex-1 min-w-[130px] sm:flex-none flex items-center justify-center gap-2 sm:gap-3 bg-indigo-50 text-indigo-700 border-2 border-indigo-100 px-4 sm:px-6 py-3 sm:py-4 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider hover:bg-indigo-100 transition-all cursor-pointer shadow-sm active:scale-95"
                       title="Move single or multiple animals into a new pen / herd group"
                     >
-                      <ArrowRightLeft className="w-5 h-5" /> Move to Pen
+                      <ArrowRightLeft className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> Move to Pen
                     </button>
 
                     <button
@@ -2831,9 +2831,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         const label = statusFilter === 'All' ? 'All Status' : statusFilter;
                         generateAnimalListReport(filteredAnimals, settings, label);
                       }}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-white text-slate-700 border-2 border-slate-100 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-50 transition-all border-slate-200"
+                      className="flex-1 min-w-[110px] sm:flex-none flex items-center justify-center gap-2 sm:gap-3 bg-white text-slate-700 border-2 border-slate-100 px-4 sm:px-6 py-3 sm:py-4 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider hover:bg-slate-50 transition-all border-slate-200 active:scale-95"
                     >
-                      <Download className="w-6 h-6" /> Export PDF
+                      <Download className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> PDF
                     </button>
 
                     <button
@@ -2843,16 +2843,16 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         const text = generateListShareText(label, items);
                         shareToWhatsApp(text);
                       }}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-emerald-50 text-emerald-700 border-2 border-emerald-100 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                      className="flex-1 min-w-[110px] sm:flex-none flex items-center justify-center gap-2 sm:gap-3 bg-emerald-50 text-emerald-700 border-2 border-emerald-100 px-4 sm:px-6 py-3 sm:py-4 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider hover:bg-emerald-100 transition-all active:scale-95"
                     >
-                      <MessageCircle className="w-6 h-6" /> Share List
+                      <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> Share
                     </button>
 
                     <button
                       onClick={() => { setEditingAnimalId(null); setNewAnimal({ sex: 'Female', breed: 'Holstein', herd: 'Main Herd' }); setIsAnimalFormOpen(true); }}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"
+                      className="w-full sm:w-auto sm:flex-none flex items-center justify-center gap-2 sm:gap-3 bg-blue-600 text-white px-6 sm:px-8 py-3.5 sm:py-4 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 active:scale-95"
                     >
-                      <Plus className="w-6 h-6" /> Add Cow
+                      <Plus className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> Add Cow
                     </button>
                   </div>
                 </div>
@@ -6312,48 +6312,6 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           {/* WhatsApp Support & Feedback Footer */}
           <WhatsAppFooter />
         </div>
-
-        {/* Mobile/Tablet Bottom Navigation Bar */}
-        {!isDesktop && (
-          <nav className={`${isSimulated ? 'absolute' : 'fixed'} bottom-0 left-0 right-0 h-20 bg-white/95 backdrop-blur-xl border-t border-slate-100 px-4 flex items-center justify-around z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.03)]`}>
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-              { id: 'animals', label: 'Herd Hub', icon: Users },
-              { id: 'repro', label: 'Repro', icon: CalendarRange },
-              { id: 'health', label: 'Health', icon: Stethoscope },
-            ].map((item) => {
-              const Icon = item.icon;
-              const isActive = view === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => { setView(item.id as ViewState); setIsSidebarOpen(false); }}
-                  className="flex flex-col items-center gap-1 py-1.5 px-3 text-center rounded-xl transition-all relative min-w-[64px]"
-                >
-                  <Icon className={`w-5 h-5 transition-transform duration-300 ${isActive ? 'text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-600'}`} />
-                  <span className={`text-[9px] font-black uppercase tracking-wider ${isActive ? 'text-blue-600 font-extrabold' : 'text-slate-400'}`}>
-                    {item.label}
-                  </span>
-                  {isActive && (
-                    <span className="absolute bottom-0 w-1.5 h-1.5 bg-blue-600 rounded-full shadow-sm shadow-blue-300" />
-                  )}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="flex flex-col items-center gap-1 py-1.5 px-3 text-center rounded-xl transition-all relative min-w-[64px]"
-            >
-              <Menu className={`w-5 h-5 transition-transform duration-300 ${isSidebarOpen ? 'text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-600'}`} />
-              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
-                Menu
-              </span>
-              {isSidebarOpen && (
-                <span className="absolute bottom-0 w-1.5 h-1.5 bg-blue-600 rounded-full shadow-sm shadow-blue-300" />
-              )}
-            </button>
-          </nav>
-        )}
       </main>
 
       {/* ====== ALERT PANEL SLIDE-IN ====== */}
