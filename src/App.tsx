@@ -154,7 +154,9 @@ import { auth } from './services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { AuthScreen } from './components/AuthScreen';
 import { WhatsAppFooter } from './components/WhatsAppFooter';
-import { authService, AuthUser } from './services/authService';
+import { authService, AuthUser, UserStatusInfo } from './services/authService';
+import { SuspendedLockScreen } from './components/SuspendedLockScreen';
+import { SubscriptionNoticeBanner } from './components/SubscriptionNoticeBanner';
 
 const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any) => (
   <div
@@ -8559,6 +8561,17 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
   const [authLoading, setAuthLoading] = useState(true);
+  const [statusInfo, setStatusInfo] = useState<UserStatusInfo | null>(null);
+
+  const checkStatus = useCallback(async () => {
+    if (!user?.email) return;
+    try {
+      const res = await authService.fetchUserStatus(user.email);
+      setStatusInfo(res);
+    } catch (e) {
+      console.warn('Status check failed:', e);
+    }
+  }, [user?.email]);
 
   useEffect(() => {
     const unsub = authService.onAuthStateChanged((currentUser) => {
@@ -8568,9 +8581,19 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    if (user?.email) {
+      checkStatus();
+      // Periodically refresh user status every 30 seconds
+      const interval = setInterval(checkStatus, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.email, checkStatus]);
+
   const handleLogout = async () => {
     await authService.logout();
     setUser(null);
+    setStatusInfo(null);
   };
 
   if (authLoading) {
@@ -8587,9 +8610,23 @@ export default function App() {
     return <AuthScreen onLoginSuccess={(loggedInUser) => setUser(loggedInUser)} />;
   }
 
+  // Check for account suspension (Master admin accounts are always exempt)
+  if (statusInfo?.status === 'suspended' && !user.isMaster) {
+    return (
+      <SuspendedLockScreen
+        user={user}
+        statusInfo={statusInfo}
+        onRefresh={checkStatus}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+      <SubscriptionNoticeBanner statusInfo={statusInfo} userEmail={user.email} />
       <MainApp user={user} onLogout={handleLogout} />
     </div>
   );
 }
+

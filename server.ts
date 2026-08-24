@@ -12,14 +12,33 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // User & OTP in-memory and file-persisted store
-interface StoredUser {
+export interface StoredUser {
   id: string;
   email: string;
   passwordHash: string; // Base64 / encoded password
   name: string;
   createdAt: string;
   updatedAt: string;
+  status?: 'active' | 'warning' | 'suspended'; // default 'active'
+  plan?: 'free_trial' | 'standard' | 'pro' | 'enterprise'; // default 'pro'
+  planExpiresAt?: string;
+  warningMessage?: string;
+  warningSentAt?: string;
+  gracePeriodDays?: number;
+  suspensionReason?: string;
+  lastActiveAt?: string;
 }
+
+export interface BroadcastAnnouncement {
+  id: string;
+  message: string;
+  type: 'info' | 'warning' | 'urgent';
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ADMIN_MASTER_KEY = (process.env.ADMIN_MASTER_KEY || 'agrovet_master_key_992').trim();
 
 interface OtpRecord {
   code: string;
@@ -42,6 +61,27 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const BROADCAST_FILE = path.join(DATA_DIR, 'broadcast.json');
+
+const readBroadcast = (): BroadcastAnnouncement | null => {
+  try {
+    if (fs.existsSync(BROADCAST_FILE)) {
+      const data = fs.readFileSync(BROADCAST_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Error reading broadcast file:', e);
+  }
+  return null;
+};
+
+const saveBroadcast = (broadcast: BroadcastAnnouncement | null) => {
+  try {
+    fs.writeFileSync(BROADCAST_FILE, JSON.stringify(broadcast, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error writing broadcast file:', e);
+  }
+};
 
 const readUsers = (): Record<string, StoredUser> => {
   try {
@@ -536,6 +576,13 @@ app.get('/api/farm-data/:email', (req, res) => {
     const email = req.params.email?.toLowerCase();
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
+    // Update lastActiveAt timestamp in users store
+    const users = readUsers();
+    if (users[email]) {
+      users[email].lastActiveAt = new Date().toISOString();
+      saveUsers(users);
+    }
+
     const file = getFarmDataFile(email);
     if (fs.existsSync(file)) {
       const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -552,6 +599,25 @@ app.post('/api/farm-data/:email', (req, res) => {
     const email = req.params.email?.toLowerCase();
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
+    // Check if account is suspended
+    const users = readUsers();
+    const isMaster = email === 'chasad51992@gmail.com' || email === 'vetasad1992@gmail.com';
+    const user = users[email];
+
+    if (user && user.status === 'suspended' && !isMaster) {
+      return res.status(403).json({
+        success: false,
+        error: 'Account access is suspended. Please contact Dr. Asad (+92 313 6451992) to restore access.',
+        suspended: true,
+        reason: user.suspensionReason || 'Pending subscription renewal'
+      });
+    }
+
+    if (user) {
+      user.lastActiveAt = new Date().toISOString();
+      saveUsers(users);
+    }
+
     const file = getFarmDataFile(email);
     const payload = {
       ...req.body,
@@ -559,6 +625,378 @@ app.post('/api/farm-data/:email', (req, res) => {
     };
     fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf-8');
     return res.json({ success: true, savedAt: payload.updatedAt });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// 8. Public / App Client User Status & Broadcast Check
+app.get('/api/user-status/:email', (req, res) => {
+  try {
+    const email = req.params.email?.toLowerCase();
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    const users = readUsers();
+    const user = users[email];
+    const isMaster = email === 'chasad51992@gmail.com' || email === 'vetasad1992@gmail.com';
+    const broadcast = readBroadcast();
+
+    if (!user) {
+      return res.json({
+        success: true,
+        status: 'active',
+        plan: isMaster ? 'enterprise' : 'pro',
+        isMaster,
+        broadcast: broadcast?.active ? broadcast : null
+      });
+    }
+
+    // Update lastActiveAt
+    user.lastActiveAt = new Date().toISOString();
+    saveUsers(users);
+
+    return res.json({
+      success: true,
+      status: isMaster ? 'active' : (user.status || 'active'),
+      plan: user.plan || (isMaster ? 'enterprise' : 'pro'),
+      planExpiresAt: user.planExpiresAt,
+      warningMessage: user.warningMessage,
+      warningSentAt: user.warningSentAt,
+      gracePeriodDays: user.gracePeriodDays,
+      suspensionReason: user.suspensionReason,
+      isMaster,
+      broadcast: broadcast?.active ? broadcast : null
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// ======================= MASTER ADMIN BRIDGE ROUTES =======================
+// Protected by ADMIN_MASTER_KEY
+
+const verifyAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers['authorization'] || '';
+  const xAdminKey = (req.headers['x-admin-key'] as string) || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : authHeader.trim();
+
+  if (token === ADMIN_MASTER_KEY || xAdminKey === ADMIN_MASTER_KEY) {
+    return next();
+  }
+  return res.status(401).json({
+    success: false,
+    error: 'Unauthorized: Invalid Admin Master Key'
+  });
+};
+
+// Admin Ping / Health Check
+app.get('/api/admin/ping', verifyAdmin, (req, res) => {
+  const users = readUsers();
+  return res.json({
+    success: true,
+    message: 'AgroVet Pro Admin Bridge is connected & active',
+    serverTime: new Date().toISOString(),
+    totalRegisteredUsers: Object.keys(users).length
+  });
+});
+
+// Admin Stats & Analytics
+app.get('/api/admin/stats', verifyAdmin, (req, res) => {
+  try {
+    const users = readUsers();
+    const userList = Object.values(users);
+
+    let totalAnimals = 0;
+    let activeFarms = 0;
+    let warnedFarms = 0;
+    let suspendedFarms = 0;
+
+    userList.forEach(u => {
+      const status = u.status || 'active';
+      if (status === 'active') activeFarms++;
+      else if (status === 'warning') warnedFarms++;
+      else if (status === 'suspended') suspendedFarms++;
+
+      try {
+        const file = getFarmDataFile(u.email);
+        if (fs.existsSync(file)) {
+          const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+          if (Array.isArray(data.animals)) {
+            totalAnimals += data.animals.length;
+          }
+        }
+      } catch (e) {}
+    });
+
+    return res.json({
+      success: true,
+      stats: {
+        totalUsers: userList.length,
+        activeFarms,
+        warnedFarms,
+        suspendedFarms,
+        totalAnimals,
+        serverUptime: process.uptime(),
+        lastUpdated: new Date().toISOString()
+      }
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// Admin Get All Users Directory
+app.get('/api/admin/users', verifyAdmin, (req, res) => {
+  try {
+    const users = readUsers();
+    const userList = Object.values(users).map(u => {
+      let animalCount = 0;
+      let farmName = '';
+      let herdCount = 0;
+      let lastFarmDataUpdate = '';
+
+      try {
+        const file = getFarmDataFile(u.email);
+        if (fs.existsSync(file)) {
+          const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+          if (Array.isArray(data.animals)) {
+            animalCount = data.animals.length;
+            const uniqueHerds = new Set(data.animals.map((a: any) => a.herd).filter(Boolean));
+            herdCount = uniqueHerds.size;
+          }
+          if (data.settings?.farmName) {
+            farmName = data.settings.farmName;
+          }
+          lastFarmDataUpdate = data.updatedAt || '';
+        }
+      } catch (e) {}
+
+      const isMaster = u.email === 'chasad51992@gmail.com' || u.email === 'vetasad1992@gmail.com';
+
+      return {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        farmName: farmName || `${u.name}'s Farm`,
+        createdAt: u.createdAt,
+        updatedAt: u.updatedAt,
+        lastActiveAt: u.lastActiveAt || u.updatedAt,
+        status: isMaster ? 'active' : (u.status || 'active'),
+        plan: u.plan || (isMaster ? 'enterprise' : 'pro'),
+        planExpiresAt: u.planExpiresAt || null,
+        warningMessage: u.warningMessage || '',
+        warningSentAt: u.warningSentAt || null,
+        gracePeriodDays: u.gracePeriodDays || null,
+        suspensionReason: u.suspensionReason || '',
+        animalCount,
+        herdCount,
+        lastFarmDataUpdate,
+        isMaster
+      };
+    });
+
+    return res.json({
+      success: true,
+      users: userList
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// Admin Update User Status (Block / Unblock / Change Plan / Expiry)
+app.post('/api/admin/update-status', verifyAdmin, (req, res) => {
+  try {
+    const {
+      email,
+      status, // 'active' | 'warning' | 'suspended'
+      plan, // 'free_trial' | 'standard' | 'pro' | 'enterprise'
+      planExpiresAt,
+      suspensionReason,
+      warningMessage,
+      gracePeriodDays
+    } = req.body;
+
+    if (!email) return res.status(400).json({ success: false, error: 'User email is required' });
+
+    const cleanEmail = email.trim().toLowerCase();
+    const users = readUsers();
+    let user = users[cleanEmail];
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: `No user registered with email ${cleanEmail}` });
+    }
+
+    if (cleanEmail === 'chasad51992@gmail.com' || cleanEmail === 'vetasad1992@gmail.com') {
+      if (status === 'suspended') {
+        return res.status(400).json({ success: false, error: 'Master Admin account cannot be suspended.' });
+      }
+    }
+
+    if (status) user.status = status;
+    if (plan) user.plan = plan;
+    if (planExpiresAt !== undefined) user.planExpiresAt = planExpiresAt;
+    if (suspensionReason !== undefined) user.suspensionReason = suspensionReason;
+    if (warningMessage !== undefined) user.warningMessage = warningMessage;
+    if (gracePeriodDays !== undefined) user.gracePeriodDays = gracePeriodDays;
+
+    user.updatedAt = new Date().toISOString();
+    users[cleanEmail] = user;
+    saveUsers(users);
+
+    return res.json({
+      success: true,
+      message: `Account status for ${cleanEmail} updated to ${user.status}.`,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        status: user.status,
+        plan: user.plan,
+        planExpiresAt: user.planExpiresAt,
+        suspensionReason: user.suspensionReason,
+        warningMessage: user.warningMessage
+      }
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// Admin Send Payment Warning (Updates status + sends direct email)
+app.post('/api/admin/send-warning', verifyAdmin, async (req, res) => {
+  try {
+    const { email, message, gracePeriodDays = 7 } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: 'User email is required' });
+
+    const cleanEmail = email.trim().toLowerCase();
+    const users = readUsers();
+    const user = users[cleanEmail];
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: `User ${cleanEmail} not found` });
+    }
+
+    const customMessage = message || `Your AgroVet Pro subscription fee is pending. Please complete your renewal payment within ${gracePeriodDays} days to ensure uninterrupted access to your herd records.`;
+
+    user.status = 'warning';
+    user.warningMessage = customMessage;
+    user.warningSentAt = new Date().toISOString();
+    user.gracePeriodDays = gracePeriodDays;
+    user.updatedAt = new Date().toISOString();
+
+    users[cleanEmail] = user;
+    saveUsers(users);
+
+    // Send email warning via nodemailer
+    let emailDispatched = false;
+    try {
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 32px 24px; background-color: #f8fafc; color: #1e293b; border-radius: 20px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="display: inline-block; background-color: #f59e0b; color: #ffffff; padding: 10px 18px; border-radius: 12px; font-weight: 800; font-size: 18px;">
+              ⚠️ AgroVet Pro — Subscription Notice
+            </div>
+          </div>
+          <div style="background-color: #ffffff; border: 1px solid #fed7aa; border-radius: 16px; padding: 28px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+            <h3 style="margin-top: 0; color: #9a3412; font-size: 18px; font-weight: 800;">
+              Subscription Payment Reminder for ${user.name}
+            </h3>
+            <p style="font-size: 14px; color: #475569; line-height: 1.6;">
+              ${customMessage}
+            </p>
+            <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; padding: 16px; margin: 20px 0;">
+              <p style="margin: 0; font-size: 13px; font-weight: 700; color: #b45309;">
+                ⏳ Grace Period: <strong>${gracePeriodDays} Days Remaining</strong>
+              </p>
+            </div>
+            <div style="border-top: 1px solid #f1f5f9; padding-top: 16px; font-size: 13px; color: #64748b;">
+              <p style="margin: 0 0 10px 0;">
+                To renew your farm subscription or submit payment proof (EasyPaisa / JazzCash / Bank), please contact:
+              </p>
+              <a href="https://wa.me/923136451992?text=Hello%20Dr.%20Asad,%20I%20am%20contacting%20regarding%20my%20AgroVet%20Pro%20subscription%20payment%20for%20${encodeURIComponent(cleanEmail)}" style="display: inline-block; background-color: #22c55e; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 10px; font-weight: 700; font-size: 13px;">
+                💬 Contact Dr. Asad on WhatsApp: +92 313 6451992
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+
+      await transporter.sendMail({
+        from: `"AgroVet Pro Billing & Subscriptions" <${SMTP_USER}>`,
+        to: cleanEmail,
+        subject: `⚠️ AgroVet Pro Subscription Payment Reminder (Grace Period: ${gracePeriodDays} Days)`,
+        html: emailHtml
+      });
+      emailDispatched = true;
+    } catch (mailErr) {
+      console.warn('[ADMIN] Email dispatch warning failed:', mailErr);
+    }
+
+    return res.json({
+      success: true,
+      message: `Payment warning active for ${cleanEmail}. In-app warning banner is now displayed.`,
+      emailDispatched
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+// Admin Broadcast Global Announcement
+app.post('/api/admin/broadcast', verifyAdmin, (req, res) => {
+  try {
+    const { message, type = 'info', active = true } = req.body;
+    if (!message && active) {
+      return res.status(400).json({ success: false, error: 'Broadcast message content is required' });
+    }
+
+    const broadcast: BroadcastAnnouncement = {
+      id: `bc_${Date.now()}`,
+      message: message || '',
+      type: type || 'info',
+      active: Boolean(active),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    saveBroadcast(broadcast);
+    return res.json({ success: true, broadcast });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message });
+  }
+});
+
+app.get('/api/admin/broadcast', verifyAdmin, (req, res) => {
+  const broadcast = readBroadcast();
+  return res.json({ success: true, broadcast });
+});
+
+// Admin Direct Password Reset for Users
+app.post('/api/admin/reset-user-password', verifyAdmin, (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    if (!email || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Email and new password are required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const users = readUsers();
+    const user = users[cleanEmail];
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: `User ${cleanEmail} not found` });
+    }
+
+    user.passwordHash = Buffer.from(newPassword).toString('base64');
+    user.updatedAt = new Date().toISOString();
+    users[cleanEmail] = user;
+    saveUsers(users);
+
+    return res.json({
+      success: true,
+      message: `Password successfully updated for ${cleanEmail}.`
+    });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e?.message });
   }

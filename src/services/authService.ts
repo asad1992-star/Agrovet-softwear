@@ -4,6 +4,25 @@ export interface AuthUser {
   name: string;
   createdAt?: string;
   isMaster?: boolean;
+  status?: 'active' | 'warning' | 'suspended';
+  plan?: 'free_trial' | 'standard' | 'pro' | 'enterprise';
+}
+
+export interface UserStatusInfo {
+  status: 'active' | 'warning' | 'suspended';
+  plan: 'free_trial' | 'standard' | 'pro' | 'enterprise';
+  planExpiresAt?: string;
+  warningMessage?: string;
+  warningSentAt?: string;
+  gracePeriodDays?: number;
+  suspensionReason?: string;
+  isMaster?: boolean;
+  broadcast?: {
+    id: string;
+    message: string;
+    type: 'info' | 'warning' | 'urgent';
+    active: boolean;
+  } | null;
 }
 
 const CURRENT_USER_KEY = 'agrovet_current_auth_user';
@@ -228,6 +247,38 @@ export const authService = {
     const user = data.user as AuthUser;
     authService.setCurrentUser(user);
     return user;
+  },
+
+  fetchUserStatus: async (email: string): Promise<UserStatusInfo> => {
+    const cleanEmail = email.trim().toLowerCase();
+    try {
+      const res = await fetch(`/api/user-status/${encodeURIComponent(cleanEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          return {
+            status: data.status || 'active',
+            plan: data.plan || 'pro',
+            planExpiresAt: data.planExpiresAt,
+            warningMessage: data.warningMessage,
+            warningSentAt: data.warningSentAt,
+            gracePeriodDays: data.gracePeriodDays,
+            suspensionReason: data.suspensionReason,
+            isMaster: data.isMaster,
+            broadcast: data.broadcast
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[AuthService] Status check error:', e);
+    }
+    const isMaster = cleanEmail === 'chasad51992@gmail.com' || cleanEmail === 'vetasad1992@gmail.com';
+    return {
+      status: 'active',
+      plan: isMaster ? 'enterprise' : 'pro',
+      isMaster,
+      broadcast: null
+    };
   },
 
   logout: () => {
