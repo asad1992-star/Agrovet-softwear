@@ -260,20 +260,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
         <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-slate-100/50 p-6 sm:p-10 transition-all duration-300">
           
           {/* Header Branding */}
-          <div className="flex items-center gap-3.5 mb-6">
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-3.5 rounded-2xl shadow-lg shadow-blue-500/20 text-white">
-              <HeartPulse className="w-7 h-7" />
-            </div>
+          <div className="flex items-center gap-4 mb-6">
+            <img
+              src="/agrovet-logo.png"
+              alt="AgroVet Pro Logo"
+              className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover shadow-xl border border-slate-100 shrink-0"
+              referrerPolicy="no-referrer"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                  AgroVet<span className="text-blue-600">Pro</span>
+                  AgroVet<span className="text-emerald-600">Pro</span>
                 </h1>
-                <span className="text-[10px] font-extrabold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200 uppercase">
+                <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 uppercase">
                   V2.5
                 </span>
               </div>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 Dairy &amp; Cattle Farm Management &bull; Asad Mehmood
               </p>
             </div>

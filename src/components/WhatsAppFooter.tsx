@@ -34,14 +34,17 @@ export const WhatsAppFooter: React.FC<WhatsAppFooterProps> = ({ className = '', 
     <footer className={`w-full mt-12 bg-white border-t border-slate-200 py-6 px-4 sm:px-8 shadow-sm ${className}`}>
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Branding & Attribution */}
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl shadow-md shadow-blue-200">
-            <HeartPulse className="w-5 h-5" />
-          </div>
+        <div className="flex items-center gap-3.5">
+          <img
+            src="/agrovet-logo.png"
+            alt="AgroVet Pro"
+            className="w-11 h-11 rounded-xl object-cover shadow-md border border-slate-100 shrink-0"
+            referrerPolicy="no-referrer"
+          />
           <div>
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-black text-slate-900 tracking-tight">AgroVet Pro</h4>
-              <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full uppercase tracking-wider">
+              <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase tracking-wider">
                 V2.5 Stable
               </span>
             </div>

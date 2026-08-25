@@ -2123,9 +2123,15 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-inter">
-        <Activity className="w-16 h-16 text-blue-600 animate-pulse mb-6" />
-        <h2 className="text-2xl font-black text-slate-800 tracking-tighter">Syncing Database...</h2>
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-inter p-6 text-center">
+        <img
+          src="/agrovet-logo.png"
+          alt="AgroVet Pro"
+          className="w-20 h-20 rounded-3xl object-cover shadow-2xl mb-6 border border-slate-200 animate-pulse"
+          referrerPolicy="no-referrer"
+        />
+        <h2 className="text-2xl font-black text-slate-800 tracking-tight">AgroVet<span className="text-emerald-600">Pro</span></h2>
+        <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wider">Synchronizing Farm Database &bull; Asad Mehmood</p>
       </div>
     );
   }
@@ -2140,13 +2146,23 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       {/* Sidebar */}
       <aside className={`${isSimulated ? 'absolute' : 'fixed'} inset-y-0 left-0 z-[110] w-72 bg-white border-r border-slate-100 transform transition-transform duration-500 ${isDesktop ? 'translate-x-0 static block' : (isSidebarOpen ? 'translate-x-0' : '-translate-x-full')} h-full`}>
         <div className="h-full flex flex-col p-8">
-          <div className="flex items-center gap-4 mb-14 px-2">
-            <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100 animate-pulse">
-              <Activity className="w-7 h-7 text-white" />
-            </div>
+          <div className="flex items-center gap-3.5 mb-10 px-1">
+            <img
+              src="/agrovet-logo.png"
+              alt="AgroVet Pro Logo"
+              className="w-13 h-13 rounded-2xl object-cover shadow-lg border border-slate-100 shrink-0"
+              referrerPolicy="no-referrer"
+            />
             <div>
-              <h1 className="text-2xl font-black text-slate-800 tracking-tighter">Asad's<span className="text-blue-600">Farm</span></h1>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest -mt-1">Management</p>
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-2xl font-black text-slate-800 tracking-tighter">AgroVet<span className="text-emerald-600">Pro</span></h1>
+                <span className="text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-md border border-emerald-200 uppercase">
+                  V2.5
+                </span>
+              </div>
+              <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mt-0.5">
+                By Asad Mehmood
+              </p>
             </div>
           </div>
 
@@ -2162,9 +2178,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           </nav>
 
           <div className="mt-auto p-6 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-indigo-500" />
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-600" />
             <div className="flex items-center gap-4 mb-5">
-              <div className="w-12 h-12 rounded-[1.25rem] bg-white flex items-center justify-center text-blue-600 font-black text-xl shadow-sm border border-slate-100 flex-shrink-0">
+              <div className="w-12 h-12 rounded-[1.25rem] bg-white flex items-center justify-center text-emerald-600 font-black text-xl shadow-sm border border-slate-100 flex-shrink-0">
                 {settings.farmName.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
@@ -2214,12 +2230,32 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       {/* Main Content Area */}
       <main className={`flex-1 min-w-0 flex flex-col relative overflow-hidden ${isSimulated ? 'h-full' : 'h-screen'}`}>
         {/* Universal Header */}
-        <header className="bg-white/80 backdrop-blur-xl sticky top-0 z-[90] border-b border-slate-100 px-6 md:px-10 py-6 flex items-center justify-between">
-          <div className="flex items-center gap-5">
-            <button onClick={() => setIsSidebarOpen(true)} className={`p-3 hover:bg-slate-100 rounded-2xl transition-all ${isDesktop ? 'hidden' : 'block'}`}>
-              <Menu className="w-7 h-7 text-slate-600" />
+        <header className="bg-white/85 backdrop-blur-xl sticky top-0 z-[90] border-b border-slate-100 px-6 md:px-10 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(true)} className={`p-2.5 hover:bg-slate-100 rounded-2xl transition-all ${isDesktop ? 'hidden' : 'block'}`}>
+              <Menu className="w-6 h-6 text-slate-600" />
             </button>
-            <h2 className={`text-2xl font-black text-slate-800 capitalize tracking-tight ${isDesktop ? 'block' : 'hidden sm:block'}`}>{view.replace('-', ' ')}</h2>
+            <div className="flex items-center gap-3">
+              <img
+                src="/agrovet-logo.png"
+                alt="AgroVet Pro"
+                className="w-10 h-10 rounded-xl object-cover shadow-sm border border-slate-100 shrink-0"
+                referrerPolicy="no-referrer"
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-black text-slate-800 tracking-tight leading-none capitalize">
+                    {view.replace('-', ' ')}
+                  </h2>
+                  <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 uppercase hidden sm:inline-block">
+                    AgroVet Pro
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 hidden sm:block">
+                  Dairy &amp; Cattle Farm Management &bull; Asad Mehmood
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-6 flex-1 justify-end">
@@ -2285,21 +2321,29 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               {/* Dashboard Hero Command & Quick Actions */}
               <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[3.5rem] p-8 md:p-10 text-white relative overflow-hidden shadow-2xl">
                 {/* Glowing design accents */}
-                <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
+                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
                 <div className="absolute bottom-0 left-1/3 w-60 h-60 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
 
                 <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-8">
-                  <div className="space-y-3">
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-500/20 rounded-full border border-indigo-400/20 backdrop-blur-sm">
-                      <ShieldCheck className="w-4 h-4 text-indigo-400" />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">System Ready & Synchronized</span>
+                  <div className="flex items-start sm:items-center gap-5">
+                    <img
+                      src="/agrovet-logo.png"
+                      alt="AgroVet Pro"
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl object-cover shadow-2xl border border-white/20 shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="space-y-2">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 rounded-full border border-emerald-400/30 backdrop-blur-sm">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300">AgroVet Pro &bull; Operational</span>
+                      </div>
+                      <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-none text-white">
+                        Farm Operations Command
+                      </h2>
+                      <p className="text-xs text-slate-300 font-bold max-w-xl leading-relaxed">
+                        Developed by Asad Mehmood &bull; Real-time reproductive diagnostics, automated synchronization &amp; health management.
+                      </p>
                     </div>
-                    <h2 className="text-3xl md:text-4xl font-black tracking-tight leading-none text-white">
-                      Farm Operations Command
-                    </h2>
-                    <p className="text-xs text-slate-300 font-bold max-w-xl leading-relaxed">
-                      Real-time metrics, reproductive diagnostics tracking, and automated synchronization scheduling for your herd.
-                    </p>
                   </div>
 
                   {/* Ribbon Quick Actions */}
@@ -5690,13 +5734,21 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           {view === 'reports' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-12">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="flex items-center gap-6">
-                  <div className="bg-blue-600 p-4 rounded-[1.5rem] shadow-xl shadow-blue-100">
-                    <BarChart3 className="w-8 h-8 text-white" />
-                  </div>
+                <div className="flex items-center gap-5">
+                  <img
+                    src="/agrovet-logo.png"
+                    alt="AgroVet Pro"
+                    className="w-16 h-16 rounded-2xl object-cover shadow-xl border border-slate-100 shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
                   <div>
-                    <h3 className="text-3xl font-black text-slate-800 tracking-tight leading-none">Intelligence Hub</h3>
-                    <p className="text-xs text-slate-400 font-black uppercase tracking-[0.2em] mt-2">Professional Data Exports & Analytics</p>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-3xl font-black text-slate-800 tracking-tight leading-none">AgroVet<span className="text-emerald-600">Reports</span></h3>
+                      <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 uppercase">
+                        PDF &bull; WhatsApp
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1.5">Official Farm Dossiers &amp; Clinical Analytics &bull; Developed by Asad Mehmood</p>
                   </div>
                 </div>
               </div>
@@ -6238,6 +6290,43 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   onShowToast={(msg) => setToastMessage(msg)}
                   setConfirmDialog={setConfirmDialog}
                 />
+
+                {/* AgroVet Pro Brand & Developer Profile */}
+                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 rounded-[3rem] text-white shadow-xl border border-slate-700/50 relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row items-center gap-6">
+                    <img
+                      src="/agrovet-logo.png"
+                      alt="AgroVet Pro"
+                      className="w-20 h-20 rounded-3xl object-cover shadow-2xl border border-white/20 shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="space-y-1 text-center sm:text-left flex-1">
+                      <div className="flex items-center justify-center sm:justify-start gap-2">
+                        <h4 className="text-xl font-black tracking-tight">AgroVet<span className="text-emerald-400">Pro</span></h4>
+                        <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-400/30 uppercase">
+                          V2.5 Stable
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 font-medium">
+                        Dairy &amp; Cattle Farm Reproduction, Diagnostics &amp; Clinical Health System
+                      </p>
+                      <p className="text-xs text-emerald-400 font-bold">
+                        Developed by Asad Mehmood
+                      </p>
+                      <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-3">
+                        <a
+                          href="https://wa.me/923136451992?text=Hello%20Asad%20Mehmood,%20I%20need%20assistance%20with%20my%20AgroVet%20Pro%20system."
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md transition-colors"
+                        >
+                          <MessageCircle className="w-4 h-4 fill-white" />
+                          <span>WhatsApp Support: +92 313 6451992</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -8806,10 +8895,15 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans">
-        <Activity className="w-14 h-14 text-blue-600 animate-pulse mb-4" />
-        <h2 className="text-2xl font-black text-slate-800 tracking-tight">Loading AgroVet Pro...</h2>
-        <p className="text-xs font-bold text-slate-400 mt-1">Connecting to private farm database</p>
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans p-6 text-center">
+        <img
+          src="/agrovet-logo.png"
+          alt="AgroVet Pro"
+          className="w-24 h-24 rounded-3xl object-cover shadow-2xl mb-6 border border-slate-200 animate-pulse"
+          referrerPolicy="no-referrer"
+        />
+        <h2 className="text-2xl font-black text-slate-800 tracking-tight">AgroVet<span className="text-emerald-600">Pro</span></h2>
+        <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wider">Connecting to Private Farm Database &bull; Asad Mehmood</p>
       </div>
     );
   }

@@ -14,6 +14,7 @@ import {
   MedicinePurchase
 } from '../types';
 import { dateUtils } from '../services/businessLogic';
+import { AGROVET_LOGO_BASE64 } from './logoBase64';
 
 const getThemeColors = (template: string): { 
   header: [number, number, number], 
@@ -35,21 +36,36 @@ const addHeader = (doc: jsPDF, title: string, settings?: FarmSettings) => {
   const colors = getThemeColors(settings?.pdfTemplate || 'Professional');
   const pageWidth = doc.internal.pageSize.getWidth();
   
-  doc.setFontSize(22);
+  // Render Official AgroVet Pro Graphical Logo Emblem
+  try {
+    if (AGROVET_LOGO_BASE64) {
+      doc.addImage(AGROVET_LOGO_BASE64, 'PNG', 14, 6, 24, 24);
+    }
+  } catch (err) {
+    console.error('Error embedding logo in PDF:', err);
+  }
+  
+  // Header Branding beside logo (x = 42)
+  doc.setFontSize(18);
   doc.setTextColor(colors.header[0], colors.header[1], colors.header[2]);
-  doc.text('Asad’s Management System', pageWidth / 2, 15, { align: 'center' });
+  doc.text('AGROVET PRO', 42, 13);
   
-  doc.setFontSize(14);
-  doc.setTextColor(51, 65, 85);
-  doc.text(title, pageWidth / 2, 25, { align: 'center' });
+  doc.setFontSize(8.5);
+  doc.setTextColor(16, 185, 129); // Emerald accent
+  doc.text('DAIRY & CATTLE FARM REPRODUCTION & HEALTH SYSTEM', 42, 18);
+
+  doc.setFontSize(11);
+  doc.setTextColor(30, 41, 59);
+  doc.text(title, 42, 24);
   
-  doc.setFontSize(9);
-  doc.setTextColor(148, 163, 184);
-  doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 32, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Developed by Asad Mehmood (+92 313 6451992) • Generated: ${new Date().toLocaleString()}`, 42, 29);
   
-  doc.setDrawColor(colors.primary[0], colors.primary[1], colors.primary[2]);
-  doc.setLineWidth(0.5);
-  doc.line(14, 35, pageWidth - 14, 35);
+  // Top divider rule
+  doc.setDrawColor(16, 185, 129);
+  doc.setLineWidth(0.75);
+  doc.line(14, 33, pageWidth - 14, 33);
 };
 
 export const generateIndividualAnimalReport = (
