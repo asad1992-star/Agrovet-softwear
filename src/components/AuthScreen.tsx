@@ -274,7 +274,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 </span>
               </div>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Dairy &amp; Cattle Farm Management &bull; Dr. Asad
+                Dairy &amp; Cattle Farm Management &bull; Asad Mehmood
               </p>
             </div>
           </div>
@@ -754,7 +754,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       <div className="relative z-10 w-full bg-slate-950/80 border-t border-slate-800 py-3.5 px-4 text-center">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
           <p className="font-medium">
-            AgroVet Pro &bull; Developed by <strong className="text-white">Dr. Asad Mehmood</strong>
+            AgroVet Pro &bull; Developed by <strong className="text-white">Asad Mehmood</strong>
           </p>
           <a
             href={whatsappSupportUrl}

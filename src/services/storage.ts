@@ -1,4 +1,4 @@
-import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, Medicine, MedicinePurchase } from '../types';
+import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, Medicine, MedicinePurchase, PenMovement } from '../types';
 import { MOCK_ANIMALS, MOCK_REPRO_EVENTS, MOCK_HEALTH_EVENTS, PREDEFINED_PROTOCOLS, MOCK_MEDICINES, MOCK_MEDICINE_PURCHASES } from '../data';
 import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -24,8 +24,8 @@ export const DEFAULT_SETTINGS: FarmSettings = {
     inseminated: '#06B6D4',
     observation: '#94A3B8'
   },
-  customGroups: ['Main Herd', 'Growing Heifers', 'Post Weaning', 'Suckling', 'Elite', 'High Group', 'Medium Group', 'Breeding Pen', 'Dry Cows', 'Fresh', 'Pregnant'],
-  technicians: ['Dr. Asad Mehmood', 'Faisal Sb'],
+  customGroups: ['Main Herd', 'Growing Heifers', 'Post Weaning', 'Suckling', 'Elite', 'High Group', 'Medium Group', 'Breeding Heifers', 'Breeding Pen', 'Dry Cows', 'Fresh', 'Closeup', 'Pregnant'],
+  technicians: ['Asad Mehmood', 'Faisal Sb'],
   semenCatalog: [],
   autoBackupEnabled: true
 };
@@ -111,7 +111,7 @@ export const getUserScopedKey = (baseKey: string, explicitEmail?: string): strin
   return `agrovet_${email}_${baseKey}`;
 };
 
-// Check if current user is the master account (Dr. Asad)
+// Check if current user is the master account (Asad Mehmood)
 const isMasterAccount = (email?: string): boolean => {
   const target = (email || authService.getCurrentUser()?.email || '').toLowerCase();
   return target === 'chasad51992@gmail.com' || target === 'vetasad1992@gmail.com' || target === 'default';
@@ -217,6 +217,12 @@ export const storageService = {
   getPurchases: (email?: string) => getScopedData<MedicinePurchase[]>('purchases', MOCK_MEDICINE_PURCHASES, email),
   savePurchases: (data: MedicinePurchase[], email?: string) => saveScopedData('purchases', data, email),
 
+  getDismissedAlertIds: (email?: string) => getScopedData<string[]>('dismissed_alerts', [], email),
+  saveDismissedAlertIds: (data: string[], email?: string) => saveScopedData('dismissed_alerts', data, email),
+
+  getPenMovements: (email?: string) => getScopedData<PenMovement[]>('pen_movements', [], email),
+  savePenMovements: (data: PenMovement[], email?: string) => saveScopedData('pen_movements', data, email),
+
   getSettings: async (email?: string): Promise<FarmSettings> => {
     const raw = await getScopedData<FarmSettings>('settings', DEFAULT_SETTINGS, email);
     return {
@@ -229,7 +235,7 @@ export const storageService = {
 
   // Clear or load fresh workspace for switched account
   loadUserWorkspace: async (userEmail: string) => {
-    const [animals, reproEvents, healthEvents, medicines, purchases, enrollments, customProtocols, settings] = await Promise.all([
+    const [animals, reproEvents, healthEvents, medicines, purchases, enrollments, customProtocols, settings, dismissedAlertIds, penMovements] = await Promise.all([
       storageService.getAnimals(userEmail),
       storageService.getReproEvents(userEmail),
       storageService.getHealthEvents(userEmail),
@@ -237,7 +243,9 @@ export const storageService = {
       storageService.getPurchases(userEmail),
       storageService.getEnrollments(userEmail),
       storageService.getCustomProtocols(userEmail),
-      storageService.getSettings(userEmail)
+      storageService.getSettings(userEmail),
+      storageService.getDismissedAlertIds(userEmail),
+      storageService.getPenMovements(userEmail)
     ]);
 
     return {
@@ -248,7 +256,9 @@ export const storageService = {
       purchases,
       enrollments,
       customProtocols,
-      settings
+      settings,
+      dismissedAlertIds: dismissedAlertIds || [],
+      penMovements: penMovements || []
     };
   }
 };

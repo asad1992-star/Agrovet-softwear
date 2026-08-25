@@ -9,7 +9,8 @@ import {
   Alert,
   FarmSettings,
   ProtocolEnrollment,
-  ProtocolTemplate
+  ProtocolTemplate,
+  PenMovement
 } from '../types';
 
 export const dateUtils = {
@@ -68,16 +69,31 @@ export const findPregnantPen = (customGroups?: string[]): string => {
   return match || 'Pregnant';
 };
 
+export const findCloseupPen = (customGroups?: string[]): string => {
+  const groups = customGroups || ['Closeup', 'Close Up', 'Main Herd'];
+  const match = groups.find(g => g.toLowerCase().includes('close'));
+  return match || 'Closeup';
+};
+
+export const findBreedingPen = (customGroups?: string[]): string => {
+  const groups = customGroups || ['Breeding Heifers', 'Breeding Pen', 'Main Herd'];
+  const match = groups.find(g => g.toLowerCase().includes('breeding heifer') || g.toLowerCase().includes('breeding'));
+  return match || 'Breeding Heifers';
+};
+
+export const isBreedingPen = (herdName?: string): boolean => {
+  if (!herdName) return false;
+  const h = herdName.toLowerCase().trim();
+  return h.includes('breed'); // 'breeding', 'breeding heifers', 'breeding pen', etc.
+};
+
 export const isBreedingHeiferPen = (herdName?: string): boolean => {
   if (!herdName) return false;
   const h = herdName.toLowerCase().trim();
   return (
-    h.includes('heifer') ||
     h.includes('breeding') ||
-    h.includes('growing') ||
-    h === 'heifers' ||
     h === 'breeding pen' ||
-    h === 'growing heifers'
+    h === 'breeding heifers'
   );
 };
 
@@ -89,11 +105,11 @@ export const normalizeTechnicianName = (rawTech?: string, knownTechs?: string[])
   const trimmed = rawTech.trim();
   if (!trimmed) return '';
 
-  const defaultKnown = ['Asad', 'Faisal Sb'];
+  const defaultKnown = ['Asad Mehmood', 'Faisal Sb'];
   const fullKnown = Array.from(new Set([...(knownTechs || []), ...defaultKnown]));
 
   // Check case-insensitive match against configured list
-  const match = fullKnown.find(k => k.toLowerCase() === trimmed.toLowerCase());
+  const match = fullKnown.find(k => k.toLowerCase() === trimmed.toLowerCase() || (trimmed.toLowerCase().includes('asad') && k.toLowerCase().includes('asad')));
   if (match) return match;
 
   // Otherwise format cleanly in proper title case
@@ -117,13 +133,18 @@ export const normalizeSemenName = (rawSemen?: string, knownSemenList?: string[])
  * Smart Group & Young Stock Detection Helpers
  * Recognizes growing heifers, suckling, post-weaning pens (with flexible spellings)
  * and distinguishes young stock from breeding-ready adult cows.
+ * NOTE: The pen 'Breeding' / 'Breeding Heifers' is ADULT/BREEDING STOCK, NOT young stock.
  */
 export const isYoungStockHerdGroup = (herdName?: string): boolean => {
   if (!herdName) return false;
   const h = herdName.toLowerCase().trim();
+  
+  // Any breeding pen is explicitly ADULT/BREEDING stock, NOT young stock!
+  if (isBreedingPen(herdName)) return false;
+
   return (
     h.includes('growing') ||
-    h.includes('heifer') ||
+    h.includes('target') ||
     h.includes('suckl') || // matches suckling, sucklin, suckler, etc.
     h.includes('post wean') ||
     h.includes('post-wean') ||
@@ -141,17 +162,21 @@ export const isCalfHerdGroup = (herdName?: string): boolean => {
   if (!herdName) return false;
   const h = herdName.toLowerCase().trim();
   if (isYoungStockHerdGroup(herdName)) return false;
+  if (isBreedingPen(herdName)) return false;
   return h.includes('calf') || h.includes('calves') || h.includes('nursery') || h.includes('pre-wean') || h.includes('prewean');
 };
 
 export const isYoungStockAnimal = (animal?: { herd?: string; isCalf?: boolean; status?: AnimalStatus } | null): boolean => {
   if (!animal) return false;
+  // If animal is in a breeding pen, it is adult/breeding stock, never young stock
+  if (isBreedingPen(animal.herd)) return false;
   return isYoungStockHerdGroup(animal.herd) || animal.status === AnimalStatus.YOUNG_STOCK;
 };
 
 export const isCalfAnimal = (animal?: { herd?: string; isCalf?: boolean; status?: AnimalStatus } | null): boolean => {
   if (!animal) return false;
   if (isYoungStockAnimal(animal)) return false;
+  if (isBreedingPen(animal.herd)) return false;
   return !!animal.isCalf || isCalfHerdGroup(animal.herd);
 };
 
@@ -259,17 +284,32 @@ export const generateAlerts = (
   healthEvents: HealthEvent[],
   enrollments: ProtocolEnrollment[],
   templates: ProtocolTemplate[],
-  settings: FarmSettings
+  settings: FarmSettings,
+  penMovements: PenMovement[] = []
 ): Alert[] => {
   const alerts: Alert[] = [];
   const today = dateUtils.today();
+
+  // Pen Movement Alerts (both manual and automatic)
+  penMovements.slice(0, 50).forEach(movement => {
+    alerts.push({
+      id: `alert-movement-${movement.id}`,
+      type: 'System',
+      title: `Pen Moved: ${movement.animalTag}`,
+      description: `Cow ${movement.animalTag} moved from "${movement.fromPen}" to "${movement.toPen}" (${movement.reason}) on ${movement.date}.`,
+      dueDate: movement.date,
+      animalId: movement.animalId,
+      priority: movement.isAutomatic ? 'High' : 'Medium',
+      metadata: { fromPen: movement.fromPen, toPen: movement.toPen, isAutomatic: movement.isAutomatic }
+    });
+  });
 
   // Protocol Alerts - Grouped by protocol template step (not per individual animal)
   const protocolAlertMap: Record<string, { animals: string[], stepDate: string, daysUntil: number, stepAction: string, stepDay: number, templateName: string, stepTime?: string }> = {};
 
   animals.forEach(animal => {
     const animalRepro = reproEvents.filter(e => e.animalId === animal.id).sort((a, b) => b.date.localeCompare(a.date));
-    const { status, expectedCalving, activeProtocol } = computeAnimalStatus(animal, reproEvents, healthEvents, enrollments, settings);
+    const { status, expectedCalving, activeProtocol, pregnancyDays } = computeAnimalStatus(animal, reproEvents, healthEvents, enrollments, settings);
 
     if (activeProtocol) {
       const template = templates.find(t => t.id === activeProtocol.templateId);
@@ -305,7 +345,7 @@ export const generateAlerts = (
           id: `alert-check-${animal.id}`,
           type: 'Repro',
           title: daysSince >= settings.pregnancyCheckDays ? 'Pregnancy Check OVERDUE' : 'Pregnancy Check Required',
-          description: `${animal.tag} has been inseminated for ${daysSince} days. Pregnancy check due.`,
+          description: `${animal.tag} (P-${daysSince}d): Inseminated ${daysSince} days ago. Pregnancy check due.`,
           dueDate: dateUtils.addDays(lastInsem.date, settings.pregnancyCheckDays),
           animalId: animal.id,
           priority: daysSince >= settings.pregnancyCheckDays ? 'High' : 'Medium'
@@ -341,7 +381,7 @@ export const generateAlerts = (
           id: `alert-calving-${animal.id}`,
           type: 'Repro',
           title: daysLeft < 0 ? 'Calving OVERDUE' : 'Upcoming Calving',
-          description: daysLeft < 0 ? `${animal.tag} is overdue for calving by ${Math.abs(daysLeft)} days.` : `${animal.tag} is in closeup. Expected calving in ${daysLeft} days.`,
+          description: daysLeft < 0 ? `${animal.tag} is overdue for calving by ${Math.abs(daysLeft)} days.` : `${animal.tag} (P-${pregnancyDays || 0}d) is in closeup. Expected calving in ${daysLeft} days.`,
           dueDate: expectedCalving,
           animalId: animal.id,
           priority: 'High'
@@ -387,7 +427,6 @@ export const generateAlerts = (
     });
   });
 
-
   return alerts.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 };
 
@@ -398,8 +437,8 @@ export const validations = {
     if (isAbortionNote) return; // Allow any event if it documents an abortion
 
     if (event.type === ReproEventType.INSEMINATION) {
-      if (currentStatus !== AnimalStatus.ACTIVE) {
-         throw new Error(`Cannot Inseminate: Cow is currently ${currentStatus}. Current status must be Active/Heat. Correct flow: Heat → Insemination → Pregnancy Check → Calving.`);
+      if (currentStatus !== AnimalStatus.ACTIVE && currentStatus !== AnimalStatus.YOUNG_STOCK) {
+         throw new Error(`Cannot Inseminate: Cow is currently ${currentStatus}. Current status must be Active/Heat or Young Stock. Correct flow: Heat → Insemination → Pregnancy Check → Calving.`);
       }
     }
     if (event.type === ReproEventType.PREGNANCY_CHECK) {
@@ -408,12 +447,12 @@ export const validations = {
       }
     }
     if (event.type === ReproEventType.CALVING) {
-      if (![AnimalStatus.PREGNANT, AnimalStatus.CLOSEUP].includes(currentStatus)) {
+      if (![AnimalStatus.PREGNANT, AnimalStatus.CLOSEUP, AnimalStatus.ACTIVE].includes(currentStatus)) {
         throw new Error(`Calving requires cow to be Pregnant or in Closeup. Current status: ${currentStatus}.`);
       }
     }
     if (event.type === ReproEventType.DRY_OFF) {
-      if (currentStatus !== AnimalStatus.PREGNANT) {
+      if (currentStatus !== AnimalStatus.PREGNANT && currentStatus !== AnimalStatus.CLOSEUP) {
         throw new Error(`Dry Off requires cow to be Pregnant. Current status: ${currentStatus}.`);
       }
     }

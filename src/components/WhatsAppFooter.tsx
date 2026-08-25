@@ -7,7 +7,7 @@ interface WhatsAppFooterProps {
 }
 
 export const WhatsAppFooter: React.FC<WhatsAppFooterProps> = ({ className = '', isReportFooter = false }) => {
-  const whatsappUrl = "https://wa.me/923136451992?text=Hello%20Dr.%20Asad,%20I%20need%20help%20with%20my%20AgroVet%20Pro%20farm%20account.";
+  const whatsappUrl = "https://wa.me/923136451992?text=Hello%20Asad%20Mehmood,%20I%20need%20help%20with%20my%20AgroVet%20Pro%20farm%20account.";
 
   if (isReportFooter) {
     return (
@@ -24,7 +24,7 @@ export const WhatsAppFooter: React.FC<WhatsAppFooterProps> = ({ className = '', 
           className="inline-flex items-center gap-2 font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors"
         >
           <MessageCircle className="w-4 h-4 text-emerald-600 fill-emerald-600" />
-          <span>Support &amp; Custom Features: +92 313 6451992 (Dr. Asad Mehmood)</span>
+          <span>Support &amp; Assistance: +92 313 6451992 (Asad Mehmood)</span>
         </a>
       </div>
     );
@@ -46,7 +46,7 @@ export const WhatsAppFooter: React.FC<WhatsAppFooterProps> = ({ className = '', 
               </span>
             </div>
             <p className="text-xs text-slate-500 font-medium">
-              Dairy &amp; Cattle Reproduction &amp; Health Platform &bull; Powered by <span className="font-bold text-slate-700">Dr. Asad Mehmood</span>
+              Dairy &amp; Cattle Reproduction &amp; Health Platform &bull; Developed by <span className="font-bold text-slate-700">Asad Mehmood</span>
             </p>
           </div>
         </div>
@@ -69,7 +69,7 @@ export const WhatsAppFooter: React.FC<WhatsAppFooterProps> = ({ className = '', 
       </div>
       <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-2">
         <p>Your entered animals and herd database are securely isolated and automatically backed up to cloud &amp; local memory.</p>
-        <p>For custom farm formulas or individual farmer requests, WhatsApp Dr. Asad anytime.</p>
+        <p>If you are facing any issue, you can contact Asad Mehmood anytime on WhatsApp.</p>
       </div>
     </footer>
   );

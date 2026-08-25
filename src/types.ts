@@ -147,6 +147,19 @@ export interface Alert {
   animalId?: string;
   priority: 'Low' | 'Medium' | 'High';
   isRead?: boolean;
+  dismissed?: boolean;
+  metadata?: Record<string, any>;
+}
+
+export interface PenMovement {
+  id: string;
+  animalId: string;
+  animalTag: string;
+  fromPen: string;
+  toPen: string;
+  date: string;
+  reason: string;
+  isAutomatic: boolean;
 }
 
 export interface User {

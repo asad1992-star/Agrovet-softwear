@@ -154,9 +154,7 @@ import { auth } from './services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { AuthScreen } from './components/AuthScreen';
 import { WhatsAppFooter } from './components/WhatsAppFooter';
-import { authService, AuthUser, UserStatusInfo } from './services/authService';
-import { SuspendedLockScreen } from './components/SuspendedLockScreen';
-import { SubscriptionNoticeBanner } from './components/SubscriptionNoticeBanner';
+import { authService, AuthUser } from './services/authService';
 
 const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any) => (
   <div
@@ -283,7 +281,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     deleteEnrollment,
     addCustomProtocol,
     deleteProtocolTemplate,
-    updateSettings
+    updateSettings,
+    dismissedAlerts,
+    allAlerts,
+    penMovements,
+    recordPenMovement,
+    dismissAlert,
+    restoreAlert,
+    clearAllDismissedAlerts
   } = useFarm(user?.email);
 
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -306,6 +311,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isAlertPanelOpen, setIsAlertPanelOpen] = useState(false);
+  const [dashboardAlertTab, setDashboardAlertTab] = useState<'active' | 'dismissed'>('active');
+  const [alertPanelTab, setAlertPanelTab] = useState<'active' | 'dismissed'>('active');
   const searchRef = useRef<HTMLDivElement>(null);
   const alertPanelRef = useRef<HTMLDivElement>(null);
 
@@ -2242,7 +2249,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                             {a.tag.slice(-2)}
                           </div>
                           <div>
-                            <p className="text-sm font-black text-slate-800 group-hover:text-blue-600">{a.tag}</p>
+                            <p className="text-sm font-black text-slate-800 group-hover:text-blue-600 flex items-center gap-2">
+                              <span>{a.tag}</span>
+                              {a.pregnancyDays !== undefined && a.pregnancyDays > 0 && (
+                                <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                  P-{a.pregnancyDays}d
+                                </span>
+                              )}
+                            </p>
                             <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed} • {a.herd}</p>
                           </div>
                         </div>
@@ -2680,42 +2694,165 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               <section className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                 {/* Upcoming Alerts Section */}
                 <div className="lg:col-span-5 bg-white p-8 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col">
-                  <div className="flex items-center justify-between mb-8">
-                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                      <Bell className="w-5 h-5 text-amber-500" /> Upcoming Alerts
-                    </h3>
-                    <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[10px] font-black border border-amber-100">{alerts.length} Tasks</span>
-                  </div>
-                  <div className="space-y-5 flex-1 overflow-y-auto max-h-[500px] pr-2 scrollbar-hide">
-                    {alerts.length > 0 ? alerts.map(alert => (
-                      <div 
-                        key={alert.id} 
-                        className="group flex items-start gap-4 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white transition-all border border-transparent hover:border-slate-100 hover:shadow-lg cursor-pointer"
-                        onClick={() => {
-                          const animal = animals.find(a => a.id === alert.animalId);
-                          if (animal) setSelectedAnimal(animal);
-                        }}
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-amber-50 rounded-2xl">
+                        <Bell className="w-5 h-5 text-amber-500" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Farm Alerts</h3>
+                        <p className="text-[10px] text-slate-400 font-bold">Upcoming reproductive & health action items</p>
+                      </div>
+                    </div>
+
+                    {/* Active vs Dismissed Sub-tabs */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      <button
+                        onClick={() => setDashboardAlertTab('active')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                          dashboardAlertTab === 'active'
+                            ? 'bg-white text-blue-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
                       >
-                        <div className={`mt-0.5 p-3 rounded-2xl shadow-sm ${alert.priority === 'High' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
-                          <AlertCircle className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-black text-slate-800 truncate leading-tight mb-1">{alert.title}</p>
-                          <p className="text-[10px] text-slate-500 line-clamp-1 leading-relaxed font-bold mb-3 uppercase tracking-wider">{alert.description}</p>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-lg border border-slate-100 shadow-sm">
-                              <CalendarIcon className="w-3 h-3 text-slate-400" />
-                              <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">{alert.dueDate}</span>
+                        Active ({alerts.length})
+                      </button>
+                      <button
+                        onClick={() => setDashboardAlertTab('dismissed')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                          dashboardAlertTab === 'dismissed'
+                            ? 'bg-white text-slate-800 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Dismissed ({dismissedAlerts.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {dashboardAlertTab === 'dismissed' && dismissedAlerts.length > 0 && (
+                    <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+                      <p className="text-[10px] text-slate-400 font-bold">Dismissed alerts won't show in active queues</p>
+                      <button
+                        onClick={clearAllDismissedAlerts}
+                        className="text-[10px] font-black text-rose-600 hover:text-rose-700 hover:underline uppercase tracking-wider"
+                      >
+                        Restore All
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="space-y-4 flex-1 overflow-y-auto max-h-[500px] pr-2 scrollbar-hide">
+                    {dashboardAlertTab === 'active' ? (
+                      alerts.length > 0 ? alerts.map(alert => {
+                        const animal = animals.find(a => a.id === alert.animalId);
+                        return (
+                          <div 
+                            key={alert.id} 
+                            className="group flex items-start gap-4 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white transition-all border border-transparent hover:border-slate-100 hover:shadow-lg cursor-pointer relative"
+                            onClick={() => {
+                              if (animal) setSelectedAnimal(animal);
+                            }}
+                          >
+                            <div className={`mt-0.5 p-3 rounded-2xl shadow-sm flex-shrink-0 ${alert.priority === 'High' ? 'bg-rose-50 text-rose-600' : alert.type === 'Protocol' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                              <AlertCircle className="w-4 h-4" />
                             </div>
-                            <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${alert.priority === 'High' ? 'text-rose-600' : 'text-blue-500'}`}>{alert.priority}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-black text-slate-800 truncate leading-tight">{alert.title}</p>
+                                  {animal && animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                      P-{animal.pregnancyDays}d
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Discard Button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    dismissAlert(alert.id);
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all flex items-center gap-1 text-[10px] font-black uppercase tracking-wider flex-shrink-0 shadow-sm"
+                                  title="Discard this alert"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Discard</span>
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-slate-500 line-clamp-2 leading-relaxed font-bold mb-3 uppercase tracking-wider">{alert.description}</p>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-lg border border-slate-100 shadow-sm">
+                                  <CalendarIcon className="w-3 h-3 text-slate-400" />
+                                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">{alert.dueDate}</span>
+                                </div>
+                                <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${alert.priority === 'High' ? 'text-rose-600' : 'text-blue-500'}`}>{alert.priority}</span>
+                              </div>
+                            </div>
                           </div>
+                        );
+                      }) : (
+                        <div className="flex flex-col items-center justify-center h-full py-10 opacity-40">
+                          <CheckCircle2 className="w-16 h-16 text-slate-200 mb-4" />
+                          <p className="text-xs text-slate-400 font-black tracking-widest uppercase">No pending alerts</p>
                         </div>
-                      </div>
-                    )) : (
-                      <div className="flex flex-col items-center justify-center h-full py-10 opacity-40">
-                        <CheckCircle2 className="w-16 h-16 text-slate-200 mb-4" />
-                        <p className="text-xs text-slate-400 font-black tracking-widest uppercase">No pending alerts</p>
-                      </div>
+                      )
+                    ) : (
+                      dismissedAlerts.length > 0 ? dismissedAlerts.map(alert => {
+                        const animal = animals.find(a => a.id === alert.animalId);
+                        return (
+                          <div 
+                            key={alert.id} 
+                            className="group flex items-start gap-4 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white transition-all border border-transparent hover:border-slate-100 hover:shadow-lg cursor-pointer opacity-80 hover:opacity-100"
+                            onClick={() => {
+                              if (animal) setSelectedAnimal(animal);
+                            }}
+                          >
+                            <div className="mt-0.5 p-3 rounded-2xl shadow-sm bg-slate-100 text-slate-400 flex-shrink-0">
+                              <CheckCircle2 className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-black text-slate-600 truncate leading-tight line-through">{alert.title}</p>
+                                  {animal && animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                      P-{animal.pregnancyDays}d
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Restore Button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    restoreAlert(alert.id);
+                                  }}
+                                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl transition-all flex items-center gap-1 text-[10px] font-black uppercase tracking-wider flex-shrink-0 shadow-sm"
+                                  title="Restore alert back to active list"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Restore</span>
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed font-bold mb-3 uppercase tracking-wider">{alert.description}</p>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-lg border border-slate-100 shadow-sm">
+                                  <CalendarIcon className="w-3 h-3 text-slate-400" />
+                                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">{alert.dueDate}</span>
+                                </div>
+                                <span className="text-[9px] font-black px-2 py-1 rounded-lg uppercase bg-slate-100 text-slate-400">Dismissed</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }) : (
+                        <div className="flex flex-col items-center justify-center h-full py-10 opacity-40">
+                          <CheckCircle2 className="w-16 h-16 text-slate-200 mb-4" />
+                          <p className="text-xs text-slate-400 font-black tracking-widest uppercase">No dismissed alerts</p>
+                        </div>
+                      )
                     )}
                   </div>
                 </div>
@@ -3152,7 +3289,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               {animal.tag.slice(-2)}
                             </div>
                             <div>
-                              <p className="font-black text-slate-800 group-hover:text-blue-600">{animal.tag}</p>
+                              <p className="font-black text-slate-800 group-hover:text-blue-600 flex items-center gap-2">
+                                <span>{animal.tag}</span>
+                                {animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                  <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    P-{animal.pregnancyDays}d
+                                  </span>
+                                )}
+                              </p>
                               <p className="text-[10px] text-slate-400 font-bold uppercase">{animal.breed} • {animal.herd}</p>
                             </div>
                           </div>
@@ -3206,7 +3350,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           <div className={`w-10 h-10 mx-auto mb-3 rounded-xl flex items-center justify-center font-black text-xs ${getStatusColor(animal.status)}`}>
                             {animal.tag.slice(-2)}
                           </div>
-                          <p className="font-black text-slate-800 text-sm truncate">{animal.tag}</p>
+                          <p className="font-black text-slate-800 text-sm truncate flex items-center justify-center gap-1">
+                            <span>{animal.tag}</span>
+                            {animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                              <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-md">
+                                P-{animal.pregnancyDays}d
+                              </span>
+                            )}
+                          </p>
                           <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
                             <div className={`w-2 h-2 rounded-full ${getStatusColor(animal.status).split(' ')[0]}`}></div>
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
@@ -3233,7 +3384,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 <Tag className="w-10 h-10 text-slate-300 group-hover:text-white transition-colors" />
                               </div>
                               <div>
-                                <h4 className="font-black text-slate-800 text-4xl group-hover:text-blue-600 transition-colors tracking-tighter mb-2">{animal.tag}</h4>
+                                <h4 className="font-black text-slate-800 text-4xl group-hover:text-blue-600 transition-colors tracking-tighter mb-2 flex items-center gap-3">
+                                  <span>{animal.tag}</span>
+                                  {animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                    <span className="text-sm font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-xl">
+                                      P-{animal.pregnancyDays}d
+                                    </span>
+                                  )}
+                                </h4>
                                 <div className="flex items-center gap-3">
                                   <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border shadow-sm ${getStatusColor(animal.status)}`}>
                                     {animal.status}
@@ -3294,7 +3452,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               <Tag className="w-7 h-7 text-slate-400 group-hover:text-white transition-colors" />
                             </div>
                             <div>
-                              <h4 className="font-black text-slate-800 text-2xl group-hover:text-blue-600 transition-colors tracking-tighter">{animal.tag}</h4>
+                              <h4 className="font-black text-slate-800 text-2xl group-hover:text-blue-600 transition-colors tracking-tighter flex items-center gap-2">
+                                <span>{animal.tag}</span>
+                                {animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                  <span className="text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                                    P-{animal.pregnancyDays}d
+                                  </span>
+                                )}
+                              </h4>
                               <p className="text-xs text-slate-400 font-black uppercase tracking-widest">{animal.breed}</p>
                             </div>
                           </div>
@@ -6322,82 +6487,188 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
             onClick={e => e.stopPropagation()}
           >
             {/* Panel Header */}
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
-                  <Bell className="w-6 h-6 text-white" />
+            <div className="px-8 py-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
+                    <Bell className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800">Alert Center</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{alerts.length} Active Tasks</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-800">Alert Center</h3>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{alerts.length} Active Notifications</p>
-                </div>
+                <button onClick={() => setIsAlertPanelOpen(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all">
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
               </div>
-              <button onClick={() => setIsAlertPanelOpen(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
+
+              {/* Sub-tabs: Active vs Dismissed */}
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setAlertPanelTab('active')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                    alertPanelTab === 'active'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Active ({alerts.length})
+                </button>
+                <button
+                  onClick={() => setAlertPanelTab('dismissed')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                    alertPanelTab === 'dismissed'
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Dismissed ({dismissedAlerts.length})
+                </button>
+              </div>
             </div>
 
-            {/* Alert Categories */}
+            {/* Alert Items */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {alerts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full py-20 opacity-40">
-                  <CheckCircle2 className="w-20 h-20 text-slate-200 mb-4" />
-                  <p className="text-sm text-slate-400 font-black tracking-widest uppercase">All Clear</p>
-                  <p className="text-xs text-slate-300 font-bold mt-2">No active alerts</p>
-                </div>
-              ) : (
-                (['Protocol', 'Health', 'Repro', 'System'] as const).map(category => {
-                  const catAlerts = alerts.filter(a => a.type === category);
-                  if (catAlerts.length === 0) return null;
-                  const catConfig = {
-                    Protocol: { color: 'bg-amber-50 border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500', label: '🧪 Protocol Lab' },
-                    Health: { color: 'bg-rose-50 border-rose-200', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500', label: '🩺 Health Bay' },
-                    Repro: { color: 'bg-blue-50 border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500', label: '🐄 Reproduction' },
-                    System: { color: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500', label: '⚙️ System' },
-                  }[category];
-                  return (
-                    <div key={category}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className={`w-2 h-2 rounded-full ${catConfig.dot}`}></div>
-                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{catConfig.label}</h4>
-                        <span className={`ml-auto px-2 py-0.5 rounded-full text-[9px] font-black ${catConfig.badge}`}>{catAlerts.length}</span>
-                      </div>
-                      <div className="space-y-3">
-                        {catAlerts.map(alert => (
-                          <div key={alert.id} className={`p-5 rounded-[1.5rem] border ${catConfig.color} transition-all hover:shadow-md`}>
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${alert.priority === 'High' ? 'bg-rose-500' : 'bg-amber-400'}`}></span>
-                                  <p className="text-sm font-black text-slate-800 truncate">{alert.title}</p>
-                                </div>
-                                <p className="text-xs text-slate-500 font-semibold leading-relaxed mb-2">{alert.description}</p>
-                                <div className="flex items-center gap-3">
-                                  <div className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-slate-100 shadow-sm">
-                                    <Clock className="w-3 h-3 text-slate-400" />
-                                    <span className="text-[9px] font-black text-slate-400 uppercase">{alert.dueDate}</span>
+              {alertPanelTab === 'active' ? (
+                alerts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full py-20 opacity-40">
+                    <CheckCircle2 className="w-20 h-20 text-slate-200 mb-4" />
+                    <p className="text-sm text-slate-400 font-black tracking-widest uppercase">All Clear</p>
+                    <p className="text-xs text-slate-300 font-bold mt-2">No active alerts</p>
+                  </div>
+                ) : (
+                  (['Protocol', 'Health', 'Repro', 'System'] as const).map(category => {
+                    const catAlerts = alerts.filter(a => a.type === category);
+                    if (catAlerts.length === 0) return null;
+                    const catConfig = {
+                      Protocol: { color: 'bg-amber-50 border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500', label: '🧪 Protocol Lab' },
+                      Health: { color: 'bg-rose-50 border-rose-200', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500', label: '🩺 Health Bay' },
+                      Repro: { color: 'bg-blue-50 border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500', label: '🐄 Reproduction' },
+                      System: { color: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500', label: '⚙️ System & Movement' },
+                    }[category];
+                    return (
+                      <div key={category}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className={`w-2 h-2 rounded-full ${catConfig.dot}`}></div>
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{catConfig.label}</h4>
+                          <span className={`ml-auto px-2 py-0.5 rounded-full text-[9px] font-black ${catConfig.badge}`}>{catAlerts.length}</span>
+                        </div>
+                        <div className="space-y-3">
+                          {catAlerts.map(alert => {
+                            const animal = animals.find(a => a.id === alert.animalId);
+                            return (
+                              <div key={alert.id} className={`p-5 rounded-[1.5rem] border ${catConfig.color} transition-all hover:shadow-md relative`}>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${alert.priority === 'High' ? 'bg-rose-500' : 'bg-amber-400'}`}></span>
+                                      <p className="text-sm font-black text-slate-800 truncate">{alert.title}</p>
+                                      {animal && animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                        <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                          P-{animal.pregnancyDays}d
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-slate-500 font-semibold leading-relaxed mb-3">{alert.description}</p>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-slate-100 shadow-sm">
+                                          <Clock className="w-3 h-3 text-slate-400" />
+                                          <span className="text-[9px] font-black text-slate-400 uppercase">{alert.dueDate}</span>
+                                        </div>
+                                        {alert.priority === 'High' && (
+                                          <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[9px] font-black rounded-full uppercase tracking-wider">Urgent</span>
+                                        )}
+                                      </div>
+
+                                      {/* Discard Alert Button */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          dismissAlert(alert.id);
+                                        }}
+                                        className="px-2 py-1 bg-white/80 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-all text-[9px] font-black uppercase tracking-wider border border-slate-200/60 shadow-sm flex items-center gap-1"
+                                        title="Discard this alert"
+                                      >
+                                        <X className="w-3 h-3" />
+                                        <span>Discard</span>
+                                      </button>
+                                    </div>
                                   </div>
-                                  {alert.priority === 'High' && (
-                                    <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[9px] font-black rounded-full uppercase tracking-wider">Urgent</span>
+                                  {alert.animalId && (
+                                    <button
+                                      onClick={() => { setSelectedAnimal(animal || null); setIsAlertPanelOpen(false); }}
+                                      className="flex-shrink-0 p-2 bg-white rounded-xl hover:bg-blue-50 hover:text-blue-600 text-slate-400 transition-all border border-slate-100 shadow-sm self-center"
+                                      title="View Animal Profile"
+                                    >
+                                      <ChevronRight className="w-4 h-4" />
+                                    </button>
                                   )}
                                 </div>
                               </div>
-                              {alert.animalId && (
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )
+              ) : (
+                dismissedAlerts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full py-20 opacity-40">
+                    <CheckCircle2 className="w-20 h-20 text-slate-200 mb-4" />
+                    <p className="text-sm text-slate-400 font-black tracking-widest uppercase">No Dismissed Alerts</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Archived ({dismissedAlerts.length})</span>
+                      <button
+                        onClick={clearAllDismissedAlerts}
+                        className="text-[10px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-wider"
+                      >
+                        Restore All
+                      </button>
+                    </div>
+                    {dismissedAlerts.map(alert => {
+                      const animal = animals.find(a => a.id === alert.animalId);
+                      return (
+                        <div key={alert.id} className="p-5 rounded-[1.5rem] border border-slate-100 bg-slate-50/70 transition-all">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <p className="text-sm font-black text-slate-600 truncate line-through">{alert.title}</p>
+                                {animal && animal.pregnancyDays !== undefined && animal.pregnancyDays > 0 && (
+                                  <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    P-{animal.pregnancyDays}d
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-400 font-medium leading-relaxed mb-3">{alert.description}</p>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] font-black text-slate-400 uppercase">{alert.dueDate}</span>
                                 <button
-                                  onClick={() => { setSelectedAnimal(animals.find(a => a.id === alert.animalId) || null); setIsAlertPanelOpen(false); }}
-                                  className="flex-shrink-0 p-2 bg-white rounded-xl hover:bg-blue-50 hover:text-blue-600 text-slate-400 transition-all border border-slate-100 shadow-sm"
-                                  title="View Animal"
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    restoreAlert(alert.id);
+                                  }}
+                                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all"
+                                  title="Restore alert"
                                 >
-                                  <ChevronRight className="w-4 h-4" />
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Restore</span>
                                 </button>
-                              )}
+                              </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
               )}
             </div>
 
@@ -8519,17 +8790,6 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
   const [authLoading, setAuthLoading] = useState(true);
-  const [statusInfo, setStatusInfo] = useState<UserStatusInfo | null>(null);
-
-  const checkStatus = useCallback(async () => {
-    if (!user?.email) return;
-    try {
-      const res = await authService.fetchUserStatus(user.email);
-      setStatusInfo(res);
-    } catch (e) {
-      console.warn('Status check failed:', e);
-    }
-  }, [user?.email]);
 
   useEffect(() => {
     const unsub = authService.onAuthStateChanged((currentUser) => {
@@ -8539,19 +8799,9 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    if (user?.email) {
-      checkStatus();
-      // Periodically refresh user status every 30 seconds
-      const interval = setInterval(checkStatus, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [user?.email, checkStatus]);
-
   const handleLogout = async () => {
     await authService.logout();
     setUser(null);
-    setStatusInfo(null);
   };
 
   if (authLoading) {
@@ -8568,21 +8818,8 @@ export default function App() {
     return <AuthScreen onLoginSuccess={(loggedInUser) => setUser(loggedInUser)} />;
   }
 
-  // Check for account suspension (Master admin accounts are always exempt)
-  if (statusInfo?.status === 'suspended' && !user.isMaster) {
-    return (
-      <SuspendedLockScreen
-        user={user}
-        statusInfo={statusInfo}
-        onRefresh={checkStatus}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
-      <SubscriptionNoticeBanner statusInfo={statusInfo} userEmail={user.email} />
       <MainApp user={user} onLogout={handleLogout} />
     </div>
   );

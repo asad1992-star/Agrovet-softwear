@@ -66,17 +66,21 @@ export const generateIndividualAnimalReport = (
 
   addHeader(doc, `${reportType}: ${animal.tag} | ${rangeLabel}`, settings);
 
+  const profileRows = [
+    ['Tag ID', animal.tag],
+    ['Serial Number', animal.id.slice(-6).toUpperCase()],
+    ['Breed', animal.breed],
+    ['Status', animal.status || 'Active'],
+    ['Herd / Pen', animal.herd],
+    ['Pregnancy Days', animal.pregnancyDays ? `P-${animal.pregnancyDays}d (${animal.pregnancyDays} days)` : '-'],
+    ['Sex', animal.sex],
+    ['DOB', animal.dob],
+  ];
+
   autoTable(doc, {
     startY: 45,
     head: [['Profile Attribute', 'Details']],
-    body: [
-      ['Tag ID', animal.tag],
-      ['Serial Number', animal.id.slice(-6).toUpperCase()],
-      ['Breed', animal.breed],
-      ['Status', animal.status || 'Active'],
-      ['Sex', animal.sex],
-      ['DOB', animal.dob],
-    ],
+    body: profileRows,
     theme: 'striped',
     headStyles: { fillColor: colors.primary }
   });
@@ -289,8 +293,11 @@ const doc = new jsPDF();
 addHeader(doc, `Herd List | ${filterLabel}`, settings);
 autoTable(doc, {
   startY: 45,
-  head: [['S.No', 'Tag', 'Breed', 'Status', 'Herd', 'DOB']],
-  body: animals.map((a, index) => [index + 1, a.tag, a.breed, a.status || 'Active', a.herd, a.dob]),
+  head: [['S.No', 'Tag', 'Breed', 'Status', 'Pregnancy Days', 'Herd / Pen', 'DOB']],
+  body: animals.map((a, index) => {
+    const pregDisplay = a.pregnancyDays ? `P-${a.pregnancyDays}d` : '-';
+    return [index + 1, a.tag, a.breed, a.status || 'Active', pregDisplay, a.herd, a.dob];
+  }),
   headStyles: { fillColor: [59, 130, 246] }
 });
 doc.save('Herd_List_Report.pdf');
@@ -366,15 +373,17 @@ export const generatePdCheckSectionReport = (
 
   autoTable(doc, {
     startY: 45,
-    head: [['Date', 'Animal Tag', 'Breed', 'Herd', 'Diagnosis Result', 'Notes / Details']],
+    head: [['Date', 'Animal Tag', 'Breed', 'Herd', 'Pregnancy Days', 'Diagnosis Result', 'Notes / Details']],
     body: pdEvents.map(e => {
       const animal = animals.find(a => a.id === e.animalId);
       const isPreg = e.pregnancyResult === 'Pregnant' || e.success === true;
+      const pregDaysDisplay = (isPreg && animal?.pregnancyDays) ? `P-${animal.pregnancyDays}d` : '-';
       return [
         e.date,
         animal?.tag || 'Unk',
         animal?.breed || '-',
         animal?.herd || '-',
+        pregDaysDisplay,
         isPreg ? 'Pregnant (🤰)' : 'Open (❌)',
         e.details || '-'
       ];
