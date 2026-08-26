@@ -155,6 +155,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, on
 import { AuthScreen } from './components/AuthScreen';
 import { WhatsAppFooter } from './components/WhatsAppFooter';
 import { authService, AuthUser } from './services/authService';
+import { AGROVET_LOGO_BASE64 } from './utils/logoBase64';
 
 const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any) => (
   <div
@@ -184,7 +185,9 @@ const FormModal = ({ title, isOpen, onClose, children }: any) => {
   return (
     <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-md">
       <div className="bg-white w-full max-w-lg rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in duration-200 flex flex-col max-h-[92vh] sm:max-h-[85vh]">
-        <div className="px-5 sm:px-8 py-4 sm:py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
+        {/* Mobile Drag Indicator */}
+        <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 sm:hidden" />
+        <div className="px-5 sm:px-8 py-3.5 sm:py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
           <h3 className="text-lg sm:text-xl font-black text-slate-800 truncate pr-2">{title}</h3>
           <button onClick={onClose} className="p-2 sm:p-3 hover:bg-slate-200 rounded-xl sm:rounded-2xl transition-all">
             <X className="w-5 h-5 sm:w-6 sm:h-6 text-slate-500" />
@@ -400,6 +403,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dashboardChartType, setDashboardChartType] = useState<'repro' | 'health' | 'conception'>('repro');
   const [isMobileQuickActionsOpen, setIsMobileQuickActionsOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
 
   // Medicine Inventory & Usage states
   const [healthSubTab, setHealthSubTab] = useState<'treatments' | 'inventory' | 'reports'>('treatments');
@@ -2125,7 +2129,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-inter p-6 text-center">
         <img
-          src="/agrovet-logo.png"
+          src={AGROVET_LOGO_BASE64}
           alt="AgroVet Pro"
           className="w-20 h-20 rounded-3xl object-cover shadow-2xl mb-6 border border-slate-200 animate-pulse"
           referrerPolicy="no-referrer"
@@ -2148,7 +2152,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         <div className="h-full flex flex-col p-8">
           <div className="flex items-center gap-3.5 mb-10 px-1">
             <img
-              src="/agrovet-logo.png"
+              src={AGROVET_LOGO_BASE64}
               alt="AgroVet Pro Logo"
               className="w-13 h-13 rounded-2xl object-cover shadow-lg border border-slate-100 shrink-0"
               referrerPolicy="no-referrer"
@@ -2230,162 +2234,254 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       {/* Main Content Area */}
       <main className={`flex-1 min-w-0 flex flex-col relative overflow-hidden ${isSimulated ? 'h-full' : 'h-screen'}`}>
         {/* Universal Header */}
-        <header className="bg-white/85 backdrop-blur-xl sticky top-0 z-[90] border-b border-slate-100 px-6 md:px-10 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(true)} className={`p-2.5 hover:bg-slate-100 rounded-2xl transition-all ${isDesktop ? 'hidden' : 'block'}`}>
-              <Menu className="w-6 h-6 text-slate-600" />
-            </button>
-            <div className="flex items-center gap-3">
-              <img
-                src="/agrovet-logo.png"
-                alt="AgroVet Pro"
-                className="w-10 h-10 rounded-xl object-cover shadow-sm border border-slate-100 shrink-0"
-                referrerPolicy="no-referrer"
-              />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-black text-slate-800 tracking-tight leading-none capitalize">
-                    {view.replace('-', ' ')}
-                  </h2>
-                  <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 uppercase hidden sm:inline-block">
-                    AgroVet Pro
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 hidden sm:block">
-                  Dairy &amp; Cattle Farm Management &bull; Asad Mehmood
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-6 flex-1 justify-end">
-            <div className="relative max-w-md w-full" ref={searchRef}>
-              <Search className={`w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${isSearchFocused ? 'text-blue-600' : 'text-slate-400'}`} />
-              <input
-                type="text"
-                placeholder="Global search (Tag, Status, Herd)..."
-                className="w-full pl-12 pr-6 py-3.5 bg-slate-50 border-none rounded-[1.5rem] text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-600/20 focus:bg-white transition-all shadow-sm"
-                value={searchTerm}
-                onFocus={() => setIsSearchFocused(true)}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {/* Quick Search Dropdown */}
-              {isSearchFocused && searchTerm.length > 0 && (
-                <div className="absolute top-full mt-3 left-0 right-0 bg-white border border-slate-100 rounded-[2rem] shadow-2xl p-4 animate-in slide-in-from-top-2 duration-300 max-h-[400px] overflow-y-auto">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-3">Quick Results ({filteredAnimals.length})</p>
-                  <div className="space-y-2">
-                    {filteredAnimals.length > 0 ? filteredAnimals.map(a => (
-                      <button
-                        key={a.id}
-                        onClick={() => { setSelectedAnimal(a); setIsSearchFocused(false); }}
-                        className="w-full flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 transition-all text-left group"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${getStatusColor(a.status)}`}>
-                            {a.tag.slice(-2)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-black text-slate-800 group-hover:text-blue-600 flex items-center gap-2">
-                              <span>{a.tag}</span>
-                              {a.pregnancyDays !== undefined && a.pregnancyDays > 0 && (
-                                <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                  P-{a.pregnancyDays}d
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed} • {a.herd}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter border ${getStatusColor(a.status)}`}>{a.status}</span>
-                          <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
-                        </div>
-                      </button>
-                    )) : (
-                      <p className="text-center py-6 text-sm text-slate-400 font-bold italic">No matches found.</p>
-                    )}
+        <header className="bg-white/90 backdrop-blur-xl sticky top-0 z-[90] border-b border-slate-100 px-4 sm:px-6 md:px-10 py-3 sm:py-4 flex items-center justify-between">
+          {!isMobileSearchOpen ? (
+            <>
+              <div className="flex items-center gap-2.5 sm:gap-4">
+                <button onClick={() => setIsSidebarOpen(true)} className={`p-2 sm:p-2.5 hover:bg-slate-100 rounded-xl sm:rounded-2xl transition-all ${isDesktop ? 'hidden' : 'block'}`} title="Open Menu">
+                  <Menu className="w-5 h-5 sm:w-6 sm:h-6 text-slate-600" />
+                </button>
+                <div className="flex items-center gap-2.5 sm:gap-3">
+                  <img
+                    src={AGROVET_LOGO_BASE64}
+                    alt="AgroVet Pro"
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover shadow-sm border border-slate-100 shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-xl font-black text-slate-800 tracking-tight leading-none capitalize truncate max-w-[130px] sm:max-w-none">
+                        {view.replace('-', ' ')}
+                      </h2>
+                      <span className="text-[9px] sm:text-[10px] font-black bg-emerald-50 text-emerald-700 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-200 uppercase hidden sm:inline-block">
+                        AgroVet Pro
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 hidden sm:block">
+                      Dairy &amp; Cattle Farm Management &bull; Asad Mehmood
+                    </p>
                   </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-6 flex-1 justify-end">
+                {/* Desktop Search */}
+                <div className="relative max-w-md w-full hidden md:block" ref={searchRef}>
+                  <Search className={`w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${isSearchFocused ? 'text-blue-600' : 'text-slate-400'}`} />
+                  <input
+                    type="text"
+                    placeholder="Global search (Tag, Status, Herd)..."
+                    className="w-full pl-12 pr-6 py-3.5 bg-slate-50 border-none rounded-[1.5rem] text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-600/20 focus:bg-white transition-all shadow-sm"
+                    value={searchTerm}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  {/* Quick Search Dropdown */}
+                  {isSearchFocused && searchTerm.length > 0 && (
+                    <div className="absolute top-full mt-3 left-0 right-0 bg-white border border-slate-100 rounded-[2rem] shadow-2xl p-4 animate-in slide-in-from-top-2 duration-300 max-h-[400px] overflow-y-auto">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-3">Quick Results ({filteredAnimals.length})</p>
+                      <div className="space-y-2">
+                        {filteredAnimals.length > 0 ? filteredAnimals.map(a => (
+                          <button
+                            key={a.id}
+                            onClick={() => { setSelectedAnimal(a); setIsSearchFocused(false); }}
+                            className="w-full flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 transition-all text-left group"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${getStatusColor(a.status)}`}>
+                                {a.tag.slice(-2)}
+                              </div>
+                              <div>
+                                <p className="text-sm font-black text-slate-800 group-hover:text-blue-600 flex items-center gap-2">
+                                  <span>{a.tag}</span>
+                                  {a.pregnancyDays !== undefined && a.pregnancyDays > 0 && (
+                                    <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                      P-{a.pregnancyDays}d
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed} • {a.herd}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter border ${getStatusColor(a.status)}`}>{a.status}</span>
+                              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
+                            </div>
+                          </button>
+                        )) : (
+                          <p className="text-center py-6 text-sm text-slate-400 font-bold italic">No matches found.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Search Button */}
+                <button
+                  onClick={() => setIsMobileSearchOpen(true)}
+                  className="md:hidden p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+                  title="Search animals"
+                >
+                  <Search className="w-5 h-5" />
+                </button>
+
+                <button onClick={() => setIsAlertPanelOpen(true)} className="relative p-2.5 sm:p-3.5 text-slate-500 hover:bg-slate-100 rounded-xl sm:rounded-2xl transition-all group">
+                  <Bell className="w-5 h-5 sm:w-6 sm:h-6 group-hover:scale-110 transition-transform" />
+                  {alerts.length > 0 && <span className="absolute top-2 right-2 sm:top-3 sm:right-3 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-rose-500 rounded-full border-2 border-white shadow-sm shadow-rose-200 animate-pulse"></span>}
+                </button>
+              </div>
+            </>
+          ) : (
+            /* Mobile Full Width Expandable Search Bar */
+            <div className="w-full flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-600" />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Search tag, breed, herd, status..."
+                  className="w-full pl-10 pr-10 py-2.5 bg-slate-100 border-none rounded-xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => { setIsMobileSearchOpen(false); setSearchTerm(''); }}
+                className="px-3 py-2 text-xs font-black text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all uppercase shrink-0"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </header>
+
+        {/* Mobile Search Dropdown Overlay */}
+        {isMobileSearchOpen && searchTerm.trim().length > 0 && (
+          <div className="md:hidden fixed top-16 inset-x-0 bottom-0 bg-slate-900/60 backdrop-blur-sm z-[95] p-4 animate-in fade-in duration-200 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl p-4 max-h-[80vh] overflow-y-auto space-y-2">
+              <div className="flex items-center justify-between px-2 pb-2 border-b border-slate-100">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Found ({filteredAnimals.length}) Matches
+                </span>
+                <button
+                  onClick={() => { setIsMobileSearchOpen(false); setSearchTerm(''); }}
+                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                >
+                  Close
+                </button>
+              </div>
+              {filteredAnimals.length > 0 ? filteredAnimals.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => { setSelectedAnimal(a); setIsMobileSearchOpen(false); }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-all text-left border border-slate-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-xs ${getStatusColor(a.status)}`}>
+                      {a.tag.slice(-2)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-800 flex items-center gap-1.5">
+                        <span>{a.tag}</span>
+                        {a.pregnancyDays !== undefined && a.pregnancyDays > 0 && (
+                          <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                            P-{a.pregnancyDays}d
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed} • {a.herd}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter border ${getStatusColor(a.status)}`}>{a.status}</span>
+                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                  </div>
+                </button>
+              )) : (
+                <div className="text-center py-8 text-slate-400 font-bold text-xs">
+                  No animals found matching "{searchTerm}"
                 </div>
               )}
             </div>
-            <button onClick={() => setIsAlertPanelOpen(true)} className="relative p-3.5 text-slate-500 hover:bg-slate-100 rounded-2xl transition-all group">
-              <Bell className="w-6 h-6 group-hover:scale-110 transition-transform" />
-              {alerts.length > 0 && <span className="absolute top-3 right-3 w-3 h-3 bg-rose-500 rounded-full border-[3px] border-white shadow-sm shadow-rose-200 animate-pulse"></span>}
-            </button>
           </div>
-        </header>
+        )}
 
         <div className={`flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth ${isDesktop ? 'pb-10' : 'pb-32'}`}>
           {view === 'dashboard' && (
             <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-20">
               {/* Dashboard Hero Command & Quick Actions */}
-              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[3.5rem] p-8 md:p-10 text-white relative overflow-hidden shadow-2xl">
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[2rem] sm:rounded-[3.5rem] p-5 sm:p-8 md:p-10 text-white relative overflow-hidden shadow-2xl">
                 {/* Glowing design accents */}
                 <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
                 <div className="absolute bottom-0 left-1/3 w-60 h-60 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
 
-                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-8">
-                  <div className="flex items-start sm:items-center gap-5">
+                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6 sm:gap-8">
+                  <div className="flex items-start sm:items-center gap-3.5 sm:gap-5">
                     <img
-                      src="/agrovet-logo.png"
+                      src={AGROVET_LOGO_BASE64}
                       alt="AgroVet Pro"
-                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl object-cover shadow-2xl border border-white/20 shrink-0"
+                      className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl object-cover shadow-2xl border border-white/20 shrink-0"
                       referrerPolicy="no-referrer"
                     />
-                    <div className="space-y-2">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 rounded-full border border-emerald-400/30 backdrop-blur-sm">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300">AgroVet Pro &bull; Operational</span>
+                    <div className="space-y-1.5 sm:space-y-2">
+                      <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-0.5 sm:py-1 bg-emerald-500/20 rounded-full border border-emerald-400/30 backdrop-blur-sm">
+                        <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-emerald-300">AgroVet Pro &bull; Operational</span>
                       </div>
-                      <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-none text-white">
+                      <h2 className="text-xl sm:text-3xl md:text-4xl font-black tracking-tight leading-none text-white">
                         Farm Operations Command
                       </h2>
-                      <p className="text-xs text-slate-300 font-bold max-w-xl leading-relaxed">
+                      <p className="text-[11px] sm:text-xs text-slate-300 font-bold max-w-xl leading-relaxed">
                         Developed by Asad Mehmood &bull; Real-time reproductive diagnostics, automated synchronization &amp; health management.
                       </p>
                     </div>
                   </div>
 
                   {/* Ribbon Quick Actions */}
-                  <div className="flex flex-wrap gap-4">
+                  <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2.5 sm:gap-4">
                     <button
                       onClick={() => setIsAnimalFormOpen(true)}
-                      className="flex items-center gap-3 px-6 py-4 bg-white text-slate-900 hover:bg-slate-50 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-white/5 group"
+                      className="flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-white text-slate-900 hover:bg-slate-50 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-white/5 active:scale-95 group"
                     >
-                      <div className="p-2 bg-slate-100 text-slate-800 rounded-xl group-hover:scale-110 transition-transform">
-                        <Plus className="w-4 h-4" />
+                      <div className="p-1.5 sm:p-2 bg-slate-100 text-slate-800 rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                        <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
-                      <span>Add Animal</span>
+                      <span className="truncate">Add Animal</span>
                     </button>
 
                     <button
                       onClick={() => setIsReproFormOpen(true)}
-                      className="flex items-center gap-3 px-6 py-4 bg-indigo-600 text-white hover:bg-indigo-700 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 group"
+                      className="flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-indigo-600/20 active:scale-95 group"
                     >
-                      <div className="p-2 bg-indigo-500 text-white rounded-xl group-hover:scale-110 transition-transform">
-                        <CalendarIcon className="w-4 h-4" />
+                      <div className="p-1.5 sm:p-2 bg-indigo-500 text-white rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                        <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
-                      <span>Log Repro</span>
+                      <span className="truncate">Log Repro</span>
                     </button>
 
                     <button
                       onClick={() => setIsHealthFormOpen(true)}
-                      className="flex items-center gap-3 px-6 py-4 bg-rose-600 text-white hover:bg-rose-700 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-rose-600/20 group"
+                      className="flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-rose-600 text-white hover:bg-rose-700 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-rose-600/20 active:scale-95 group"
                     >
-                      <div className="p-2 bg-rose-500 text-white rounded-xl group-hover:scale-110 transition-transform">
-                        <Stethoscope className="w-4 h-4" />
+                      <div className="p-1.5 sm:p-2 bg-rose-500 text-white rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                        <Stethoscope className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
-                      <span>Clinical Entry</span>
+                      <span className="truncate">Clinical</span>
                     </button>
 
                     <button
                       onClick={() => setIsNewPdFormOpen(true)}
-                      className="flex items-center gap-3 px-6 py-4 bg-emerald-600 text-white hover:bg-emerald-700 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-600/20 group"
+                      className="flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-emerald-600/20 active:scale-95 group"
                     >
-                      <div className="p-2 bg-emerald-500 text-white rounded-xl group-hover:scale-110 transition-transform">
-                        <CheckCircle2 className="w-4 h-4" />
+                      <div className="p-1.5 sm:p-2 bg-emerald-500 text-white rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                        <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
-                      <span>Preg Exam</span>
+                      <span className="truncate">Preg Exam</span>
                     </button>
                   </div>
                 </div>
@@ -5736,7 +5832,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div className="flex items-center gap-5">
                   <img
-                    src="/agrovet-logo.png"
+                    src={AGROVET_LOGO_BASE64}
                     alt="AgroVet Pro"
                     className="w-16 h-16 rounded-2xl object-cover shadow-xl border border-slate-100 shrink-0"
                     referrerPolicy="no-referrer"
@@ -6295,7 +6391,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 rounded-[3rem] text-white shadow-xl border border-slate-700/50 relative overflow-hidden">
                   <div className="flex flex-col sm:flex-row items-center gap-6">
                     <img
-                      src="/agrovet-logo.png"
+                      src={AGROVET_LOGO_BASE64}
                       alt="AgroVet Pro"
                       className="w-20 h-20 rounded-3xl object-cover shadow-2xl border border-white/20 shrink-0"
                       referrerPolicy="no-referrer"
@@ -8715,11 +8811,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
       {/* Mobile Bottom Navigation Dock */}
       {!isDesktop && (
-        <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-xl border-t border-slate-200/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-4px_20px_rgba(0,0,0,0.06)] pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+        <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-xl border-t border-slate-200/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-4px_25px_rgba(0,0,0,0.07)] pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
           <button
             onClick={() => { setView('dashboard'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
-              view === 'dashboard' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
+              view === 'dashboard' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
             }`}
           >
             <LayoutDashboard className={`w-5 h-5 mb-0.5 ${view === 'dashboard' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
@@ -8728,19 +8824,19 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
           <button
             onClick={() => { setView('animals'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
-              view === 'animals' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
+              view === 'animals' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
             }`}
           >
             <Users className={`w-5 h-5 mb-0.5 ${view === 'animals' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
             <span className="text-[10px] tracking-tight">Herd</span>
           </button>
 
-          {/* Center Quick Action FAB */}
-          <div className="flex-1 flex justify-center -mt-6">
+          {/* Center Quick Action FAB with pulse and glow */}
+          <div className="flex-1 flex justify-center -mt-7">
             <button
               onClick={() => setIsMobileQuickActionsOpen(true)}
-              className="w-13 h-13 rounded-full bg-gradient-to-tr from-blue-700 to-indigo-600 text-white shadow-xl shadow-blue-500/40 flex items-center justify-center active:scale-95 transition-transform border-4 border-white"
+              className="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-700 via-indigo-600 to-blue-500 text-white shadow-xl shadow-blue-500/40 flex items-center justify-center active:scale-90 transition-transform border-4 border-white ring-2 ring-blue-100"
               title="Quick Actions"
             >
               <Plus className="w-6 h-6 stroke-[3]" />
@@ -8749,8 +8845,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
           <button
             onClick={() => { setView('repro'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
-              view === 'repro' || view === 'pd-check' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
+              view === 'repro' || view === 'pd-check' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
             }`}
           >
             <CalendarRange className={`w-5 h-5 mb-0.5 ${view === 'repro' || view === 'pd-check' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
@@ -8759,8 +8855,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
           <button
             onClick={() => { setView('health'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all ${
-              view === 'health' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold'
+            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
+              view === 'health' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
             }`}
           >
             <Stethoscope className={`w-5 h-5 mb-0.5 ${view === 'health' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
@@ -8776,96 +8872,122 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           onClick={() => setIsMobileQuickActionsOpen(false)}
         >
           <div 
-            className="bg-white w-full rounded-t-[2.5rem] shadow-2xl p-6 space-y-5 animate-in slide-in-from-bottom duration-300 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+            className="bg-white w-full max-h-[85vh] overflow-y-auto rounded-t-[2.5rem] shadow-2xl p-5 sm:p-6 space-y-4 animate-in slide-in-from-bottom duration-300 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
             onClick={e => e.stopPropagation()}
           >
             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto" />
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-slate-800 tracking-tight">⚡ Quick Field Actions</h3>
-                <p className="text-[11px] text-slate-400 font-bold">Select an operation to record immediately</p>
+                <h3 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">⚡ Quick Field Actions</h3>
+                <p className="text-[11px] text-slate-400 font-bold">Tap an operation to launch instantly</p>
               </div>
-              <button onClick={() => setIsMobileQuickActionsOpen(false)} className="p-2 bg-slate-100 rounded-xl text-slate-500">
+              <button onClick={() => setIsMobileQuickActionsOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-all">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
               <button
                 onClick={() => { setIsMobileQuickActionsOpen(false); setEditingAnimalId(null); setNewAnimal({ sex: 'Female', breed: 'Holstein', herd: 'Main Herd' }); setIsAnimalFormOpen(true); }}
-                className="p-4 bg-blue-50/70 hover:bg-blue-100 rounded-2xl border border-blue-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+                className="p-3.5 bg-blue-50/70 hover:bg-blue-100/80 rounded-2xl border border-blue-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
               >
-                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md shadow-blue-200">
-                  <Plus className="w-5 h-5" />
+                <div className="p-2 bg-blue-600 text-white rounded-xl shadow-md shadow-blue-200">
+                  <Plus className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800">Add Cow</p>
-                  <p className="text-[10px] text-slate-400 font-semibold">New tag registration</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">New tag registration</p>
                 </div>
               </button>
 
               <button
                 onClick={() => { setIsMobileQuickActionsOpen(false); setEditingReproId(null); setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0] }); setReproAnimalSearch(''); setIsReproFormOpen(true); }}
-                className="p-4 bg-indigo-50/70 hover:bg-indigo-100 rounded-2xl border border-indigo-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+                className="p-3.5 bg-indigo-50/70 hover:bg-indigo-100/80 rounded-2xl border border-indigo-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
               >
-                <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">
-                  <CalendarRange className="w-5 h-5" />
+                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">
+                  <CalendarRange className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800">Log Repro</p>
-                  <p className="text-[10px] text-slate-400 font-semibold">Heat or insemination</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Heat or insemination</p>
                 </div>
               </button>
 
               <button
                 onClick={() => { setIsMobileQuickActionsOpen(false); setEditingHealthId(null); setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0], treatments: [{ name: '', dose: '' }] }); setHealthAnimalSearch(''); setIsHealthFormOpen(true); }}
-                className="p-4 bg-rose-50/70 hover:bg-rose-100 rounded-2xl border border-rose-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+                className="p-3.5 bg-rose-50/70 hover:bg-rose-100/80 rounded-2xl border border-rose-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
               >
-                <div className="p-2.5 bg-rose-600 text-white rounded-xl shadow-md shadow-rose-200">
-                  <Stethoscope className="w-5 h-5" />
+                <div className="p-2 bg-rose-600 text-white rounded-xl shadow-md shadow-rose-200">
+                  <Stethoscope className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800">Clinical Entry</p>
-                  <p className="text-[10px] text-slate-400 font-semibold">Treatments & sickness</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Treatments & illness</p>
                 </div>
               </button>
 
               <button
                 onClick={() => { setIsMobileQuickActionsOpen(false); setIsNewPdFormOpen(true); }}
-                className="p-4 bg-emerald-50/70 hover:bg-emerald-100 rounded-2xl border border-emerald-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+                className="p-3.5 bg-emerald-50/70 hover:bg-emerald-100/80 rounded-2xl border border-emerald-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
               >
-                <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-md shadow-emerald-200">
-                  <CheckCircle2 className="w-5 h-5" />
+                <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-md shadow-emerald-200">
+                  <CheckCircle2 className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800">Preg Exam (PD)</p>
-                  <p className="text-[10px] text-slate-400 font-semibold">Single diagnosis</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setIsMedicineFormOpen(true); }}
-                className="p-4 bg-purple-50/70 hover:bg-purple-100 rounded-2xl border border-purple-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2.5 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-200">
-                  <Pill className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">New Medicine</p>
-                  <p className="text-[10px] text-slate-400 font-semibold">Add / stock medicine</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Single diagnosis</p>
                 </div>
               </button>
 
               <button
                 onClick={() => { setIsMobileQuickActionsOpen(false); setIsMultiPdFormOpen(true); }}
-                className="p-4 bg-amber-50/70 hover:bg-amber-100 rounded-2xl border border-amber-100 flex flex-col items-start gap-2 text-left active:scale-95 transition-transform"
+                className="p-3.5 bg-amber-50/70 hover:bg-amber-100/80 rounded-2xl border border-amber-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
               >
-                <div className="p-2.5 bg-amber-600 text-white rounded-xl shadow-md shadow-amber-200">
-                  <FileText className="w-5 h-5" />
+                <div className="p-2 bg-amber-600 text-white rounded-xl shadow-md shadow-amber-200">
+                  <FileText className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800">Bulk PD Entry</p>
-                  <p className="text-[10px] text-slate-400 font-semibold">Multi-animal list</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Multi-animal batch</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setIsMedicineFormOpen(true); }}
+                className="p-3.5 bg-purple-50/70 hover:bg-purple-100/80 rounded-2xl border border-purple-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-200">
+                  <Pill className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">New Medicine</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Stock / bottle entry</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setIsEnrollmentFormOpen(true); }}
+                className="p-3.5 bg-cyan-50/70 hover:bg-cyan-100/80 rounded-2xl border border-cyan-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2 bg-cyan-600 text-white rounded-xl shadow-md shadow-cyan-200">
+                  <FlaskConical className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Sync Protocols</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Ovsynch &amp; Presynch</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { setIsMobileQuickActionsOpen(false); setMoveToPenAnimalId(null); setIsMoveToPenModalOpen(true); }}
+                className="p-3.5 bg-teal-50/70 hover:bg-teal-100/80 rounded-2xl border border-teal-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
+              >
+                <div className="p-2 bg-teal-600 text-white rounded-xl shadow-md shadow-teal-200">
+                  <ArrowRightLeft className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Move to Pen</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Relocate cow / herd</p>
                 </div>
               </button>
             </div>
@@ -8897,7 +9019,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans p-6 text-center">
         <img
-          src="/agrovet-logo.png"
+          src={AGROVET_LOGO_BASE64}
           alt="AgroVet Pro"
           className="w-24 h-24 rounded-3xl object-cover shadow-2xl mb-6 border border-slate-200 animate-pulse"
           referrerPolicy="no-referrer"

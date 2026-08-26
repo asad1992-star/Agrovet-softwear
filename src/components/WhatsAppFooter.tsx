@@ -1,5 +1,6 @@
 import React from 'react';
 import { MessageCircle, Phone, ExternalLink, ShieldCheck, HeartPulse } from 'lucide-react';
+import { AGROVET_LOGO_BASE64 } from '../utils/logoBase64';
 
 interface WhatsAppFooterProps {
   className?: string;
@@ -36,7 +37,7 @@ export const WhatsAppFooter: React.FC<WhatsAppFooterProps> = ({ className = '', 
         {/* Branding & Attribution */}
         <div className="flex items-center gap-3.5">
           <img
-            src="/agrovet-logo.png"
+            src={AGROVET_LOGO_BASE64}
             alt="AgroVet Pro"
             className="w-11 h-11 rounded-xl object-cover shadow-md border border-slate-100 shrink-0"
             referrerPolicy="no-referrer"

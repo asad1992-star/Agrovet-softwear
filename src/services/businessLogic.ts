@@ -262,16 +262,17 @@ export const computeAnimalStatus = (
         }
         return { status: AnimalStatus.PREGNANT, expectedCalving, pregnancyDays, serviceDate };
       }
-      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
+      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE, pregnancyDays: 0, expectedCalving: undefined };
 
     case ReproEventType.CALVING:
-      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
+      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE, pregnancyDays: 0, expectedCalving: undefined };
 
     case ReproEventType.DRY_OFF:
       return { status: AnimalStatus.DRY };
 
     case ReproEventType.ABORTION:
-      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
+      // Abortion resets cow to Open (Active) immediately with 0 pregnancy days and cleared calving date
+      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE, pregnancyDays: 0, expectedCalving: undefined };
 
     default:
       return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
@@ -438,7 +439,7 @@ export const validations = {
 
     if (event.type === ReproEventType.INSEMINATION) {
       if (currentStatus !== AnimalStatus.ACTIVE && currentStatus !== AnimalStatus.YOUNG_STOCK) {
-         throw new Error(`Cannot Inseminate: Cow is currently ${currentStatus}. Current status must be Active/Heat or Young Stock. Correct flow: Heat → Insemination → Pregnancy Check → Calving.`);
+         throw new Error(`Cannot Inseminate: Cow is currently ${currentStatus}. Current status must be Open/Active or Young Stock. (Tip: If cow aborted or had a negative check, ensure the event is logged to return her to Open).`);
       }
     }
     if (event.type === ReproEventType.PREGNANCY_CHECK) {

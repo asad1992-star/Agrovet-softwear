@@ -19,6 +19,7 @@ import {
   HeartPulse
 } from 'lucide-react';
 import { authService, AuthUser, validatePasswordCriteria } from '../services/authService';
+import { AGROVET_LOGO_BASE64 } from '../utils/logoBase64';
 
 interface AuthScreenProps {
   onLoginSuccess: (user: AuthUser) => void;
@@ -262,7 +263,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           {/* Header Branding */}
           <div className="flex items-center gap-4 mb-6">
             <img
-              src="/agrovet-logo.png"
+              src={AGROVET_LOGO_BASE64}
               alt="AgroVet Pro Logo"
               className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover shadow-xl border border-slate-100 shrink-0"
               referrerPolicy="no-referrer"
