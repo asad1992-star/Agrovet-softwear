@@ -292,7 +292,9 @@ export const generateAlerts = (
   const today = dateUtils.today();
 
   // Pen Movement Alerts (both manual and automatic)
-  penMovements.slice(0, 50).forEach(movement => {
+  penMovements
+    .filter(m => !(m.fromPen.toLowerCase().includes('fresh') && m.toPen.toLowerCase().includes('close') && m.isAutomatic))
+    .slice(0, 50).forEach(movement => {
     alerts.push({
       id: `alert-movement-${movement.id}`,
       type: 'System',

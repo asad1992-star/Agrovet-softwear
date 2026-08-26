@@ -153,15 +153,24 @@ export const useFarm = (currentUserEmail?: string) => {
     const animalsToShift: { id: string; tag: string; from: string; daysLeft: number }[] = [];
 
     animals.forEach(animal => {
-      const animalRepro = reproEvents.filter(e => e.animalId === animal.id).sort((a, b) => b.date.localeCompare(a.date));
-      const lastInsem = animalRepro.find(e => e.type === ReproEventType.INSEMINATION);
-      const lastPd = animalRepro.find(e => e.type === ReproEventType.PREGNANCY_CHECK && (e.pregnancyResult === 'Pregnant' || e.success === true));
+      // 1. NEVER shift to Close-up if animal is in Fresh group, or is Calf/YoungStock!
+      if (animal.herd.toLowerCase().includes('fresh') || isCalfAnimal(animal) || isYoungStockAnimal(animal)) {
+        return;
+      }
+
+      // 2. Compute current status from full event history
+      const statusInfo = computeAnimalStatus(animal, reproEvents, healthEvents, enrollments, settings);
       
-      if (lastPd && lastInsem) {
-        const expectedCalving = dateUtils.addDays(lastInsem.date, settings.gestationDays);
-        const daysToCalving = dateUtils.diffDays(expectedCalving, today);
-        
-        if (daysToCalving <= settings.closeupDays && daysToCalving > -30) {
+      // Animal MUST be currently Pregnant or Dry (not Open/Active, not Calved, not Inseminated awaiting check, not In Protocol)
+      if (statusInfo.status !== AnimalStatus.PREGNANT && statusInfo.status !== AnimalStatus.DRY && statusInfo.status !== AnimalStatus.CLOSEUP) {
+        return;
+      }
+
+      // 3. Animal must have a valid expected calving date in the future (within closeupDays and not expired/calved)
+      if (statusInfo.expectedCalving) {
+        const daysToCalving = dateUtils.diffDays(statusInfo.expectedCalving, today);
+        // Only shift if expected calving is approaching (e.g. within closeupDays and not over a week past due)
+        if (daysToCalving <= settings.closeupDays && daysToCalving >= -7) {
           if (animal.herd !== closeupPen && !animal.herd.toLowerCase().includes('close')) {
             animalsToShift.push({ id: animal.id, tag: animal.tag, from: animal.herd, daysLeft: daysToCalving });
           }
@@ -184,7 +193,7 @@ export const useFarm = (currentUserEmail?: string) => {
       const shiftIds = animalsToShift.map(i => i.id);
       setAnimals(prev => prev.map(a => shiftIds.includes(a.id) ? { ...a, herd: closeupPen } : a));
     }
-  }, [reproEvents, settings.closeupDays, settings.gestationDays, settings.customGroups, loading, recordPenMovement]);
+  }, [reproEvents, healthEvents, enrollments, settings, loading, recordPenMovement]);
 
   // Derived Data
   const animalsWithStatus = useMemo(() => {
@@ -312,7 +321,7 @@ export const useFarm = (currentUserEmail?: string) => {
           }
         }
       } else if (e.type === ReproEventType.CALVING) {
-        // 2. If calved, automatically transfer to Fresh group
+        // 2. If calved, automatically transfer to Fresh group and reset current pregnancy counters (all history is preserved in reproEvents)
         const freshPen = findFreshPen(settings.customGroups);
         if (targetAnimal.herd !== freshPen) {
           recordPenMovement(
@@ -323,8 +332,23 @@ export const useFarm = (currentUserEmail?: string) => {
             'Calved (Auto-transferred to Fresh Pen)',
             true
           );
-          setAnimals(prev => prev.map(a => a.id === targetAnimal.id ? { ...a, herd: freshPen, isCalf: false } : a));
         }
+        setAnimals(prev => prev.map(a => a.id === targetAnimal.id ? { 
+          ...a, 
+          herd: freshPen, 
+          isCalf: false,
+          pregnancyDays: 0,
+          expectedCalving: undefined,
+          serviceDate: undefined
+        } : a));
+      } else if (e.type === ReproEventType.ABORTION) {
+        // 3. If aborted, reset active pregnancy counters
+        setAnimals(prev => prev.map(a => a.id === targetAnimal.id ? { 
+          ...a, 
+          pregnancyDays: 0,
+          expectedCalving: undefined,
+          serviceDate: undefined
+        } : a));
       } else if (e.type === ReproEventType.PREGNANCY_CHECK && (e.pregnancyResult === 'Pregnant' || e.success === true)) {
         // 3. If confirmed pregnant and in breeding pen, auto move to Pregnant pen
         const pregPen = findPregnantPen(settings.customGroups);
