@@ -1,3 +1,4 @@
+/* Agrovet Pro - Farm Reproduction & Health v2.1 */
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard,
@@ -8792,8 +8793,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               <p className="text-sm text-slate-600 font-semibold">Select the result of today's pregnancy examination:</p>
               <div className="grid grid-cols-2 gap-4">
                 <button
-                  type="button"
-                  onClick={() => setxœì[}n¹ÿOÁ‹µ´ÈH²Ç©×r`Ø^¬ÚqW*Z jHI¬g†Ó!eI«èz…¢@ÑôL{‚¡œ‡INœQ$€í!ùH>¾÷{_ÃÉmBGüùù˜úw?S1	dc÷6í•»Íå7ÈúçXˆÒîâ}ì¢„O"B‰·?Ğ€'„&Ş>t¦y>“4O#I4Â1ÈG‚IÆ#úv;XAİn­ØA¯Ñî`äÑ&8 Şa§ƒ$Io:†ò½Ë£bŒ	ŸzÁ(Ê÷;]t¬W–¨Ó¥ÒÖÌÍ–K;€ù=M‹{°Äò½- S‡ÈNDŒ£’àvô^ °Óÿşóßÿ9i«ñí'ÎòHzƒ ûwhÇ4ñ± J¦ş‹FŞ”ë;§¹àêÖ?i&Rr×H:ààHÎc`#ŞqŒóè<`ş]wÑh¢î)TŞ:1vŠb83XÊ°–pAk€VY(Ó#Ob¿şãïŸaob¡6ºá)É=h'mÂî­Nè+3¤U¬”ùÅp¢Ï‹Ö+aâõš¨c6†8tR5³ŞŠçŞAë•5YVşKh–á\’u.ş™Y‰Â	rû .ÅŸÃiğ›øÂ”tÏ\ÖçiE1	Bc‘€šúj4pÒn¡Z×ÄåCõ=&©~óCóûLÎ½†ùtõë,íÛîHL¶ÃEßS”*æSìØêªtM°ªìiÑş]€ûDg$dp6u0¤u…¾oçêX0¡È
+                xœì[}n¹ÿOÁ‹µ´ÈH²Ç©×r`Ø^¬ÚqW*Z jHI¬g†Ó!eI«èz…¢@ÑôL{‚¡œ‡INœQ$€í!ùH>¾÷{_Ã	BrÓîÎ`"%v¾AÖ?Ì¿ë.MÔ=E‚ÊÛ„"ùóó1õï~¦bÈÆnÖ+w›KÇ*~€…¸Á!í.ŞÇŞ!Jø$"”xû³ xBhâí£a@gú—çó 1ICáù4’4A#Lp$˜d<òp o±ƒÔívÑŠôíFi‚âv:HÒ™ô¦cØ ß»<*Æ˜ğ©Œò§|p¿ÓÙEÇz5`I:]*mÁÜl¹´èÑ˜ßÓä¸˜±K,ßÛ:uˆìDÄ8*	nGïÛ9ıï?ÿıŸ“¶ß~âL !¤7°‡&qLªdêß±häM°¾sš®nı“vŠÇH:ààè±0vŠb83XÊ°–pAk€VY(Ó#Ob¿şãïŸaob¡6ºá)É=h'mÂî­Nè+3¤U¬”ùÅp¢Ï‹Ö+aâõš¨c6†8tR5³ŞŠçŞAë•5YVşKh–á\’u.ş™Y‰Â	rû .ÅŸÃiğ›øÂ”tÏ\ÖçiE1	Bc‘€šúj4pÒn¡Z×ÄåCõ=&©~óCóûLÎ½†ùtõë,íÛîHL¶ÃEßS”*æSìØêªtM°ªìiÑş]€ûDg$dp6u0¤u…¾oçêX0¡È
 ¢ï¾C$ï¸À«Æj·ªOa3J‹ ^ıâ½İ?ì¼Kƒ‰Cş2’çySù Âğ~×é´À‰ƒzHÂc%æÄ‰áŸªûÂäTıSo8]…xæMaR‡·	ßåšSàPêĞ3Bà 8b¡ÚEèÎCõ—LR)y äŠ*Ä3ï•BëË<øÌ(¤•‘b­Ê€Ê)¥‘åÜ
 Í.G^åÖ;@õ	_Ù„2‰Ğ±*¬Û›'`B´¼öRŠ±w¸ƒÚ®xåˆK){ÎåÇvµÍ:•ğ+¥£İ ã“öøÀ¹pìŠÌúo.å 6‡jğ! ½uè>EÃ~ZgA–è×¿ı«:Jğüf€ÿ×èıCbUC°D|hJ.ÕÓ\,ß«©ç)™€³ÔÒØuùÜ“v¼¥Ü©ãBÖÕ@“
 Ã·äáA]”ÑˆÀ†¡ß$ï¯œ¶‰\íJØxQä€•dÁíâg¢êÒ"úóv w»öL–ë]
@@ -8805,4 +8805,4 @@ G÷9eN©ª1	J,0¡¨»Î5ÊhWæBr×õ:Ó²ç;ki -(ÏtH¿"vm$biäİEöPƒå$ ó§ò(‹ ‚8HÃ7%ù~İEX
 lÒ\`µñ™¯ıWoL©´ôp¢iRMa
 x%Ş*‰)a;–\9gXãáQwA*¼¬È )OÀª7üà˜V†y©,D5ÒB–gõ”æµ0.±¸³Àa½ê7‘cTÇH-Q©rœeeŞtõñÈ ‚¶I¶ŠDİªÃ$,>èÈèŠ¶IV|Ù‘‘íÊjÙË1ªh¡²Z¹òåŠ²u¶â¸…Ñ¯
 V4Ë²Á-Ñå4h/—¥¥AŸGBfBEİ<ºAĞH+b©‚ŸÅe¦Øek7m¯a~–ØÇÉˆÊœÚòîÏ©wmÂúÏ+â Ô‹&ÍhoéıR23n—hÖœ@åØ·ÊùÔóî¬"œlÖÕ&ukŸ–éP
-³€IÈÈQŒÑY„ƒ¹d¾°=jA\ĞÔùÔÊÍ®uÍDÛÃæ$İÅĞšöÿ‡šŸiœpˆ§!ü¤|©c\¦RdÍ«¸ÕD7tª	*¥+Ò'àãy…D½ë:Fzº7}h·®nz—×W7gı«77Õ	D;îí®Ê©K——*$½µoÊÒ”âĞC¾Bg1O$"tˆÕé¸Æ,:‹ã¾ù   ÿÿ w4G
+³€IÈÈQŒÑY„ƒ¹d¾°=jA\ĞÔùÔÊÍ®uÍDÛÃæ$İÅĞšöÿ‡šŸiœpˆ§!ü¤|©c\¦RdÍ«¸ÕD7tª	*¥+Ò'àãy…D½ë:Fzº7}h·®nz—×W7gı«77Õ	D;îí®Ê©K——*$½µoÊÒ”âĞC¾Bg1O$"tˆÕé¸Æ,:‹ã¾ù   ÿÿ ÷ËTË
