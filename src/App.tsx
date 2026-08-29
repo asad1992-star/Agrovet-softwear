@@ -100,6 +100,9 @@ import {
   Medicine,
   MedicinePurchase
 } from './types';
+import { PregnancyCheckModal } from './components/PregnancyCheckModal';
+import { DoseAdministrationModal } from './components/DoseAdministrationModal';
+import { CureEvaluationModal } from './components/CureEvaluationModal';
 import { MoveToPenModal } from './components/MoveToPenModal';
 import { MedicineHistoryModal } from './components/MedicineHistoryModal';
 import { QuickRestockModal } from './components/QuickRestockModal';
@@ -8777,32 +8780,41 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       )}
 
       {/* Pregnancy Check Modal */}
-      {isPregnancyCheckModalOpen && pregnancyCheckTarget && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-            <div className="px-8 py-6 border-b border-slate-100 bg-blue-50 flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-black text-slate-800">Pregnancy Check</h3>
-                <p className="text-xs text-blue-600 font-black uppercase tracking-widest mt-1">{pregnancyCheckTarget.tag}</p>
-              </div>
-              <button onClick={() => setIsPregnancyCheckModalOpen(false)} className="p-3 hover:bg-blue-100 rounded-2xl transition-all">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
-            <div className="p-8 space-y-6">
-              <p className="text-sm text-slate-600 font-semibold">Select the result of today's pregnancy examination:</p>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                xœì[}n¹ÿOÁ‹µ´ÈH²Ç©×r`Ø^¬ÚqW*Z jHI¬g†Ó!eI«èz…¢@ÑôL{‚¡œ‡INœQ$€í!ùH>¾÷{_Ã	BrÓîÎ`"%v¾AÖ?Ì¿ë.MÔ=E‚ÊÛ„"ùóó1õï~¦bÈÆnÖ+w›KÇ*~€…¸Á!í.ŞÇŞ!Jø$"”xû³ xBhâí£a@gú—çó 1ICáù4’4A#Lp$˜d<òp o±ƒÔívÑŠôíFi‚âv:HÒ™ô¦cØ ß»<*Æ˜ğ©Œò§|p¿ÓÙEÇz5`I:]*mÁÜl¹´èÑ˜ßÓä¸˜±K,ßÛ:uˆìDÄ8*	nGïÛ9ıï?ÿıŸ“¶ß~âL !¤7°‡&qLªdêß±häM°¾sš®nı“vŠÇH:ààè±0vŠb83XÊ°–pAk€VY(Ó#Ob¿şãïŸaob¡6ºá)É=h'mÂî­Nè+3¤U¬”ùÅp¢Ï‹Ö+aâõš¨c6†8tR5³ŞŠçŞAë•5YVşKh–á\’u.ş™Y‰Â	rû .ÅŸÃiğ›øÂ”tÏ\ÖçiE1	Bc‘€šúj4pÒn¡Z×ÄåCõ=&©~óCóûLÎ½†ùtõë,íÛîHL¶ÃEßS”*æSìØêªtM°ªìiÑş]€ûDg$dp6u0¤u…¾oçêX0¡È
-¢ï¾C$ï¸À«Æj·ªOa3J‹ ^ıâ½İ?ì¼Kƒ‰Cş2’çySù Âğ~×é´À‰ƒzHÂc%æÄ‰áŸªûÂäTıSo8]…xæMaR‡·	ßåšSàPêĞ3Bà 8b¡ÚEèÎCõ—LR)y äŠ*Ä3ï•BëË<øÌ(¤•‘b­Ê€Ê)¥‘åÜ
-Í.G^åÖ;@õ	_Ù„2‰Ğ±*¬Û›'`B´¼öRŠ±w¸ƒÚ®xåˆK){ÎåÇvµÍ:•ğ+¥£İ ã“öøÀ¹pìŠÌúo.å 6‡jğ! ½uè>EÃ~ZgA–è×¿ı«:Jğüf€ÿ×èıCbUC°D|hJ.ÕÓ\,ß«©ç)™€³ÔÒØuùÜ“v¼¥Ü©ãBÖÕ@“
-Ã·äáA]”ÑˆÀ†¡ß$ï¯œ¶‰\íJØxQä€•dÁíâg¢êÒ"úóv w»öL–ë]
-xHû|ê[ÙèzØqdõ¶CÊWwæ~Nq›òk«%á'l (¼¦„ùÚ¥ºagï9P+®1ø
-şÃbôáÚ=ç“æ¯¶İ]:7®ZQB±Á¥
-+ü•ÆZFrŒNQÇŠõJZUUÓÇY%É÷^û¨å«â¸ÑÇµæÏ#³ci¯ ÍÅŠfG×$wtŞ]À”e%~íC¢læäÂÍ~)Å†TÈH¥«9˜>œlE°÷R=¨s*×ø6k,›Ú9]–>JmáY³˜¨‰=­Ë4×FŒ•h!2-ˆ€b¢Ì ¡†¬È!‰sYk„¦ÜOB}µÂf6ä	’ „9hœ <‘’ uÌ¨bâK$Çà é_',¡zqy˜ğÒ±{ÀOæHHîßµ¬ÇöqkkÅÏY&>VøZ9>TğkÊÀUJ¥Äß0=Ò˜â@/¾®ÈóŠ«T-x ÊGtŠÔs£	9ÊUïMOªÄZ"˜lìöw›o;ïÖÕ˜NTÔ‘»òUh¾¬Ï˜?9å´sSİYzÙº%°R?£“À/T{OŠ.ïq0©­;‰QwúyÇ×º³–-ëN¬rƒ'Ruæ¼|tÍ)©sáóøéÔxDİ™JåqªÎ~'¢K%T]gêJÔ°¨R%úÅëBÃöË!ÿ¼Ìñ×ºğáu¡>Xf¨¬÷D¸ò?a±TÈçaPI!EU™-ˆ™’×Û~²k'ò{4 +Ì@ÂaWHxÁ0Ufì«i¶Y0–¡nxÌ>G\««–t"‚¾U*b(H0;evšGMáPÑÇ(a©_êbM T?{V¦q™s¢êŒSe•$N&“×1êŞĞ|ie2E‚]NmŠûÅÊ¥òÁê’Î¾m6²«ŞK`r¼]–t¢//ô/Ó„À„Ì³(¡—öR®Tbl÷Ï¡¡p1©îŠĞ´ºú×*¬½|»×‰gï¬³´_uVüÎiOÈqf›/Ÿv·ºKÌÀ›İ3¯«;
-Øê–³zÀlqkı[¡õ, ‰ì'G£€ÖV³õĞZ¸×OAl~˜¸ö 8pSş	UÎ5ˆõ9º¥Î
-G÷9eN©ª1	J,0¡¨»Î5ÊhWæBr×õ:Ó²ç;ki -(ÏtH¿"vm$biäİEöPƒå$ ó§ò(‹ ‚8HÃ7%ù~İEXe¡rÖ´®UŒv©«(ué‰«	í•©wÃ,¢è'&ô;2Ko"c+§ü‘'9mE{A6Z§ÃgÏêW\£K\¯v^ªšòì0£é®áßĞ^ä ¥|¶¡¦x’øc0n/[C€;kÄŠÅ¸•Ï»"úÓŸú­[Œì–ü8,_nå;ŒÕFãòû~ĞE¹İ’ü÷|J“sàR	p=7êE´9£‰>|¨îfŞ”Û-ÁCÚŠEéXì#¶o–6o>™ñèŒÛLs¹Á”ºşÄä¸§Şÿ1&mÍ©T¥òÕÙf¯Z 3@­ƒÆ÷‡	¸lõQ„Úu+ËËiMËÓëdCõ®³LğpÇY]ç6FšMİà?×Zl¶„ÉrÖ™+£,…-EÁE]‘m!û‚Ø!ü|¬^úÅÃÅoM€üó¹Ÿ¢€|ŠUd½†
-lÒ\`µñ™¯ıWoL©´ôp¢iRMa
-x%Ş*‰)a;–\9gXãáQwA*¼¬È )OÀª7üà˜V†y©,D5ÒB–gõ”æµ0.±¸³Àa½ê7‘cTÇH-Q©rœeeŞtõñÈ ‚¶I¶ŠDİªÃ$,>èÈèŠ¶IV|Ù‘‘íÊjÙË1ªh¡²Z¹òåŠ²u¶â¸…Ñ¯
-V4Ë²Á-Ñå4h/—¥¥AŸGBfBEİ<ºAĞH+b©‚ŸÅe¦Øek7m¯a~–ØÇÉˆÊœÚòîÏ©wmÂúÏ+â Ô‹&ÍhoéıR23n—hÖœ@åØ·ÊùÔóî¬"œlÖÕ&ukŸ–éP
-³€IÈÈQŒÑY„ƒ¹d¾°=jA\ĞÔùÔÊÍ®uÍDÛÃæ$İÅĞšöÿ‡šŸiœpˆ§!ü¤|©c\¦RdÍ«¸ÕD7tª	*¥+Ò'àãy…D½ë:Fzº7}h·®nz—×W7gı«77Õ	D;îí®Ê©K——*$½µoÊÒ”âĞC¾Bg1O$"tˆÕé¸Æ,:‹ã¾ù   ÿÿ ÷ËTË
+      <PregnancyCheckModal
+        isOpen={isPregnancyCheckModalOpen}
+        onClose={() => setIsPregnancyCheckModalOpen(false)}
+        targetAnimal={pregnancyCheckTarget}
+        result={pregnancyCheckResult}
+        onSelectResult={(res) => setPregnancyCheckResult(res)}
+        onSave={() => {
+          handlePregnancyCheck();
+          setIsPregnancyCheckModalOpen(false);
+        }}
+      />
+
+      {/* Dose Administration Modal */}
+      <DoseAdministrationModal
+        isOpen={isDoseModalOpen}
+        onClose={() => {
+          setIsDoseModalOpen(false);
+          setDoseModalData(null);
+        }}
+        data={doseModalData}
+        onConfirm={(healthEventId, doseDate) => {
+          handleAdministerDose(healthEventId, doseDate);
+          setIsDoseModalOpen(false);
+          setDoseModalData(null);
+        }}
+      />
+
+      {/* Cure Evaluation Modal */}
+      <CureEvaluationModal
+        isOpen={isCureModalOpen}
+     xœÜWMoÛ8½çW°—F.
+gÏmTÀˆS¬€ã­½ØCÑW¤-")ˆt²†êÿŞ!EJ¤>œdwkÀ ?ŞŸŞh†#„à7¹4®£Š?¡úµ?IU"o½ç÷%åÑç’Î>† ²Ä
+Güçâtj‡¶ã:õÑİ¦à·8?`¥©dç*»}¤\%ä=b†¹?¨TtÀ3ÃœäÔ™kè3FØ]}º°£úêºmZSWôîÊ!k&õöVÀf+zûE­×ëàQeR£ãQ'w&*6.Cû‘àl‹\pVà<!ıAB˜Œk;8…ÑVŒïaÓü]Æ™b8ßĞœ¦Šw^\}
+½g|ÇªBë&šŞ’1ì RÍ`v
+BF	K§èW&•¨Ã¸IKË!?‹Êa{Ñ³ »;Ã7o¦=‰%·™´kBã[ŸáD/Ï ¢ä¬ƒ0•‡*Í°Ôûíp¾c¹¢UTjŠåÜÙ%ÅqŒ¦3ĞõÜû3wB¦OŞÑ(kÎÃŠ	“Iş|®Äoâ‰V7ÀRxÇ-fèû÷şiª¢XšTsZ7ŸK¨‘ÒÕˆ³püÌ;|öß¤™àBÖ6r.a¼¥?™Ê6J¤”PrihºöŠö­ÃUíÀ& ‰Á³É÷û¥è•úÔeÃ†™güØ­éÒé^_8ûÖSes$I­é3õólÆZ!e»è‚á«ğBé—LÂ£Hú"í[ğˆønoZı ñzùæ¯ĞßÙş› 8½¬°«A†Ğ‰,1Ëh‘šúµÉ(Uƒ8\L1ˆPàNŞ>$Txx—$£VÔÎw ¸&=.š³
+êàÒ´aÍ2¨# —n´@ª½Y-¦‘R@[ ¡ò/â
+Ë‡±VSow]døæíÜ¤]ÌÃ/€cÛeX¤›¶x `Âº›Èâº…Hğqu(ş¢•Åµó¦„Òx”ÖÎ{Ş@-åÔ‹BÏ[{s9wí‚ŸıÒPø)¨ªÃhW¬¨kr“Q] "§å ‚©àRYQQìn7¸ô9‰°chÌıÙºğI±²¾gÃª±®èc‹-®öT9ô n„`(£‡\E——C`"Cè¤ È´4MG»®´7ôg	vÜcÒœyİc¯uñ™æ>ú1JsêÛdê¿»>ÓJ±œ)èÈÑ†ÂkŒçGÅR9¬¨-¸ÅLÕÔ	äó¥õŒá°Â:H\ïfÿ¿·æ-+÷iÿÆÁÏzŒ[Ât‹l}ÜĞŠ>@ïbñïŠf<Ş÷ êXB6ææºÙÂ|¬6·wÉj±MîW}b
+7§OHWìhE>ÙÜoT4a&Kx7¢Ëíåìë/ßÓÓX•j•~qm²mÊõazxèWèß¥¨"t‡¡$¢;Ìø¢,?^ü   ÿÿ ÇV9
