@@ -1,4 +1,4 @@
-/* Agrovet Pro - Farm Reproduction & Health v2.1 */
+ï»¿ï»¿ï»¿ï»¿/* Agrovet Pro - Farm Reproduction & Health v2.1 */
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard,
@@ -8809,12 +8809,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
       {/* Cure Evaluation Modal */}
       <CureEvaluationModal
-        isOpen={isCureModalOpen}
-     xœÜWMoÛ8½çW°—F.
-gÏmTÀˆS¬€ã­½ØCÑW¤-")ˆt²†êÿŞ!EJ¤>œdwkÀ ?ŞŸŞh†#„à7¹4®£Š?¡úµ?IU"o½ç÷%åÑç’Î>† ²Ä
-Güçâtj‡¶ã:õÑİ¦à·8?`¥©dç*»}¤\%ä=b†¹?¨TtÀ3ÃœäÔ™kè3FØ]}º°£úêºmZSWôîÊ!k&õöVÀf+zûE­×ëàQeR£ãQ'w&*6.Cû‘àl‹\pVà<!ıAB˜Œk;8…ÑVŒïaÓü]Æ™b8ßĞœ¦Šw^\}
-½g|ÇªBë&šŞ’1ì RÍ`v
-BF	K§èW&•¨Ã¸IKË!?‹Êa{Ñ³ »;Ã7o¦=‰%·™´kBã[ŸáD/Ï ¢ä¬ƒ0•‡*Í°Ôûíp¾c¹¢UTjŠåÜÙ%ÅqŒ¦3ĞõÜû3wB¦OŞÑ(kÎÃŠ	“Iş|®Äoâ‰V7ÀRxÇ-fèû÷şiª¢XšTsZ7ŸK¨‘ÒÕˆ³püÌ;|öß¤™àBÖ6r.a¼¥?™Ê6J¤”PrihºöŠö­ÃUíÀ& ‰Á³É÷û¥è•úÔeÃ†™güØ­éÒé^_8ûÖSes$I­é3õólÆZ!e»è‚á«ğBé—LÂ£Hú"í[ğˆønoZı ñzùæ¯ĞßÙş› 8½¬°«A†Ğ‰,1Ëh‘šúµÉ(Uƒ8\L1ˆPàNŞ>$Txx—$£VÔÎw ¸&=.š³
-êàÒ´aÍ2¨# —n´@ª½Y-¦‘R@[ ¡ò/â
-Ë‡±VSow]døæíÜ¤]ÌÃ/€cÛeX¤›¶x `Âº›Èâº…Hğqu(ş¢•Åµó¦„Òx”ÖÎ{Ş@-åÔ‹BÏ[{s9wí‚ŸıÒPø)¨ªÃhW¬¨kr“Q] "§å ‚©àRYQQìn7¸ô9‰°chÌıÙºğI±²¾gÃª±®èc‹-®öT9ô n„`(£‡\E——C`"Cè¤ È´4MG»®´7ôg	vÜcÒœyİc¯uñ™æ>ú1JsêÛdê¿»>ÓJ±œ)èÈÑ†ÂkŒçGÅR9¬¨-¸ÅLÕÔ	äó¥õŒá°Â:H\ïfÿ¿·æ-+÷iÿÆÁÏzŒ[Ât‹l}ÜĞŠ>@ïbñïŠf<Ş÷ êXB6ææºÙÂ|¬6·wÉj±MîW}b
-7§OHWìhE>ÙÜoT4a&Kx7¢Ëíåìë/ßÓÓX•j•~qm²mÊõazxèWèß¥¨"t‡¡$¢;Ìø¢,?^ü   ÿÿ ÇV9
+        isOpen={isCureModalOpexœÜWMoÛ8½çW°—F.
+gÏmTÀˆS¬€ã­½ØCÑW¤-")ˆt²†êÿŞ!EJ¤>œdwkÀ ?ŞŸŞh†#~º@ö'øM.$ëh†âO¨n7’T%òæPÑ;Ap~_Ríp.éìcj!K¬pÄyî!NİQ¶ã:õÑ>ÛGœ°ÒT2Šs•İ>R®ò1Ã‚ÜT*
+:à™aNrêÌ5ô#ì®>]ØQ}õİ‰GŠ¶­)G†+zwå5“z{+`³½}‹¢Öëuğ¨2©Ññ¨“‡;—¡ıHp¶E.8+p~ˆ‚ !„LÆµœÂh+Æ÷°éFş.ãL1œohNSE‰;/®‹>…Ş³
+¾cU¡‰ÆuMoÉv©f0;!£„¥ŒSô+“JTÇaÜ¤¥åŸEå°½èY€İŠá›7ÓÏÄ„ÛLÚ5¡ñ­‹‰Ïğ¢—ç QrÖA˜ÊC•fXêıv8ß±\Ñ**5Årîì‚â8FÓGÏ	èz‰îı™;!Ó'ïh”5çaÅ„É$>Wâ7ñD«`©<Ï†ã‚†3ôı{ÿ4UQ¬
+Mª9­›Ï%Ô‡HiŠjÄÙ?8~æ>ûoÒLğ!k9—0ŞÒŸLe%Ò‡?J(¹44]{EûÖáªv`ĞÄàÙäûıÀÒô…J}ê‹2ÏaÃÌ3~ìÖtéô¯/œ}ë©²9’¤Öô™úy6c­‹²]tÁğUx¡ôK&áQ$}‘ö-xD|·7­~€x½üóWèïlÿM œ^VØÕ CèD–˜åG´HMıÚd”ªA®¦D(p'o*<¼K’Q+jgˆ;P\“—ÍYupiÚ0ÏfÔĞK7Z ÕŞˆ¬ÓÈ) -Pù—q…åÃX«©·».2|s‚vîÒ.æa‹À±í2,ÒMÇ@[¼P0aİMdqİB$ø¸:ÑÊâÚySBéG<Jkç=o †–òêE¡ç­½¹œ»vÁÏ~Çi(üTÕa´+ÖÔ€5¹É¨.P‘ÓrÁTp©¬¨(v·\úœDXƒ1´
+æşl]ø¤ØYß³aÕXWtÏ1O†ÅW{ªzP7B0”ÑC®¢ËË!0‘!tRdZš¦£]WÚú³
+;î1iÎ<î±×ºøLsıŠ¥9õm2õ†…ß]Ÿi¥XÎtähCá5Fó£b©VÔÜb¦jêòùÒzÆpXa$®w³ÿß[ó…–•€û´€ãàg=Æ-aºE6„Æ>nhEŸ w±øwE3ï{u,¡ssİla>OV›Û»dµØ&÷«¾1…›Ó'¤+v4ƒ"Ÿlî7ªš0“%¼Ñåöröõ—oéi¬JµJ¿¸6Ù6åúŠ°G=<ô+ôïRT
+ºÃPÑf|Q–/~   ÿÿ ™SWÎ
