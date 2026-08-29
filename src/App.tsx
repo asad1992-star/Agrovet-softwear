@@ -42,6 +42,9 @@ import {
   Edit2,
   Filter,
   ListFilter,
+  Sparkles,
+  HeartHandshake,
+  CheckCheck,
   Check,
   MoreVertical,
   FileText,
@@ -356,6 +359,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
   // Pregnancy Check Modal
   const [isPregnancyCheckModalOpen, setIsPregnancyCheckModalOpen] = useState(false);
+  const [isCureModalOpen, setIsCureModalOpen] = useState(false);
+  const [cureModalData, setCureModalData] = useState<{ healthEventId: string; animalId: string; medication?: string; animalTag?: string } | null>(null);
+  const [isDoseModalOpen, setIsDoseModalOpen] = useState(false);
+  const [doseModalData, setDoseModalData] = useState<{ healthEventId: string; animalId: string; animalTag?: string; medication?: string; dayNumber?: number; totalDays?: number; doseDate?: string; treatments?: any[] } | null>(null);
   const [pregnancyCheckTarget, setPregnancyCheckTarget] = useState<Animal | null>(null);
   const [pregnancyCheckResult, setPregnancyCheckResult] = useState<'Pregnant' | 'Non-Pregnant' | ''>('');
 
@@ -1274,6 +1281,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       }
     }
 
+    const eventDate = newHealth.date || new Date().toISOString().split('T')[0];
     activeAnimals.forEach(animalId => {
       const normalizedHealth = {
         ...newHealth,
@@ -1281,7 +1289,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         treatments: finalTreatments,
         technician: newHealth.technician ? normalizeTechnicianName(newHealth.technician, settings.technicians) : '',
         medication: finalTreatments[0]?.name || '',
-        dosage: finalTreatments[0]?.dose || ''
+        dosage: finalTreatments[0]?.dose || '',
+        dosesAdministered: newHealth.dosesAdministered && newHealth.dosesAdministered.length > 0
+          ? newHealth.dosesAdministered
+          : [eventDate],
+        completedDoses: newHealth.completedDoses || 1,
+        cureStatus: newHealth.cureStatus || 'Pending'
       };
 
       if (editingHealthId) {
@@ -1290,7 +1303,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         addHealthEvent({
           ...normalizedHealth,
           id: Math.random().toString(36).substr(2, 9),
-          date: normalizedHealth.date || new Date().toISOString().split('T')[0],
+          date: eventDate,
         } as HealthEvent);
       }
     });
@@ -1331,6 +1344,155 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
     setIsMedicineFormOpen(false);
     setNewMedicine({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
+  };
+
+  const handleAlertClick = (alert: any) => {
+    const meta = alert.metadata || {};
+    const animal = animals.find(a => a.id === alert.animalId);
+    
+    // Close alert panel
+    setIsAlertPanelOpen(false);
+
+    // 1. Direct Health Dose alert -> Open Quick Dose Entry Modal
+    if (meta.eventKind === 'health_dose') {
+      setDoseModalData({
+        healthEventId: meta.healthEventId,
+        animalId: meta.animalId,
+        animalTag: animal?.tag || '',
+        medication: meta.medication,
+        dayNumber: meta.dayNumber,
+        totalDays: meta.totalDays,
+        doseDate: meta.doseDate || dateUtils.today(),
+        treatments: meta.treatments
+      });
+      setIsDoseModalOpen(true);
+      return;
+    }
+
+    // 2. Direct Health Cure Evaluation alert -> Open Cure Evaluation Modal
+    if (meta.eventKind === 'health_cure_eval') {
+      setCureModalData({
+        healthEventId: meta.healthEventId,
+        animalId: meta.animalId,
+        medication: meta.medication,
+        animalTag: animal?.tag || ''
+      });
+      setIsCureModalOpen(true);
+      return;
+    }
+
+    // 3. Pregnancy Check alert -> Open Pregnancy Check Modal directly
+    if (meta.eventKind === 'repro_pd' && animal) {
+      setPregnancyCheckTarget(animal);
+      setPregnancyCheckResult('');
+      setIsPregnancyCheckModalOpen(true);
+      return;
+    }
+
+    // 4. Repro Calving alert -> Open Repro Event Form pre-filled with Calving
+    if (meta.eventKind === 'repro_calving' && animal) {
+      setEditingReproId(null);
+      setNewRepro({
+        type: ReproEventType.CALVING,
+        date: dateUtils.today(),
+        animalId: animal.id,
+        calfStatus: 'Alive'
+      });
+      setReproAnimalSearch(animal.tag);
+      setIsReproFormOpen(true);
+      return;
+    }
+
+    // 5. Repro Heat alert -> Open Repro Event Form pre-filled with Insemination or Estrus
+    if (meta.eventKind === 'repro_heat' && animal) {
+      setEditingReproId(null);
+      setNewRepro({
+        type: ReproEventType.INSEMINATION,
+        date: dateUtils.today(),
+        animalId: animal.id
+      });
+      setReproAnimalSearch(animal.tag);
+      setIsReproFormOpen(true);
+      return;
+    }
+
+    // 6. Protocol Step alert -> Navigate to protocols view
+    if (meta.eventKind === 'protocol_step') {
+      setView('protocols');
+      return;
+    }
+
+    // 7. General Animal alert -> Open animal profile
+    if (animal) {
+      setSelectedAnimal(animal);
+    }
+  };
+
+  const handleAdministerDose = (healthEventId: string, doseDate: string) => {
+    const existing = healthEvents.find(h => h.id === healthEventId);
+    if (!existing) return;
+
+    const existingDoses = existing.dosesAdministered || [existing.date];
+    if (existingDoses.includes(doseDate)) {
+      setToastMessage('‚ÑπÔ∏è Dose already recorded for this date.');
+      setIsDoseModalOpen(false);
+      return;
+    }
+
+    const updatedDoses = [...existingDoses, doseDate];
+    const completedCount = updatedDoses.length;
+
+    // Deduct stock for this administered dose
+    const treatments = existing.treatments && existing.treatments.length > 0
+      ? existing.treatments
+      : (existing.medication ? [{ name: existing.medication, dose: existing.dosage || '' }] : []);
+    
+    if (treatments.length > 0) {
+      const deductionResult = deductMedicineStock(medicines, treatments, 1);
+      saveMedicinesDirectly(deductionResult.updatedMedicines);
+      if (deductionResult.alerts.length > 0) {
+        setLowStockAlerts(prev => [
+          ...prev,
+          ...deductionResult.alerts.map(msg => ({ id: Math.random().toString(), msg }))
+        ]);
+      }
+    }
+
+    // Update health event with recorded dose
+    updateHealthEvent({
+      ...existing,
+      dosesAdministered: updatedDoses,
+      completedDoses: completedCount
+    });
+
+    const animal = animals.find(a => a.id === existing.animalId);
+    setToastMessage();
+    setIsDoseModalOpen(false);
+    setDoseModalData(null);
+  };
+
+  const handleEvaluateCure = (healthEventId: string, isCuredOutcome: boolean) => {
+    const existing = healthEvents.find(h => h.id === healthEventId);
+    if (!existing) return;
+
+    const statusStr = isCuredOutcome ? 'Cured' : 'Not Cured';
+    const animal = animals.find(a => a.id === existing.animalId);
+
+    updateHealthEvent({
+      ...existing,
+      isCured: isCuredOutcome,
+      cureStatus: statusStr,
+      cureDate: dateUtils.today()
+    });
+
+    if (isCuredOutcome) {
+      setToastMessage();
+    } else {
+      setToastMessage();
+    }
+
+    setIsCureModalOpen(false);
+    setCureModalData(null);
   };
 
   const handlePregnancyCheck = () => {
@@ -2903,9 +3065,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           <div 
                             key={alert.id} 
                             className="group flex items-start gap-4 p-5 rounded-[1.5rem] bg-slate-50/50 hover:bg-white transition-all border border-transparent hover:border-slate-100 hover:shadow-lg cursor-pointer relative"
-                            onClick={() => {
-                              if (animal) setSelectedAnimal(animal);
-                            }}
+                            onClick={() => handleAlertClick(alert)}
                           >
                             <div className={`mt-0.5 p-3 rounded-2xl shadow-sm flex-shrink-0 ${alert.priority === 'High' ? 'bg-rose-50 text-rose-600' : alert.type === 'Protocol' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
                               <AlertCircle className="w-4 h-4" />
@@ -4287,18 +4447,55 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
                                   {event.treatmentDays && (() => {
                                     const today = new Date().toISOString().split('T')[0];
-                                    const endDate = dateUtils.addDays(event.date, event.treatmentDays);
+                                    const totalDays = event.treatmentDays;
+                                    const endDate = dateUtils.addDays(event.date, totalDays - 1);
                                     const daysInto = dateUtils.diffDays(today, event.date);
                                     const daysLeft = dateUtils.diffDays(endDate, today);
                                     const isActive = daysInto >= 0 && daysLeft >= 0;
-                                    return isActive ? (
-                                      <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md mt-2 inline-block">
-                                        {daysLeft} days active
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md mt-2 inline-block">
-                                        Done
-                                      </span>
+                                    const administeredCount = (event.dosesAdministered || [event.date]).length;
+
+                                    return (
+                                      <div className="mt-2 space-y-1.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {isActive ? (
+                                            <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                              Day {Math.min(totalDays, daysInto + 1)} of {totalDays}
+                                            </span>
+                                          ) : (
+                                            <span className="text-[9px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                                              {totalDays}d Completed
+                                            </span>
+                                          )}
+
+                                          {/* Cure Evaluation Status */}
+                                          {event.cureStatus === 'Cured' ? (
+                                            <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                              <CheckCheck className="w-2.5 h-2.5" /> Cured
+                                            </span>
+                                          ) : event.cureStatus === 'Not Cured' ? (
+                                            <span className="text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                              <AlertTriangle className="w-2.5 h-2.5" /> Not Cured (Sick)
+                                            </span>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setCureModalData({
+                                                  healthEventId: event.id,
+                                                  animalId: event.animalId,
+                                                  medication: event.treatments?.[0]?.name || event.medication,
+                                                  animalTag: animal?.tag || ''
+                                                });
+                                                setIsCureModalOpen(true);
+                                              }}
+                                              className="text-[9px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full transition-all flex items-center gap-1 active:scale-95"
+                                              title="Evaluate cure status"
+                                            >
+                                              <Stethoscope className="w-2.5 h-2.5" /> Evaluate Cure
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
                                     );
                                   })()}
                                 </td>
@@ -6814,7 +7011,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           {catAlerts.map(alert => {
                             const animal = animals.find(a => a.id === alert.animalId);
                             return (
-                              <div key={alert.id} className={`p-4 sm:p-5 rounded-[1.5rem] border ${catConfig.color} transition-all hover:shadow-md relative`}>
+                              <div key={alert.id} onClick={() => handleAlertClick(alert)} className={`p-4 sm:p-5 rounded-[1.5rem] border ${catConfig.color} transition-all hover:shadow-md relative cursor-pointer hover:border-blue-300 group`}>
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -8204,27 +8401,40 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     )}
                   </div>
 
-                  {/* Quick Dose Buttons */}
-                  <div className="flex gap-2 items-center pl-1">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Quick Dose:</span>
-                    {[2, 5, 10].map(val => {
-                      const quickDoseText = `${val}${unitLabel}`;
-                      return (
-                        <button
-                          type="button"
-                          key={val}
-                          onClick={() => {
-                            const t = [...(newHealth.treatments || [])];
-                            t[idx].dose = quickDoseText;
-                            setNewHealth({ ...newHealth, treatments: t });
-                          }}
-                          className="text-[9px] font-black px-2.5 py-1 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 text-slate-600 rounded-lg transition-all"
-                        >
-                          {quickDoseText}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {/* Smart Suggested Dose Chips from Historical Usage */}
+                  {(() => {
+                    const doseInfo = getMedicineDoseSuggestions(treatment.name, healthEvents, medicines);
+                    return (
+                      <div className="flex flex-wrap gap-1.5 items-center pl-1 pt-1">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-blue-600 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-blue-500" /> Suggestion:
+                        </span>
+                        {doseInfo.suggestions.map((sug, sIdx) => (
+                          <button
+                            type="button"
+                            key={sug}
+                            onClick={() => {
+                              const t = [...(newHealth.treatments || [])];
+                              t[idx].dose = sug;
+                              setNewHealth({ ...newHealth, treatments: t });
+                            }}
+                            className={`text-[9px] font-black px-2.5 py-1 rounded-lg transition-all border ${
+                              treatment.dose === sug
+                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                : "bg-white border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300"
+                            }`}
+                            title={`Click to fill ${sug} into dosage`}
+                          >
+                            {sIdx === 0 && <span className="mr-1 text-[8px] opacity-75">‚òÖ</span>}
+                            {sug}
+                          </button>
+                        ))}
+                        {doseInfo.suggestions.length === 0 && (
+                          <span className="text-[9px] text-slate-400 font-bold italic">Type medicine name to view common dose suggestions</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -8240,7 +8450,42 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               value={newHealth.treatmentDays || ''}
               onChange={e => setNewHealth({ ...newHealth, treatmentDays: e.target.value ? parseInt(e.target.value) : undefined })}
             />
-            <p className="text-[10px] text-slate-400 font-bold px-1">Daily alerts will fire for each day of treatment</p>
+            <p className="text-[10px] text-slate-400 font-bold px-1">Daily alerts will fire for each treatment day, followed by Cure Evaluation alert on the final day</p>
+          </div>
+
+          {/* Optional Direct Cure Status Override (for editing/logging completed treatments) */}
+          <div className="space-y-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex items-center justify-between">
+              <span>Cure Evaluation (Optional)</span>
+              <span className="text-[9px] text-blue-600 font-bold">Outcome</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'Pending', label: '‚è≥ In Progress', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                { id: 'Cured', label: '‚úÖ Cured', color: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
+                { id: 'Not Cured', label: '‚ùå Not Cured', color: 'bg-rose-50 text-rose-700 border-rose-300' }
+              ].map(opt => {
+                const isSelected = (newHealth.cureStatus || 'Pending') === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setNewHealth({ 
+                      ...newHealth, 
+                      cureStatus: opt.id as any,
+                      isCured: opt.id === 'Cured' ? true : opt.id === 'Not Cured' ? false : undefined
+                    })}
+                    className={`py-2 px-2 text-[10px] font-black rounded-xl border transition-all ${
+                      isSelected
+                        ? `${opt.color} shadow-sm ring-2 ring-blue-500/20`
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="p-5 bg-amber-50 border border-amber-100 rounded-2xl space-y-4">
             <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">üíâ Multi-Dose Protocol (Optional)</p>
@@ -8449,684 +8694,143 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           </div>
         </div>
       )}
-      {/* Sequential AI Step Workflow Modal */}
-      {aiWorkflow && (() => {
-        const enrollment = enrollments.find(e => e.id === aiWorkflow.groupId);
-        const animalId = enrollment?.animalIds[aiWorkflow.currentAnimalIndex];
-        const animal = animals.find(a => a.id === animalId);
-        const progress = enrollment ? ((aiWorkflow.currentAnimalIndex + 1) / enrollment.animalIds.length) * 100 : 0;
 
-        return (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xl">
-            <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-              <div className="p-8 bg-blue-600 text-white flex items-center justify-between">
+      {/* Quick Daily Dose Administration Modal */}
+      {isDoseModalOpen && doseModalData && (
+        <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="px-8 py-6 border-b border-slate-100 bg-rose-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-rose-500 text-white rounded-2xl shadow-sm">
+                  <Syringe className="w-5 h-5" />
+                </div>
                 <div>
-                  <h3 className="text-2xl font-black tracking-tight">AI Batch Processing üöÄ</h3>
-                  <p className="text-xs font-bold text-blue-100 uppercase tracking-widest">Recording Insemination Log ‚Ä¢ Step Sequence</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-3xl font-black">{aiWorkflow.currentAnimalIndex + 1} / {enrollment?.animalIds.length}</p>
-                  <p className="text-[10px] font-black text-blue-100 uppercase tracking-widest">Cows Remaining</p>
+                  <h3 className="text-xl font-black text-slate-800">Administer Dose</h3>
+                  <p className="text-xs text-rose-600 font-black uppercase tracking-widest mt-0.5">
+                    Cow {doseModalData.animalTag} ‚Ä¢ Day {doseModalData.dayNumber} of {doseModalData.totalDays}
+                  </p>
                 </div>
               </div>
-
-              <div className="w-full h-2 bg-blue-900/20">
-                <div className="h-full bg-blue-400 transition-all duration-500" style={{ width: `${progress}%` }}></div>
-              </div>
-
-              <div className="p-10 space-y-8">
-                <div className="flex items-center gap-6 p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
-                  <div className="w-20 h-20 bg-blue-600 rounded-[1.5rem] flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-blue-100">
-                    {animal?.tag.slice(-2)}
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Subject</p>
-                    <h4 className="text-3xl font-black text-slate-800 tracking-tighter">Cow {animal?.tag}</h4>
-                    <p className="text-xs text-slate-500 font-bold uppercase">{animal?.breed} ‚Ä¢ {animal?.herd}</p>
-                  </div>
-                </div>
-
-                <form onSubmit={handleAIStepSubmit} className="space-y-6">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Technician Name</label>
-                      <input
-                        type="text"
-                        list="all-technicians"
-                        required
-                        className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-                        value={newRepro.technician || ''}
-                        onChange={e => setNewRepro({ ...newRepro, technician: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Semen/Bull ID</label>
-                      <input
-                        type="text"
-                        list="all-semen"
-                        required
-                        className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-                        value={newRepro.semenName || ''}
-                        onChange={e => setNewRepro({ ...newRepro, semenName: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Notes (Optional)</label>
-                    <textarea
-                      className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20 h-24"
-                      placeholder="Add any observations..."
-                      value={newRepro.details || ''}
-                      onChange={e => setNewRepro({ ...newRepro, details: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="pt-4 flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setAiWorkflow(null)}
-                      className="flex-1 px-8 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-                    >
-                      Cancel Sequence
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-[2] px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"
-                    >
-                      {aiWorkflow.currentAnimalIndex < enrollment!.animalIds.length - 1 ? 'Save & Next Cow ‚Üí' : 'Complete Batch ‚úÖ'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* 1. Date Checked Details Modal (The Cool Visual Feature) */}
-      {selectedBadgeDate && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
-          <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded-lg">
-                  {getBadgeStyleForDate(selectedBadgeDate).badgeNum}
-                </span>
-                <h3 className="text-xl font-black text-slate-800 tracking-tight mt-1">Checks on {formatDateReadable(selectedBadgeDate)}</h3>
-              </div>
-              <button onClick={() => setSelectedBadgeDate(null)} className="p-3 hover:bg-slate-200 rounded-2xl transition-all">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
-            
-            <div className="p-8 max-h-[60vh] overflow-y-auto space-y-4">
-              <div className="flex justify-between items-center bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                <span className="text-xs font-bold text-slate-500">Total Checks: {(pdChecksByDate[selectedBadgeDate] || []).length}</span>
-                <div className="flex gap-4 text-xs font-black">
-                  <span className="text-emerald-700">ü§∞ Pregnant: {(pdChecksByDate[selectedBadgeDate] || []).filter(e => e.pregnancyResult === 'Pregnant').length}</span>
-                  <span className="text-rose-700">‚ùå Open: {(pdChecksByDate[selectedBadgeDate] || []).filter(e => e.pregnancyResult !== 'Pregnant').length}</span>
-                </div>
-              </div>
-              
-              <div className="space-y-3">
-                {(pdChecksByDate[selectedBadgeDate] || []).map((check) => {
-                  const checkAnimal = animals.find(a => a.id === check.animalId);
-                  const isPreg = check.pregnancyResult === 'Pregnant';
-                  return (
-                    <div key={check.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div>
-                        <p className="text-sm font-black text-slate-800">Cow {checkAnimal?.tag || 'Unregistered'}</p>
-                        <p className="text-xs text-slate-400 font-bold">{checkAnimal?.breed || 'Unknown Breed'} ‚Ä¢ {checkAnimal?.herd || 'Main Herd'}</p>
-                        {check.details && <p className="text-[10px] text-slate-400 mt-1 italic font-medium">"{check.details}"</p>}
-                      </div>
-                      <span className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider ${
-                        isPreg ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
-                      }`}>
-                        {isPreg ? 'ü§∞ Pregnant' : '‚ùå Open'}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            
-            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end">
-              <button
-                onClick={() => setSelectedBadgeDate(null)}
-                className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-900 transition-all shadow-md"
+              <button 
+                onClick={() => { setIsDoseModalOpen(false); setDoseModalData(null); }}
+                className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-slate-600 transition-all shadow-xs"
               >
-                Close View
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. New PD Check Modal (Today's Check) */}
-      <FormModal title="ü§∞ New PD Check (Today)" isOpen={isNewPdFormOpen} onClose={() => setIsNewPdFormOpen(false)}>
-        <form onSubmit={handleSaveNewPdCheck} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Animal Tag / ID</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g., Cow_45, 101"
-              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-              value={pdAnimalId}
-              onChange={e => setPdAnimalId(e.target.value)}
-            />
-            <p className="text-[10px] text-slate-400 px-2 font-bold">If this tag doesn't exist, we will automatically register them in the Main Herd.</p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Pregnancy Diagnosis Result</label>
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => setPdResult('Pregnant')}
-                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
-                  pdResult === 'Pregnant' 
-                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-100/50' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300'
-                }`}
-              >
-                <span className="text-2xl">ü§∞</span>
-                <span>Pregnant</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPdResult('Open')}
-                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
-                  pdResult === 'Open' 
-                    ? 'bg-rose-500 text-white border-rose-600 shadow-lg shadow-rose-100/50' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'
-                }`}
-              >
-                <span className="text-2xl">‚ùå</span>
-                <span>Open</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Diagnostic Notes (Optional)</label>
-            <input
-              type="text"
-              placeholder="e.g., Ultrasound 45 days, twins"
-              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-              value={pdNotes}
-              onChange={e => setPdNotes(e.target.value)}
-            />
-          </div>
-
-          <div className="pt-4 flex gap-4">
-            <button
-              type="button"
-              onClick={() => setIsNewPdFormOpen(false)}
-              className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!pdAnimalId.trim() || !pdResult}
-              className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 disabled:opacity-40"
-            >
-              Save Check
-            </button>
-          </div>
-        </form>
-      </FormModal>
-
-      {/* 3. Add Old Check Modal (Forgot Feature) */}
-      <FormModal title="üìÖ Add Old Check (Forgot Feature)" isOpen={isOldPdFormOpen} onClose={() => setIsOldPdFormOpen(false)}>
-        <form onSubmit={handleSaveOldPdCheck} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Select Check Date</label>
-            <input
-              type="date"
-              required
-              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-              value={oldPdDate}
-              onChange={e => setOldPdDate(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Animal Tag / ID</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g., Cow_45"
-              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-              value={oldPdAnimalId}
-              onChange={e => setOldPdAnimalId(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Pregnancy Diagnosis Result</label>
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => setOldPdResult('Pregnant')}
-                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
-                  oldPdResult === 'Pregnant' 
-                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-100/50' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300'
-                }`}
-              >
-                <span className="text-2xl">ü§∞</span>
-                <span>Pregnant</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setOldPdResult('Open')}
-                className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all gap-2 ${
-                  oldPdResult === 'Open' 
-                    ? 'bg-rose-500 text-white border-rose-600 shadow-lg shadow-rose-100/50' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'
-                }`}
-              >
-                <span className="text-2xl">‚ùå</span>
-                <span>Open</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Diagnostic Notes (Optional)</label>
-            <input
-              type="text"
-              placeholder="e.g., Forgotten check record"
-              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-              value={oldPdNotes}
-              onChange={e => setOldPdNotes(e.target.value)}
-            />
-          </div>
-
-          <div className="pt-4 flex gap-4">
-            <button
-              type="button"
-              onClick={() => setIsOldPdFormOpen(false)}
-              className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!oldPdAnimalId.trim() || !oldPdResult || !oldPdDate}
-              className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 disabled:opacity-40"
-            >
-              Add Old Check
-            </button>
-          </div>
-        </form>
-      </FormModal>
-
-      {/* 4. Multi-Enter Modal (Bulk Entry) */}
-      <FormModal title="üì• Multi-Enter (Bulk Diagnosis)" isOpen={isMultiPdFormOpen} onClose={() => setIsMultiPdFormOpen(false)}>
-        <form onSubmit={handleSaveMultiPdCheck} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Select Check Date</label>
-            <input
-              type="date"
-              required
-              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-              value={multiPdDate}
-              onChange={e => setMultiPdDate(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Paste or Enter List (One Check per Line)</label>
-            <textarea
-              required
-              placeholder="e.g.,&#10;Animal_101 Pregnant&#10;Animal_102 Open&#10;Animal_103 Pregnant&#10;Cow_45 Open"
-              className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20 h-40 font-mono"
-              value={multiPdText}
-              onChange={e => setMultiPdText(e.target.value)}
-            />
-            <p className="text-[10px] text-slate-400 px-2 font-bold leading-relaxed">
-              Format: Animal_ID [Pregnant/Open]. If an animal tag is not registered, we will automatically create it in the system.
-            </p>
-          </div>
-
-          <div className="pt-4 flex gap-4">
-            <button
-              type="button"
-              onClick={() => setIsMultiPdFormOpen(false)}
-              className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!multiPdText.trim() || !multiPdDate}
-              className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-40"
-            >
-              Submit All Checks
-            </button>
-          </div>
-        </form>
-      </FormModal>
-
-      {/* Medicine Purchase and Usage History Modal */}
-      {selectedMedicineForHistory && (
-        <MedicineHistoryModal
-          medicine={medicines.find(m => m.id === selectedMedicineForHistory.id) || selectedMedicineForHistory}
-          allMedicines={medicines}
-          purchases={purchases}
-          healthEvents={healthEvents}
-          animals={animals}
-          settings={settings}
-          onClose={() => setSelectedMedicineForHistory(null)}
-          onAddPurchase={handleAddPurchaseWithStockUpdate}
-          onDeletePurchase={handleDeletePurchaseWithConfirmation}
-          onOpenTreatmentWithMedicine={(medName) => {
-            setSelectedMedicineForHistory(null);
-            setEditingHealthId(null);
-            setNewHealth({
-              type: HealthEventType.ILLNESS,
-              date: new Date().toISOString().split('T')[0],
-              medication: medName,
-              treatments: [{ name: medName, dose: '10 ml' }]
-            });
-            setTreatmentAnimalType('single');
-            setHealthAnimalSearch('');
-            setSelectedMultipleAnimals([]);
-            setIsHealthFormOpen(true);
-          }}
-          onEditMedicineStock={(med) => {
-            setSelectedMedicineForHistory(null);
-            setEditingMedicineId(med.id);
-            setNewMedicine(med);
-            setIsMedicineFormOpen(true);
-          }}
-          onSelectAnimal={(animal) => {
-            setSelectedMedicineForHistory(null);
-            setSelectedAnimal(animal);
-          }}
-        />
-      )}
-
-      {/* Quick Restock Inventory Modal */}
-      {selectedMedicineForRestock && (
-        <QuickRestockModal
-          isOpen={isRestockModalOpen}
-          medicine={selectedMedicineForRestock}
-          onClose={() => {
-            setIsRestockModalOpen(false);
-            setSelectedMedicineForRestock(null);
-          }}
-          onRestock={handleQuickRestock}
-        />
-      )}
-
-      {/* Quick Dispense Dose Modal */}
-      {selectedMedicineForDispense && (
-        <QuickDispenseModal
-          isOpen={isDispenseModalOpen}
-          medicine={selectedMedicineForDispense}
-          animals={animals}
-          onClose={() => {
-            setIsDispenseModalOpen(false);
-            setSelectedMedicineForDispense(null);
-          }}
-          onDispense={handleQuickDispense}
-        />
-      )}
-
-      {/* Move to Pen Modal */}
-      <MoveToPenModal
-        isOpen={isMoveToPenModalOpen}
-        onClose={() => {
-          setIsMoveToPenModalOpen(false);
-          setMoveToPenAnimalId(null);
-        }}
-        animals={animals}
-        settings={settings}
-        initialSelectedAnimalId={moveToPenAnimalId}
-        onConfirmMove={handleConfirmMoveToPen}
-      />
-
-      {/* Floating Success Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-24 sm:bottom-10 left-1/2 -translate-x-1/2 z-[300] bg-slate-900/95 text-white backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 border border-slate-800 max-w-[90vw]">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping flex-shrink-0" />
-          <p className="text-xs font-black tracking-wide leading-tight truncate">{toastMessage}</p>
-        </div>
-      )}
-
-      {/* Mobile Bottom Navigation Dock */}
-      {!isDesktop && (
-        <nav className="fixed bottom-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-xl border-t border-slate-200/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-4px_25px_rgba(0,0,0,0.07)] pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-          <button
-            onClick={() => { setView('dashboard'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
-              view === 'dashboard' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
-            }`}
-          >
-            <LayoutDashboard className={`w-5 h-5 mb-0.5 ${view === 'dashboard' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
-            <span className="text-[10px] tracking-tight">Home</span>
-          </button>
-
-          <button
-            onClick={() => { setView('animals'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
-              view === 'animals' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
-            }`}
-          >
-            <Users className={`w-5 h-5 mb-0.5 ${view === 'animals' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
-            <span className="text-[10px] tracking-tight">Herd</span>
-          </button>
-
-          {/* Center Quick Action FAB with pulse and glow */}
-          <div className="flex-1 flex justify-center -mt-7">
-            <button
-              onClick={() => setIsMobileQuickActionsOpen(true)}
-              className="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-700 via-indigo-600 to-blue-500 text-white shadow-xl shadow-blue-500/40 flex items-center justify-center active:scale-90 transition-transform border-4 border-white ring-2 ring-blue-100"
-              title="Quick Actions"
-            >
-              <Plus className="w-6 h-6 stroke-[3]" />
-            </button>
-          </div>
-
-          <button
-            onClick={() => { setView('repro'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
-              view === 'repro' || view === 'pd-check' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
-            }`}
-          >
-            <CalendarRange className={`w-5 h-5 mb-0.5 ${view === 'repro' || view === 'pd-check' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
-            <span className="text-[10px] tracking-tight">Repro</span>
-          </button>
-
-          <button
-            onClick={() => { setView('health'); setIsSidebarOpen(false); }}
-            className={`flex flex-col items-center justify-center flex-1 py-1.5 px-1 rounded-xl active:scale-95 transition-all ${
-              view === 'health' ? 'text-blue-600 font-black' : 'text-slate-400 font-semibold hover:text-slate-600'
-            }`}
-          >
-            <Stethoscope className={`w-5 h-5 mb-0.5 ${view === 'health' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
-            <span className="text-[10px] tracking-tight">Health</span>
-          </button>
-        </nav>
-      )}
-
-      {/* Mobile Quick Action Bottom Sheet */}
-      {isMobileQuickActionsOpen && (
-        <div 
-          className="fixed inset-0 z-[250] flex items-end justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" 
-          onClick={() => setIsMobileQuickActionsOpen(false)}
-        >
-          <div 
-            className="bg-white w-full max-h-[85vh] overflow-y-auto rounded-t-[2.5rem] shadow-2xl p-5 sm:p-6 space-y-4 animate-in slide-in-from-bottom duration-300 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto" />
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">‚ö° Quick Field Actions</h3>
-                <p className="text-[11px] text-slate-400 font-bold">Tap an operation to launch instantly</p>
-              </div>
-              <button onClick={() => setIsMobileQuickActionsOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-all">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingAnimalId(null); setNewAnimal({ sex: 'Female', breed: 'Holstein', herd: 'Main Herd' }); setIsAnimalFormOpen(true); }}
-                className="p-3.5 bg-blue-50/70 hover:bg-blue-100/80 rounded-2xl border border-blue-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-blue-600 text-white rounded-xl shadow-md shadow-blue-200">
-                  <Plus className="w-4 h-4" />
+            <div className="p-8 space-y-6">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400 font-bold uppercase tracking-wider">Scheduled Date</span>
+                  <span className="font-black text-slate-700">{doseModalData.doseDate}</span>
                 </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">Add Cow</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">New tag registration</p>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400 font-bold uppercase tracking-wider">Prescribed Medication</span>
+                  <span className="font-black text-blue-600">{doseModalData.medication || 'Treatment Protocol'}</span>
                 </div>
-              </button>
+                {doseModalData.treatments && doseModalData.treatments.length > 0 && (
+                  <div className="pt-2 border-t border-slate-200/60 space-y-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Dosages to Administer:</span>
+                    {doseModalData.treatments.map((t: any, i: number) => (
+                      <div key={i} className="flex justify-between text-xs font-bold text-slate-800">
+                        <span>{t.name}</span>
+                        <span className="text-rose-600">{t.dose}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingReproId(null); setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0] }); setReproAnimalSearch(''); setIsReproFormOpen(true); }}
-                className="p-3.5 bg-indigo-50/70 hover:bg-indigo-100/80 rounded-2xl border border-indigo-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">
-                  <CalendarRange className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">Log Repro</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Heat or insemination</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setEditingHealthId(null); setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0], treatments: [{ name: '', dose: '' }] }); setHealthAnimalSearch(''); setIsHealthFormOpen(true); }}
-                className="p-3.5 bg-rose-50/70 hover:bg-rose-100/80 rounded-2xl border border-rose-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-rose-600 text-white rounded-xl shadow-md shadow-rose-200">
-                  <Stethoscope className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">Clinical Entry</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Treatments & illness</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setIsNewPdFormOpen(true); }}
-                className="p-3.5 bg-emerald-50/70 hover:bg-emerald-100/80 rounded-2xl border border-emerald-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-md shadow-emerald-200">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">Preg Exam (PD)</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Single diagnosis</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setIsMultiPdFormOpen(true); }}
-                className="p-3.5 bg-amber-50/70 hover:bg-amber-100/80 rounded-2xl border border-amber-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-amber-600 text-white rounded-xl shadow-md shadow-amber-200">
-                  <FileText className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">Bulk PD Entry</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Multi-animal batch</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setIsMedicineFormOpen(true); }}
-                className="p-3.5 bg-purple-50/70 hover:bg-purple-100/80 rounded-2xl border border-purple-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-200">
-                  <Pill className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">New Medicine</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Stock / bottle entry</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setIsEnrollmentFormOpen(true); }}
-                className="p-3.5 bg-cyan-50/70 hover:bg-cyan-100/80 rounded-2xl border border-cyan-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-cyan-600 text-white rounded-xl shadow-md shadow-cyan-200">
-                  <FlaskConical className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">Sync Protocols</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Ovsynch &amp; Presynch</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileQuickActionsOpen(false); setMoveToPenAnimalId(null); setIsMoveToPenModalOpen(true); }}
-                className="p-3.5 bg-teal-50/70 hover:bg-teal-100/80 rounded-2xl border border-teal-100 flex flex-col items-start gap-1.5 text-left active:scale-95 transition-transform"
-              >
-                <div className="p-2 bg-teal-600 text-white rounded-xl shadow-md shadow-teal-200">
-                  <ArrowRightLeft className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-800">Move to Pen</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Relocate cow / herd</p>
-                </div>
-              </button>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setIsDoseModalOpen(false); setDoseModalData(null); }}
+                  className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-2xl text-xs uppercase tracking-wider transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAdministerDose(doseModalData.healthEventId, doseModalData.doseDate || dateUtils.today())}
+                  className="flex-1 py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30 transition-all flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Administer & Deduct Stock</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-}
 
-export default function App() {
-  const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
-  const [authLoading, setAuthLoading] = useState(true);
+      {/* Cure Evaluation Modal */}
+      {isCureModalOpen && cureModalData && (
+        <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="px-8 py-6 border-b border-slate-100 bg-amber-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-500 text-white rounded-2xl shadow-sm">
+                  <Stethoscope className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">Cure Evaluation</h3>
+                  <p className="text-xs text-amber-700 font-black uppercase tracking-widest mt-0.5">
+                    Treatment Ended ‚Ä¢ Cow {cureModalData.animalTag}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setIsCureModalOpen(false); setCureModalData(null); }}
+                className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-slate-600 transition-all shadow-xs"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-  useEffect(() => {
-    const unsub = authService.onAuthStateChanged((currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
-    });
-    return () => unsub();
-  }, []);
+            <div className="p-8 space-y-6">
+              <div className="text-center space-y-2">
+                <p className="text-sm font-black text-slate-800">Has Cow {cureModalData.animalTag} completely recovered?</p>
+                <p className="text-xs text-slate-500 font-semibold">
+                  Select Cured to restore the cow health status to Normal, or Not Cured if she remains sick.
+                </p>
+              </div>
 
-  const handleLogout = async () => {
-    await authService.logout();
-    setUser(null);
-  };
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => handleEvaluateCure(cureModalData.healthEventId, true)}
+                  className="p-5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-2 border-emerald-300 hover:border-emerald-500 rounded-2xl font-black text-center transition-all flex flex-col items-center gap-2 active:scale-95 group shadow-sm hover:shadow-md"
+                >
+                  <CheckCheck className="w-7 h-7 text-emerald-600 group-hover:scale-110 transition-transform" />
+                  <span className="text-sm font-black uppercase tracking-wider">Cured</span>
+                  <span className="text-[10px] text-emerald-600/80 font-bold">Status: Normal</span>
+                </button>
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans p-6 text-center">
-        <img
-          src={AGROVET_LOGO_BASE64}
-          alt="AgroVet Pro"
-          className="w-24 h-24 rounded-3xl object-cover shadow-2xl mb-6 border border-slate-200 animate-pulse"
-          referrerPolicy="no-referrer"
-        />
-        <h2 className="text-2xl font-black text-slate-800 tracking-tight">AgroVet<span className="text-emerald-600">Pro</span></h2>
-        <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wider">Connecting to Private Farm Database &bull; Asad Mehmood</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <AuthScreen onLoginSuccess={(loggedInUser) => setUser(loggedInUser)} />;
-  }
-
-  return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
-      <MainApp user={user} onLogout={handleLogout} />
-    </div>
-  );
-}
-
+                <button
+                  type="button"
+                  onClick={() => handleEvaluateCure(cureModalData.healthEventId, false)}
+                  className="p-5 bg-rose-50 hover:bg-rose-100 text-rose-700 border-2 border-rose-300 hover:border-rose-500 rounded-2xl font-black text-center transition-all flex flex-col items-center gap-2 active:scale-95 group shadow-sm hover:shadow-md"
+                >
+                  <AlertTriangle className="w-7 h-7 text-rose-600 group-hxúÏ]_s€8íœß@º{±< íl'«ˆîc«W%∂/ÚÃ^ïÀï°DH‚ò"y$dŸ£Q’æÏ=›”›€÷]m›’›˚}¶˘˚Æ (Ä) cO‰›hjb	ƒﬂ∆Ø›†\”h;Ó⁄µöÕaëÌ«.sﬂ‚_{A4\!Î{OHÓ≥á∂O∫û«'ˆêÓÆ0z√¨xHzÅœ¨égwØ»(i‘µcäwØ\øoç]áF+{'#£à:;ÎXOı.öçÊíÔQSÎE£±˛™ë¥xŒ ^õŸloì∂€Ω*™~gΩ3b,»=ŸYw‹k=1óîI–~ÆMü$ﬂ&Î_ë6˝Áıôk{dˇò¥…ÇË™ÁcÚ!p ˘´ı©ÃoªÈ≥gœH≠∂Fv˜»$m¶¯1#‘èœB•dW˘◊{ÆÔ‘(°u◊!ªªªdVaΩ£ÿY{ù©Œˆ›°Ì;Zeﬂ‘er|°‘—E<›œ|áﬁ\ö´É ƒó§W6ˆ N{ï‘ùÎK˝à∆±÷ÚP¢¥‰w§πF÷ï2≥Ó◊=Í˜Ÿ`ç|EöçŸ&ç◊O“V# FëOjÍÃ¬L™àÎπ7‘!ÆSf5»è÷E´—∏$=Zu∆Vö£˘a3∑w+Ü÷&ÈÙ≠ÿ≥µæ¯Ï ˛ù(Å3Fëu„≠d@ñiäè–[ΩëÁë°}cç≠÷çG`&aÿéu±—·%â∂à'2…∏éC}AiËÅÎìÉ`àùQdsÓﬁh4VrÿœÙ!¥^·0†√úÀœâ^ì†CŸòR?Wπ®ﬁ»ÁÉçó„p9íJÊˆleòÈçÕ∫r]Ä<"˝Àüˇ∏≥>ÿ06ÊZ∏âg"CååèaR µbh¯#ÌëÉÕ(ÜÆœ©Iﬁ}ÚÛˇ[p∏`˙.›YMr«HÖ,ÈÖxÉ≠6ûçb+{ìπL3¶ôπ>aõ©q∆÷©¨NYUí„ò|§C€ı!π:—íƒ9Nÿg`µR(#C∂ÚËœóà≤≤‹fC[mxî≤”∞âŸ≠Gw'CcÉmÚ˝o'R¶Mˇ·{2ùÓ˝ÇÅÑ@GkYóZ∑÷´
+Ωœ≥hﬂ≠ˇOÖ”Vc&OZ\ût ﬂêW¸Ir5¬¬LÏVI›–ƒF⁄@≥æ≈õò+?UAìA¬<y≥of∆N‚  Å˝MùŸ˝zÏπ]Z≥ZkS”ÄÃ‹Y,ªaAÀÕ2n √é’Ò÷eÓ5%ÌQÁ⁄e\àÇsséP~%‡´»Q‘√Ä˚4˙ œ6+èÑ®“0Å"S”A¢,JËDî:S.*”¥çúBIS -çÈ®Æí¿¬]∂;ÿæ„—˝cÀ"m™Ar”ãJ‡ÓG†¿‡?V7bê'úù
+ ó-,õj‰áû›°ﬁ}b)º¡ÊŒiw‡ª]Ti¨vgù∑Sÿ◊G¨‡!!Ï6L:∂Rò«sc∂ª“—bi”qqˆVKÏÄ¬ya1v´*Y «âÂ>ME™≥$ÆÔÉ∞	FÃs}*
+ˆÇ.XR±•˛ê¬é¬û^€êkw‚”ÒG
+Çø>?˘È'≤∫jí8‚¯Ä’>Ê<®õ'I%µ	©◊Î≤ ÁdVÁ6(˙Ãé˙î’y√dji¯1⁄o%“nô€¶†ú¨ø¡y?>¸5—c√ó∏Â#«ûﬂl”*µ•ã˜"`~((üå∆§v¢ h{k•hﬁ¡ Ìà⁄‘Y6x°ﬁ∑YÑ±Íß–
+h¥ª≤Ô8`öﬁí†”ËöÎœ1Ä•®lùe∂Î≈Âÿ¨éÃ§∫ ∏4˚¬
+Éœ`~∏åÍ√fÖs™`pBéâ,ETÄ¢{µ;n$ ¿~j÷|ÄK!€eL´â¿zïVS∫fËW¡ïÂ–ãôcÄ~ãÌ¥ÍVŒÃ2è±h8∞¡ˆˆR+º@ÜòΩ…”
+‘èπ:YD˝,/Zó:M>ï_N@^ÎÀºôZl0-DŸ9.Ö≈˜4ÁL iío»j€ÀÊ9ÅQ4>~˛ó[%€dı Ü2«ŒœˇÒßÊ.õªB{É{pı¶>ÀÈZM˜Ù6Î‰–K¥{EròH)·Â≠ù‡Qx‰;7A¬µŸ(¢k™ˇ7¶X{‘yc;} +C7ÃÕ<◊7πu'ﬂ‰À¨orËhR©ög“Î?òc2'BFz!◊∂NŒ[°≠Äã˚*Õ÷~È~ƒ¸M`T…¢[≈=ÜR@w∫§^3Tp§Õî∂^ﬂ∏bL`›‚∞i£Í(à>µ†÷Í¸z2ÊY´p£ƒ‡ù]¿«@Ü=ú-bXï»Y—fÿùè‘vÏégÍË‘‰…5{œÑ40,xÌl≠…∫ß{’6LÎè¶(ÈkëÅBˇ§+c[†
+me¸"Ü=4≥3å±úÄê÷≈ã∆ı‡r∆k∑ñ=bAÍ2Ã´FáaÜ5tæô·w åíD%îƒ&Ç)ÔêüQoÔ<` 5ä∂…§:‚˚õ[úÿãÄ.Q=º∏\õy≤–m¢◊Ãàﬁ)·TØºK	ÊNd{.∆+{˝Àˇ¸9ãhﬂ∑}∂PÔ{Ætó€z°®¢{˚ë∆#èÒ›¥UYÔÍ‹±ıïÔ¢Úé˛¸üˇJNCÍﬂcü.÷«2πû8ÃˆÜI[`pC;¨’∫ò7≥;˚àÕKûgø¬ˆ'œX7lÇfktc$ë% 'ﬂTça3CØ+zª;’ªŒ4«ek¶ÆGl5J$A˘ÇÏL—3£ﬂY∑[ı(Òi+¬€‹^¸÷Çπ1åá:´ENÁ¬Vuo˜fC;t†7»›IìW~0ˆ…LYM|ﬂZ^tÄÛ¨lPÑﬁ¡Ø9]K¶L¬†%oBd:å´1Ã´K•Ë¸ê:Óh∏≤∑¢W:]¡ôà%é√ºêô|jÃ&™1≠$“ˇ†â◊¬”"‰∑&æüÑK¿∞ 0J©õZß2·UN«íO`µÁÊîÊr0- ÂÀÒd,T–£È˜”íâõıV[x§-ÙiÀıí1òºg£ä%4WI’qV™éØKç\
+Í;y’§¿ØÆ‰ÂäÍwîmÃ˙ı läˇBW∆◊Ö¶8ÿXôÊ'Ô¿¨Å¡H«w”´Sj’¡ì≥C°a•F+¸π]çE¢j™ÓÄÖ1ôòÀ< )á≥Vá(Ω∂ä®ﬁÏ√Û3ãb¬îO&åPôÃc=K≠k(ÿ å|ËR‡yÀ∂¯™:Ñ úË	Á∞*≠Ìj˜2äw0
+∂#4«+≠˜Îœ—ÈÚisÎ9i6öŸJñÕßúÌ_‚
+ùƒÌ‰dŸ<Ôˆ=KÛ÷toFDdÃ≥ *7—5‡∏Gÿ¿EÊ÷	hÏØ2Bo@ÂxN∆îå]†)öe`ª]ê∑D*$På	( ó§ö@=£‰ÕüÀgR/%áÆ›˜Éÿ≈”<®¢öa]eW›`´,ÂÆ¸rqÊàæ’õ§l≠ò|œ◊*ÓƒÖŒÒ¨Ω0h¡)<‚ãUùÃrÅ‘hôıü–1ZY√H|t˝hK_Ì2*:§∂ı˙Úõ¢Z¡
+^–ä–£¥Jü˛WÿB≤TÍMoò+P©ÊÆïfÀ∂Ö«,qi*47y≤§ù9W·I·{á$◊˛˛6‡»áREÆGõq(OuÁA(5Ù@ Ø˙!‡j}9˙êTã ØHœ[¢5!Y	`â#ïˆº‘uJÕ∑Ù$F¥ìÕ-äg¸ú∞±õ?xÙhTN∏*˙œ∏Är3.Â{‘fπW&ıÚ2Ø@—/û+πΩ,õ–YVõŒ>5ro	ıÃ{ é„&â≥;y:S|Î,rá@Œü~"O•‰ùG>æ	ùP]ÎÔuZq|œ›ÖV›5rî€»*óA7ÂÁ˚»‹‡õKıú!¨ÓÔ¨ß∆Ïûjo‘	T9ı›(Ü‹˝Äô6pMVÒøˇ)SK∂ºjCÆyˆ±ñe˚ò|,ˆ±pÍ$CßŒ¢´Üe*Z»èdAp˛êÛóÑSôı^ÖøC…#’8T™{HN’Ïè2èÀ¡È˛7„çf£˘‚ê è⁄!°ÛQ˚$r†¸‚ñ¯‚ñ¯5›BŸg‘á8@¡Î√èYØ®Ëñ8MÛ>:œÑ—ƒ˙‚ô(˜Lh:ßÍúPEp˙€d«îy+ñ‰¥¸‚N
+Õˆ?≈fù| ‚∫÷[æ¬&^ä7#Ôä@Jt;◊CÒøZyQ2’ü5ˇœ7œCë…¥àè")˙≈KÒhΩC1É’¸fô∑Ÿi« èÇàzÔ¬ì⁄©üx'I»”|Z†c\Û´Ï´xˆõf„µêºüöçfz¶LOoÒ£ez⁄ÜûW¯<xæeWP» &&9ø¯A9œ°Ò `ƒÃø∆A‚Q√»XıÏö?wƒoIlìd∂é…Öú≠uú¢À:9Ó€ó!óºâ?`dvƒµËÃIêuô<oﬂBÅa=≥B-xÚ‰◊PŒ
+Vó/ÍYπz¶∞Ç™úïàÎ2uÃı∑‹øBñ‘[E%K≤ﬁmÁàSãÏ{ÚB…√(f®„vA™ë≥Q‘‡¿A—!ﬂ∆vüíw¿†Atõè'o"»¬PµÃ´_îíßº"•«√‰1H¡‰[raà¨4îóäõÉ#≈9Tƒ¿…±“§ö%L® œ”ØÍÛµ=6x{ç¡Ï@)T~iâãªIÙÌ∞ÇáÚõ˙4Ø´∂áñ?C¯† ÀâLÀÃí˛‡≤Aõ›´oC'√MÅHÒbk∂¥ûä~œE±∞◊k@YwéBÔ÷b÷È¸÷Ä⁄»ßÜ˚)∆¯:[‡≠„"Èﬁq˙;πNËX‰®e›n(ê∂…ªŸÙùCB˝¯˝˚ì∑ÌˆÛ¨ÑRmüéπ˙\[´≥‡∏}⁄f∏ﬁ√Ø8Ù\V[=_]ªh\fÀrêqRmìÑŸ,LR,ﬁ&‚Û2/q €dµŸ CoïL/µ¬”¸òS˙ã%«U[≈»s]ÕÁY€‘ÜIÆ≠≤•ÛÉí8H	X◊..ÛyècQi∫¯±¥5€TGŒ•úxNÅñ˚EäÃXÅ∫Qlò–"sÒˆ#SZ≠66—]A.ñ˜42Y@‘.Î.ËL™ÍGÍˇq™Ó>!›…±è¨PU‚ÀR∫ƒÁ5&è≤‚~f£´∏ën\ä-ô9¬ÁZKÙ±bòÁ⁄ÀOAf¢ì|Rj™T®8	án]Éı˜ÔSTôÄ¥Ña‰≥‚)–r,4≤d’o˛Â˙≤¿…≤sßHf‘Ê(?ñÇI˙ Ía9£~nrv·y ètr+>)-ÉNÌÚ°ì+k†⁄Ü2_∫Kû°àBè‚È*SO\ﬂ≈ ¡∫‡9Õ}òmZù–∞{íÙJ/&≥Øk™ÈëÿÿPÖª>ïú6(‚'s{…¢™r√ß ™ÆbRtP†áVkìƒ√Ì‰,≥Ì1´πﬁ""¥47ónx¬è÷≈÷’‚R|Ω•m¬eBT†=Ω≈/q’∑4”C	;aéÄπ°ÜüËŸˇ{.ˇbı"Ël“ÁM-*ÖÒV+ﬁ0.æn\è/Kî–´:h)]ñF’ùpŸøßà[_Ò T¢++F†,¨≠7M≠‘Á 3¿
+Îw—πßM∞~ı¥‰“ÿá†„zîº·¥"'ˆµ€»9ƒµKÅœSâ4æbAòèoÉ'ÅÊÿY‡§ô`Ñ#Òëç©\p±%"0ß—4Ä¸≈˜õm>3FçO÷fxÛ©µˇD˝é]k<Áˇ’/◊¿"ÓX]€Î÷<¥ÈÔ®]ãÌµ–£gâÿ,b@kklÃ˘å√cÇ"Øˇ’V;t;r@Ö≤´⁄±#UhÈb˘Æ[Ù3á	“)ºQÇè Åmô4	è™€Èπ]¯kËæÿzü∑⁄ı'3ƒÚõ∞¶K÷lô;ŒÑ∑@ﬂ3◊w«ıùÒåÂΩ}åÿ°ÏåF$∫cÿ±`>a0EΩèY\QÎ˘í˜X&4Î/!:êsñ∆≤œD∑~`úŒÏ÷˚Ã1qg%k“„ë¿gÖ–∑1ç‚™¿Q{¸–∞°ë·m
+Fÿ†¸>S%tdå8¢˚hˇªl@¬ëó8¨˙¯>Çô4ÁUÇ¶¿k∑∫ XCfΩ¨‰	6z{˘√{(:œl√áÂÿjn¬|47s´l?Çzf± î"{π|Ì⁄ök3ê¡n47ßyw2≠oñÖöJ~Í–7øoC.^õÚK‚_;"≥ΩC¸∂dWWù”∏‹∫sÊçbùx/Äv/àƒÊ∆e.vQâãÙŒ¢)¬håèW0âÓ£√tñ:?ıÛy•’å≈wÏË#ÓwUïZsáÛ¿¢å«Ê|ê%P8ñ/–í˛VHµeÉ Óae@)›~U[*√Œ,êR€F[Cß=†î©Êç[∞L,e•;ãr˛Õ¬K≥î_d#8∆Cìçõ≥-åGóq#U\z≥˚≠9s∑ÄuåQ#÷≈´-SÃ:…)å£$M2à≈√m<Kú∑S«k≤ÂuK>5€öUÃ6≥dI‚ù≈`÷û·ma¸÷÷J¯&Áh∂PMV1t∫·$…Ø¡sﬂˆq« óÜpè‹ºäÛ^ørÏ«ïΩüˇ¸_	πO%ÛkzåG)öÜ£J∏çs;ƒC âƒÙ¢#—≥G~wÄ≈lüy∑ÜXZFíú«z §ñ~–†$ºdz4&}}∆›ÇM.]≤I∆k0Ë≤pˇŸ]£5M*êÚµ≤≥îÒ∂&;I…¶Vvã«Ö_tı9·◊ ·töQ◊á$¨∂≠ÜU√m=—	QKf∑)ªÚ„Gè*XU∆¿|Ÿ»&m
+G”¸†òƒ§H \#∆©ç"A0Ì±2eaˆéæL«¿…ÏjÕ;Z{£Ñ´“¨ùV—˚ÄÚ∆bõ∆7ñº	ÀX˜\_g&
+ ûΩ=∆ø√*√ëöÊ¥≤á1Æ¨ï8d%ÑŒ"Ô¨2(∞¸¡√∞◊£≥$√‡ã≠z˛KŸ©?iø˝p|≤~|zÚ|°z…\º¬‹∆∑‹/Ñgw‰∫ƒ4œ›Ï P9Á)ÜñÜ˜ œQô∏/)Q»E∆ﬁgeD|9^b–›++Ç¶œÿ≠´ºâoyY1s¢&säfŒπô≈N òæ¨Æ¶g^∏ãd◊ÇÉ*%N™2lróNc◊Ù™\)≥¶ë8óÜU”ÀUÜ	5≥©ŸÄ˛¨L
+ÿˆÒt∞∏4rœúöùä…3‚zûO„x	95ïf1∏œvp5ƒ´˜îKAØFCY‹œâcÇæY∑`ëB/‚Åu=⁄Z¯Û∞ºooÏ!©ùÆ›3¸€¸ê q‰•™•Ñ~ˆd˝b‡∑áÄp˙"q.”lÀ{—•@/
+B˛»èáÔóÓ¸íﬂŸ·É{qõ0πñ“¡ó˘,'ﬁÕ'N´>E°óSoí‘πêüÂ[Ã'}Z ÙIâbo ﬁ<Zƒ£›.ß¸æ≈;?¨ªŒO.ÅòßÖ<ıπ!ˇ6}=◊AﬂΩµ˝,‰y⁄\¿À\Àwﬁ£¿ŒÛx®ˇÍ *Ùí@æ}Îw…Y <œ¨t‹Ùß◊Ò-zŸüŸ√5^$Â?óˆEáwè /∆,‰,K¥π,!s-K-¿<!KÏGQ0˛à˚@Ô±ÁK¬ iÛ{Êàè‘<-ÈcX¸4÷‚ÏPöuŒ+¥¥µ◊O¶Oû–õ0 $9¥gcéﬁ»ªŸ˚aåÑÁƒ€Ü.F1ç=Ωè∑]í]	mÜQˆGlÄâ‰'Ç¨≥WhCrõF◊nó÷˚îàBb∆⁄?üTå˘ﬁ¸‰1Øˆ[mFﬁ¯ÅÇêÙ∂◊£]VSÓãÍF~<Í‡ñî÷Î‰µàk›N≠÷ùuG;¸üP{˛zˆLÈúv@ﬁìÔT‚uÚæ‘¯ìÈs¬Øl•√«Òﬂ˝`ƒ∞ª(â:{lªLÜ«3◊íñdG”´S^ª€#5Ö¢kImôw=e|Ë˙÷¿äªæπ	8˝‚7GØéˆè.ç¬ß‡Dá;»≈ãÛÇx¢∞ˇé;Ï+pç£ÓÓdˇ˜Oø{{˛È˝ÈÔO?ΩŸoø}±©_eª+˚˝(¯é2\≠TÈ•üùﬂ‰ØN%“æX≤Û¿∫íW="0Ï§Ø£…«€Jè◊„Gµπàˆ(†":`•π›]ÒK&Õ≤)2kg– â
+”ÌÁ‚˝Òd‹ÂÔê{!Ú<‘Œ˙†•Ù°D f^§óæˇ©(≤æ9À˜Å†xÔ ed‰^£@;≤£!˙ùm~‡Y˘öÏ«∂ı`™úSDí@≠Ì”gEÆ\¥¥*ò≈ıì)∞Ã; '˚)Ké–‡a°¥çJy@áΩ )öwpﬂƒ$ä£hwÇˇNE/ÅKÂ}Ò+=±îæˇ  ˇˇ e&≈

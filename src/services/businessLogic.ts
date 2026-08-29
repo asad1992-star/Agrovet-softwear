@@ -189,6 +189,7 @@ export const isBreedingEligibleAnimal = (animal?: { herd?: string; isCalf?: bool
 /**
  * Deterministic State Machine
  * Calculates the current status of an animal based on its event history and farm settings.
+ * Reproductive status is strictly independent of health treatment logs.
  */
 export const computeAnimalStatus = (
   animal: Animal,
@@ -196,38 +197,53 @@ export const computeAnimalStatus = (
   healthEvents: HealthEvent[],
   enrollments: ProtocolEnrollment[],
   settings: FarmSettings
-): { status: AnimalStatus; expectedCalving?: string; pregnancyDays?: number; serviceDate?: string; activeProtocol?: ProtocolEnrollment } => {
+): { 
+  status: AnimalStatus; 
+  healthStatus?: AnimalStatus.SICK | AnimalStatus.OBSERVATION | AnimalStatus.ACTIVE;
+  expectedCalving?: string; 
+  pregnancyDays?: number; 
+  serviceDate?: string; 
+  activeProtocol?: ProtocolEnrollment;
+  isSick?: boolean;
+} => {
   const today = dateUtils.today();
   
-  // 1. Check Health (Sick status overrides Repro status)
+  // 1. Check Health independently
   const sortedHealth = [...healthEvents]
     .filter(e => e.animalId === animal.id)
     .sort((a, b) => b.date.localeCompare(a.date));
   
+  let healthStatus: AnimalStatus.SICK | AnimalStatus.OBSERVATION | AnimalStatus.ACTIVE = AnimalStatus.ACTIVE;
+  let isSick = false;
+
   const latestHealth = sortedHealth[0];
-  if (latestHealth && latestHealth.type === HealthEventType.ILLNESS) {
-    // Check if within treatment period
-    if (latestHealth.treatmentDays) {
-      const endDate = dateUtils.addDays(latestHealth.date, latestHealth.treatmentDays);
-      if (today <= endDate) {
-        return { status: AnimalStatus.SICK };
+  if (latestHealth) {
+    if (latestHealth.cureStatus === 'Cured') {
+      healthStatus = AnimalStatus.ACTIVE;
+      isSick = false;
+    } else if (latestHealth.cureStatus === 'Not Cured') {
+      healthStatus = AnimalStatus.SICK;
+      isSick = true;
+    } else if (latestHealth.type === HealthEventType.ILLNESS) {
+      if (latestHealth.treatmentDays) {
+        const endDate = dateUtils.addDays(latestHealth.date, latestHealth.treatmentDays);
+        if (today <= endDate || latestHealth.cureStatus !== 'Cured') {
+          healthStatus = AnimalStatus.SICK;
+          isSick = true;
+        }
+      } else {
+        healthStatus = AnimalStatus.SICK;
+        isSick = true;
       }
-    } else {
-      return { status: AnimalStatus.SICK };
+    } else if (latestHealth.type === HealthEventType.OBSERVATION) {
+      healthStatus = AnimalStatus.OBSERVATION;
     }
   }
 
-  if (latestHealth && latestHealth.type === HealthEventType.OBSERVATION) {
-    return { status: AnimalStatus.OBSERVATION };
-  }
-
-  // 2. Check Active Protocols (Overrides standard repro status)
+  // 2. Check Active Protocols
   const activeEnrollment = enrollments.find(e => e.animalIds?.includes(animal.id) && e.status === 'Active');
-  if (activeEnrollment) {
-    return { status: AnimalStatus.IN_PROTOCOL, activeProtocol: activeEnrollment };
-  }
 
-  // 3. Check Young Stock status (if assigned to growing / suckling / post-weaning pen)
+  // 3. Check Young Stock status
   const isYoungStock = isYoungStockAnimal(animal);
 
   // 4. Check Repro Cycle
@@ -236,47 +252,87 @@ export const computeAnimalStatus = (
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const latest = sortedRepro[0];
-  if (!latest) {
-    return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
-  }
+  
+  // Base reproductive status calculation
+  let baseReproStatus: AnimalStatus = isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE;
+  let expectedCalving: string | undefined;
+  let pregnancyDays: number | undefined;
+  let serviceDate: string | undefined;
 
-  switch (latest.type) {
-    case ReproEventType.INSEMINATION:
-      return { 
-        status: AnimalStatus.INSEMINATED, 
-        pregnancyDays: dateUtils.diffDays(today, latest.date),
-        serviceDate: latest.date 
-      };
-    
-    case ReproEventType.PREGNANCY_CHECK:
-      if (latest.success && latest.pregnancyResult !== 'Non-Pregnant') {
-        const lastInsem = sortedRepro.find(e => e.type === ReproEventType.INSEMINATION && e.date <= latest.date);
-        const expectedCalving = lastInsem ? dateUtils.addDays(lastInsem.date, settings.gestationDays) : undefined;
-        const pregnancyDays = lastInsem ? dateUtils.diffDays(today, lastInsem.date) : undefined;
-        const serviceDate = lastInsem?.date;
-        
-        if (expectedCalving) {
-          const daysToCalving = dateUtils.diffDays(expectedCalving, today);
-          if (daysToCalving <= settings.closeupDays) return { status: AnimalStatus.CLOSEUP, expectedCalving, pregnancyDays, serviceDate };
-          if (daysToCalving <= settings.dryPeriodDays) return { status: AnimalStatus.DRY, expectedCalving, pregnancyDays, serviceDate };
+  if (activeEnrollment) {
+    baseReproStatus = AnimalStatus.IN_PROTOCOL;
+  } else if (latest) {
+    switch (latest.type) {
+      case ReproEventType.INSEMINATION:
+        baseReproStatus = AnimalStatus.INSEMINATED;
+        pregnancyDays = dateUtils.diffDays(today, latest.date);
+        serviceDate = latest.date;
+        break;
+      
+      case ReproEventType.PREGNANCY_CHECK:
+        if (latest.success && latest.pregnancyResult !== 'Non-Pregnant') {
+          const lastInsem = sortedRepro.find(e => e.type === ReproEventType.INSEMINATION && e.date <= latest.date);
+          expectedCalving = lastInsem ? dateUtils.addDays(lastInsem.date, settings.gestationDays) : undefined;
+          pregnancyDays = lastInsem ? dateUtils.diffDays(today, lastInsem.date) : undefined;
+          serviceDate = lastInsem?.date;
+          
+          if (expectedCalving) {
+            const daysToCalving = dateUtils.diffDays(expectedCalving, today);
+            if (daysToCalving <= settings.closeupDays) {
+              baseReproStatus = AnimalStatus.CLOSEUP;
+            } else if (daysToCalving <= settings.dryPeriodDays) {
+              baseReproStatus = AnimalStatus.DRY;
+            } else {
+              baseReproStatus = AnimalStatus.PREGNANT;
+            }
+          } else {
+            baseReproStatus = AnimalStatus.PREGNANT;
+          }
+        } else {
+          baseReproStatus = isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE;
+          pregnancyDays = 0;
+          expectedCalving = undefined;
         }
-        return { status: AnimalStatus.PREGNANT, expectedCalving, pregnancyDays, serviceDate };
-      }
-      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE, pregnancyDays: 0, expectedCalving: undefined };
+        break;
 
-    case ReproEventType.CALVING:
-      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE, pregnancyDays: 0, expectedCalving: undefined };
+      case ReproEventType.CALVING:
+        baseReproStatus = isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE;
+        pregnancyDays = 0;
+        expectedCalving = undefined;
+        break;
 
-    case ReproEventType.DRY_OFF:
-      return { status: AnimalStatus.DRY };
+      case ReproEventType.DRY_OFF:
+        baseReproStatus = AnimalStatus.DRY;
+        break;
 
-    case ReproEventType.ABORTION:
-      // Abortion resets cow to Open (Active) immediately with 0 pregnancy days and cleared calving date
-      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE, pregnancyDays: 0, expectedCalving: undefined };
+      case ReproEventType.ABORTION:
+        baseReproStatus = isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE;
+        pregnancyDays = 0;
+        expectedCalving = undefined;
+        break;
 
-    default:
-      return { status: isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE };
+      default:
+        baseReproStatus = isYoungStock ? AnimalStatus.YOUNG_STOCK : AnimalStatus.ACTIVE;
+        break;
+    }
   }
+
+  // If sick or under observation, return status preserving expectedCalving, pregnancyDays and serviceDate so reproductive status is NEVER linked or wiped by health!
+  const finalStatus = (isSick && baseReproStatus === AnimalStatus.ACTIVE) 
+    ? AnimalStatus.SICK 
+    : (healthStatus === AnimalStatus.OBSERVATION && baseReproStatus === AnimalStatus.ACTIVE)
+      ? AnimalStatus.OBSERVATION
+      : baseReproStatus;
+
+  return {
+    status: finalStatus,
+    healthStatus,
+    isSick,
+    expectedCalving,
+    pregnancyDays,
+    serviceDate,
+    activeProtocol: activeEnrollment
+  };
 };
 
 export const generateAlerts = (
@@ -303,12 +359,12 @@ export const generateAlerts = (
       dueDate: movement.date,
       animalId: movement.animalId,
       priority: movement.isAutomatic ? 'High' : 'Medium',
-      metadata: { fromPen: movement.fromPen, toPen: movement.toPen, isAutomatic: movement.isAutomatic }
+      metadata: { fromPen: movement.fromPen, toPen: movement.toPen, isAutomatic: movement.isAutomatic, eventKind: 'movement' }
     });
   });
 
-  // Protocol Alerts - Grouped by protocol template step (not per individual animal)
-  const protocolAlertMap: Record<string, { animals: string[], stepDate: string, daysUntil: number, stepAction: string, stepDay: number, templateName: string, stepTime?: string }> = {};
+  // Protocol Alerts - Grouped by protocol template step (only show 1 day before, today, or overdue)
+  const protocolAlertMap: Record<string, { animals: string[], stepDate: string, daysUntil: number, stepAction: string, stepDay: number, templateName: string, stepTime?: string, protocolId: string, stepIdx: number }> = {};
 
   animals.forEach(animal => {
     const animalRepro = reproEvents.filter(e => e.animalId === animal.id).sort((a, b) => b.date.localeCompare(a.date));
@@ -321,12 +377,22 @@ export const generateAlerts = (
           if (activeProtocol.completedStepIndices.includes(idx)) return;
           const stepDate = dateUtils.addDays(activeProtocol.startDate, step.dayOffset);
           const daysUntil = dateUtils.diffDays(stepDate, today);
-          if (daysUntil <= 3) {
+          // Alert ONLY 1 day before (daysUntil <= 1) and keep if overdue (daysUntil < 0)
+          if (daysUntil <= 1 && daysUntil >= -14) {
             const key = `${activeProtocol.id}-step-${idx}-${stepDate}`;
             if (!protocolAlertMap[key]) {
-              protocolAlertMap[key] = { animals: [], stepDate, daysUntil, stepAction: step.action, stepDay: step.dayOffset, templateName: template.name, stepTime: step.time };
+              protocolAlertMap[key] = { 
+                animals: [], 
+                stepDate, 
+                daysUntil, 
+                stepAction: step.action, 
+                stepDay: step.dayOffset, 
+                templateName: template.name, 
+                stepTime: step.time,
+                protocolId: activeProtocol.id,
+                stepIdx: idx
+              };
             }
-            // Add all animals in this group to the alert
             activeProtocol.animalIds?.forEach(id => {
               const a = animals.find(anim => anim.id === id);
               if (a && !protocolAlertMap[key].animals.includes(a.tag)) {
@@ -338,79 +404,153 @@ export const generateAlerts = (
       }
     }
 
-    // Pregnancy Check Alert - inseminated animals approaching check window
+    // Pregnancy Check Alert - ONLY 1 day before check due date (e.g. at 29d if check at 30d) and stays as OVERDUE if missed
     if (status === AnimalStatus.INSEMINATED) {
       const lastInsem = animalRepro[0];
-      const daysSince = dateUtils.diffDays(today, lastInsem.date);
-      // Alerts appear when approaching or past the setting threshold
-      if (daysSince >= 1) { 
-        alerts.push({
-          id: `alert-check-${animal.id}`,
-          type: 'Repro',
-          title: daysSince >= settings.pregnancyCheckDays ? 'Pregnancy Check OVERDUE' : 'Pregnancy Check Required',
-          description: `${animal.tag} (P-${daysSince}d): Inseminated ${daysSince} days ago. Pregnancy check due.`,
-          dueDate: dateUtils.addDays(lastInsem.date, settings.pregnancyCheckDays),
-          animalId: animal.id,
-          priority: daysSince >= settings.pregnancyCheckDays ? 'High' : 'Medium'
-        });
-      }
-    }
+      if (lastInsem) {
+        const daysSince = dateUtils.diffDays(today, lastInsem.date);
+        const checkDueDate = dateUtils.addDays(lastInsem.date, settings.pregnancyCheckDays);
+        const daysUntilDue = dateUtils.diffDays(checkDueDate, today);
 
-    // Heat Cycle Alert (21-day cycle check after Estrus or Insemination)
-    {
-      const lastHeat = animalRepro.find(e => e.type === ReproEventType.ESTRUS || e.type === ReproEventType.INSEMINATION);
-      if (lastHeat && status === AnimalStatus.ACTIVE) {
-        const daysSince = dateUtils.diffDays(today, lastHeat.date);
-        const nextHeatDue = settings.estrusCycleDays || 21;
-        if (daysSince >= nextHeatDue - 2 && daysSince <= nextHeatDue + 5) {
+        // Alert shows starting 1 day before due date (daysUntilDue <= 1), on due date (0), and stays Overdue (< 0)
+        if (daysUntilDue <= 1 && daysSince <= 120) { 
+          const isOverdue = daysUntilDue < 0;
+          const isTomorrow = daysUntilDue === 1;
+          const isToday = daysUntilDue === 0;
+
           alerts.push({
-            id: `alert-heat-${animal.id}`,
+            id: `alert-check-${animal.id}`,
             type: 'Repro',
-            title: daysSince >= nextHeatDue ? 'Heat Check Due' : `Heat Check in ${nextHeatDue - daysSince} days`,
-            description: `${animal.tag}: ${nextHeatDue}-day heat cycle check. Last event: ${lastHeat.type} on ${lastHeat.date}.`,
-            dueDate: dateUtils.addDays(lastHeat.date, nextHeatDue),
+            title: isOverdue ? 'Pregnancy Check OVERDUE' : isToday ? 'Pregnancy Check Due TODAY' : 'Pregnancy Check Due Tomorrow',
+            description: `${animal.tag} (P-${daysSince}d): Inseminated on ${lastInsem.date}. ${isOverdue ? `Overdue by ${Math.abs(daysUntilDue)} day(s).` : isToday ? 'Perform PD check today.' : 'Due tomorrow.'}`,
+            dueDate: checkDueDate,
             animalId: animal.id,
-            priority: daysSince >= nextHeatDue ? 'High' : 'Medium',
+            priority: isOverdue ? 'High' : isToday ? 'High' : 'Medium',
+            metadata: { eventKind: 'repro_pd', defaultEventType: ReproEventType.PREGNANCY_CHECK, animalId: animal.id }
           });
         }
       }
     }
 
-    // Upcoming Calving Alert
+    // Heat Cycle Alert (21-day cycle check after Estrus or Insemination) - 1 day before & overdue
+    {
+      const lastHeat = animalRepro.find(e => e.type === ReproEventType.ESTRUS || e.type === ReproEventType.INSEMINATION);
+      if (lastHeat && (status === AnimalStatus.ACTIVE || status === AnimalStatus.INSEMINATED)) {
+        const nextHeatDueDays = settings.estrusCycleDays || 21;
+        const nextHeatDate = dateUtils.addDays(lastHeat.date, nextHeatDueDays);
+        const daysUntilHeat = dateUtils.diffDays(nextHeatDate, today);
+
+        // Alert starts 1 day before (daysUntilHeat <= 1) and stays up to 4 days overdue
+        if (daysUntilHeat <= 1 && daysUntilHeat >= -4) {
+          const isOverdue = daysUntilHeat < 0;
+          alerts.push({
+            id: `alert-heat-${animal.id}`,
+            type: 'Repro',
+            title: isOverdue ? 'Heat Check OVERDUE' : daysUntilHeat === 0 ? 'Heat Check Due TODAY' : 'Heat Check Due Tomorrow',
+            description: `${animal.tag}: ${nextHeatDueDays}-day heat cycle check. Last event: ${lastHeat.type} on ${lastHeat.date}.`,
+            dueDate: nextHeatDate,
+            animalId: animal.id,
+            priority: isOverdue ? 'High' : 'Medium',
+            metadata: { eventKind: 'repro_heat', defaultEventType: ReproEventType.ESTRUS, animalId: animal.id }
+          });
+        }
+      }
+    }
+
+    // Upcoming Calving Alert - 1 day before (or when entered closeup window) and overdue
     if (expectedCalving) {
       const daysLeft = dateUtils.diffDays(expectedCalving, today);
-      if (daysLeft <= settings.closeupDays && daysLeft > -30) { // Keep alert active for 30 days past due if not logged
+      // Alert triggers 1 day before calving (or in closeup) and stays as OVERDUE
+      if (daysLeft <= 1 && daysLeft >= -30) {
+        const isOverdue = daysLeft < 0;
         alerts.push({
           id: `alert-calving-${animal.id}`,
           type: 'Repro',
-          title: daysLeft < 0 ? 'Calving OVERDUE' : 'Upcoming Calving',
-          description: daysLeft < 0 ? `${animal.tag} is overdue for calving by ${Math.abs(daysLeft)} days.` : `${animal.tag} (P-${pregnancyDays || 0}d) is in closeup. Expected calving in ${daysLeft} days.`,
+          title: isOverdue ? 'Calving OVERDUE' : daysLeft === 0 ? 'Calving Expected TODAY' : 'Calving Expected Tomorrow',
+          description: isOverdue 
+            ? `${animal.tag} (P-${pregnancyDays || 0}d) is overdue for calving by ${Math.abs(daysLeft)} day(s).` 
+            : daysLeft === 0 
+              ? `${animal.tag} is due for calving today!` 
+              : `${animal.tag} (P-${pregnancyDays || 0}d) expected calving tomorrow.`,
           dueDate: expectedCalving,
           animalId: animal.id,
-          priority: 'High'
+          priority: 'High',
+          metadata: { eventKind: 'repro_calving', defaultEventType: ReproEventType.CALVING, animalId: animal.id }
         });
       }
     }
 
-    // Health Treatment Reminders
+    // Health Multi-Day Treatment Reminders & Cure Evaluation Alerts
     const animalHealth = healthEvents
-      .filter(e => e.animalId === animal.id && e.treatmentDays)
+      .filter(e => e.animalId === animal.id && (e.treatmentDays || e.type === HealthEventType.ILLNESS))
       .sort((a, b) => b.date.localeCompare(a.date));
     
     animalHealth.forEach(event => {
-      if (!event.treatmentDays) return;
-      const endDate = dateUtils.addDays(event.date, event.treatmentDays);
-      const daysInto = dateUtils.diffDays(today, event.date);
-      const daysLeft = dateUtils.diffDays(endDate, today);
-      if (daysInto >= 0 && daysLeft >= -7) { // keep alert for 7 days if missed
+      const treatmentDays = event.treatmentDays || 1;
+      const dosesGiven = event.dosesAdministered || [event.date];
+      const medName = event.medication || (event.treatments && event.treatments.length > 0 ? event.treatments.map(t => t.name).join(', ') : '') || event.details;
+
+      // 1. Daily dose alerts during the treatment course
+      for (let dayIdx = 0; dayIdx < treatmentDays; dayIdx++) {
+        const doseDate = dateUtils.addDays(event.date, dayIdx);
+        const daysUntilDose = dateUtils.diffDays(doseDate, today);
+        const dayNumber = dayIdx + 1;
+
+        // Has this specific day's dose already been recorded?
+        const isDoseGiven = dosesGiven.includes(doseDate);
+
+        // If dose has NOT been entered for this date, show alert ONLY 1 day before (daysUntilDose = 1), TODAY (0), or OVERDUE (< 0)
+        if (!isDoseGiven && daysUntilDose <= 1 && daysUntilDose >= -7) {
+          const isOverdue = daysUntilDose < 0;
+          const isToday = daysUntilDose === 0;
+
+          alerts.push({
+            id: `health-dose-${event.id}-day-${dayNumber}-${doseDate}`,
+            type: 'Health',
+            title: isOverdue 
+              ? `Treatment Dose ${dayNumber}/${treatmentDays} OVERDUE` 
+              : isToday 
+                ? `Treatment Dose ${dayNumber}/${treatmentDays} Due TODAY` 
+                : `Treatment Dose ${dayNumber}/${treatmentDays} Due Tomorrow`,
+            description: `${animal.tag}: Day ${dayNumber} of ${treatmentDays} (${medName}). ${isOverdue ? `Missed on ${doseDate} — dose required.` : isToday ? 'Administer today\'s scheduled dose.' : 'Scheduled for tomorrow.'}`,
+            dueDate: doseDate,
+            animalId: animal.id,
+            priority: isOverdue ? 'High' : isToday ? 'High' : 'Medium',
+            metadata: { 
+              eventKind: 'health_dose', 
+              healthEventId: event.id, 
+              animalId: animal.id, 
+              dayNumber, 
+              totalDays: treatmentDays, 
+              doseDate, 
+              medication: medName,
+              treatments: event.treatments 
+            }
+          });
+        }
+      }
+
+      // 2. Cure Evaluation Alert on the last day / after final dose of treatment
+      const finalDoseDate = dateUtils.addDays(event.date, treatmentDays - 1);
+      const daysUntilFinal = dateUtils.diffDays(finalDoseDate, today);
+
+      // Trigger Cure evaluation alert on final day (daysUntilFinal <= 0) if not evaluated yet (cureStatus !== 'Cured' && cureStatus !== 'Not Cured')
+      if (daysUntilFinal <= 0 && daysUntilFinal >= -14 && (!event.cureStatus || event.cureStatus === 'Pending')) {
         alerts.push({
-          id: `health-treat-${event.id}-${today}`,
+          id: `health-cure-eval-${event.id}`,
           type: 'Health',
-          title: daysLeft < 0 ? 'Treatment Missed/Overdue' : 'Treatment Reminder',
-          description: `${animal.tag}: Day ${daysInto + 1}/${event.treatmentDays} — ${event.medication || event.details} (${daysLeft < 0 ? 'Overdue' : `${daysLeft} days remaining`})`,
-          dueDate: endDate,
+          title: 'Cure Check: Is Cow Cured or Still Sick?',
+          description: `${animal.tag} completed treatment course for ${medName}. Confirm outcome: Is she cured (return to normal) or still sick?`,
+          dueDate: finalDoseDate,
           animalId: animal.id,
-          priority: daysLeft <= 0 ? 'High' : 'Medium'
+          priority: 'High',
+          metadata: { 
+            eventKind: 'health_cure_eval', 
+            healthEventId: event.id, 
+            animalId: animal.id, 
+            medication: medName,
+            treatmentDays 
+          }
         });
       }
     });
@@ -418,15 +558,16 @@ export const generateAlerts = (
 
   // Convert grouped protocol alerts to actual alert objects
   Object.entries(protocolAlertMap).forEach(([key, data]) => {
-    const { animals: animalTags, stepDate, daysUntil, stepAction, stepDay, templateName, stepTime } = data;
+    const { animals: animalTags, stepDate, daysUntil, stepAction, stepDay, templateName, stepTime, protocolId, stepIdx } = data;
     const countLabel = animalTags.length === 1 ? animalTags[0] : `${animalTags.length} Cows`;
     alerts.push({
       id: `protocol-grouped-${key}`,
       type: 'Protocol',
-      title: daysUntil < 0 ? `Protocol Step OVERDUE` : daysUntil === 0 ? 'Protocol Step Due TODAY' : `Protocol Step in ${daysUntil} Day${daysUntil > 1 ? 's' : ''}`,
+      title: daysUntil < 0 ? `Protocol Step OVERDUE` : daysUntil === 0 ? 'Protocol Step Due TODAY' : `Protocol Step Due Tomorrow`,
       description: `${countLabel} — ${stepAction} (Day ${stepDay} of "${templateName}")${stepTime ? ` @ ${stepTime}` : ''}${animalTags.length > 1 ? `. Tags: ${animalTags.slice(0,5).join(', ')}${animalTags.length > 5 ? ` +${animalTags.length - 5} more` : ''}` : ''}`,
       dueDate: stepDate,
-      priority: daysUntil <= 0 ? 'High' : 'Medium'
+      priority: daysUntil <= 0 ? 'High' : 'Medium',
+      metadata: { eventKind: 'protocol_step', protocolId, stepIdx, stepDate }
     });
   });
 

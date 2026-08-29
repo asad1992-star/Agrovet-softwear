@@ -134,6 +134,10 @@ export interface HealthEvent {
   numberOfDoses?: number; // Multi-dose: total number of injections
   daysGap?: number; // Days between each dose
   completedDoses?: number; // How many doses have been marked done
+  dosesAdministered?: string[]; // Array of ISO date strings (e.g. ['2026-08-28', '2026-08-29']) when daily doses were administered
+  isCured?: boolean; // true = cured, false = not cured / still sick
+  cureStatus?: 'Cured' | 'Not Cured' | 'Pending'; // Cure evaluation outcome
+  cureDate?: string; // Date cure status was evaluated
   attachments?: string[];
   technician?: string;
 }
