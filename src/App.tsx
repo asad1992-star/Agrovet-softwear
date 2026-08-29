@@ -104,6 +104,10 @@ import { MedicineHistoryModal } from './components/MedicineHistoryModal';
 import { QuickRestockModal } from './components/QuickRestockModal';
 import { QuickDispenseModal } from './components/QuickDispenseModal';
 import { BackupSettingsSection } from './components/BackupSettingsSection';
+import { DailyActionSheetModal } from './components/DailyActionSheetModal';
+import { generateDailyActionSheet } from './services/dailyActionSheetService';
+import { FertilityAnalyticsModal } from './components/FertilityAnalyticsModal';
+import { calculateFertilityAnalytics } from './services/fertilityAnalytics';
 import { performAutomaticBackup, isDailyBackupDue } from './services/backupService';
 import {
   deductMedicineStock,
@@ -126,7 +130,8 @@ import {
   findPregnantPen,
   isBreedingHeiferPen,
   normalizeTechnicianName,
-  normalizeSemenName
+  normalizeSemenName,
+  getMedicineDoseSuggestions
 } from './services/businessLogic';
 import {
   generateReproSectionReport,
@@ -365,6 +370,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [doseModalData, setDoseModalData] = useState<{ healthEventId: string; animalId: string; animalTag?: string; medication?: string; dayNumber?: number; totalDays?: number; doseDate?: string; treatments?: any[] } | null>(null);
   const [pregnancyCheckTarget, setPregnancyCheckTarget] = useState<Animal | null>(null);
   const [pregnancyCheckResult, setPregnancyCheckResult] = useState<'Pregnant' | 'Non-Pregnant' | ''>('');
+
+  // Daily Action Sheet & Fertility Analytics State
+  const [isActionSheetModalOpen, setIsActionSheetModalOpen] = useState(false);
+  const [actionSheetDate, setActionSheetDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isFertilityAnalyticsModalOpen, setIsFertilityAnalyticsModalOpen] = useState(false);
 
   // Report Center State
   const [selectedReportType, setSelectedReportType] = useState<ReportType>('summary');
@@ -758,6 +768,22 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       (a.name && a.name.toLowerCase().includes(reportAnimalSearch.toLowerCase()))
     ).slice(0, 5);
   }, [animals, reportAnimalSearch]);
+
+  const dailyActionSheet = useMemo(() => {
+    return generateDailyActionSheet(
+      animals,
+      reproEvents,
+      healthEvents,
+      enrollments,
+      [...protocols, ...customProtocols],
+      settings,
+      actionSheetDate
+    );
+  }, [animals, reproEvents, healthEvents, enrollments, protocols, customProtocols, settings, actionSheetDate]);
+
+  const fertilityAnalytics = useMemo(() => {
+    return calculateFertilityAnalytics(animals, reproEvents, settings);
+  }, [animals, reproEvents, settings]);
 
   const filteredReproEvents = useMemo(() => {
     let filtered = reproEvents.filter(e => {
@@ -2493,6 +2519,21 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   <Search className="w-5 h-5 stroke-[2.2]" />
                 </button>
 
+                {/* Daily Action Sheet Button */}
+                <button
+                  onClick={() => setIsActionSheetModalOpen(true)}
+                  className="relative min-w-[44px] min-h-[44px] px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 rounded-2xl flex items-center justify-center gap-1.5 transition-all shadow-xs border border-emerald-200/60 group"
+                  title="Daily Farm Action Sheet (Morning Worklist)"
+                >
+                  <ClipboardList className="w-5 h-5 text-emerald-700 stroke-[2.2] group-hover:scale-110 transition-transform" />
+                  <span className="hidden lg:inline text-xs font-black text-emerald-800 tracking-tight">Action Sheet</span>
+                  {dailyActionSheet.totalTasksCount > 0 && (
+                    <span className="min-w-[20px] h-[20px] px-1 bg-emerald-600 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-xs">
+                      {dailyActionSheet.totalTasksCount}
+                    </span>
+                  )}
+                </button>
+
                 {/* Notification Bell Button - 44px+ hit area */}
                 <button
                   onClick={() => setIsAlertPanelOpen(true)}
@@ -2619,6 +2660,31 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
                   {/* Ribbon Quick Actions */}
                   <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2.5 sm:gap-4">
+                    <button
+                      onClick={() => setIsActionSheetModalOpen(true)}
+                      className="col-span-2 sm:col-span-1 flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-emerald-500 text-slate-900 hover:bg-emerald-400 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-emerald-500/20 active:scale-95 group"
+                    >
+                      <div className="p-1.5 sm:p-2 bg-emerald-400 text-slate-900 rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                        <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      </div>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="truncate">Action Sheet</span>
+                        <span className="px-1.5 py-0.5 bg-slate-900 text-emerald-300 rounded-md text-[9px] font-black">{dailyActionSheet.totalTasksCount}</span>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => setIsFertilityAnalyticsModalOpen(true)}
+                      className="col-span-2 sm:col-span-1 flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-blue-600/90 text-white hover:bg-blue-600 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-blue-600/20 active:scale-95 group border border-blue-400/30"
+                    >
+                      <div className="p-1.5 sm:p-2 bg-blue-500 text-white rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
+                        <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      </div>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="truncate">Fertility Analytics</span>
+                        <span className="px-1.5 py-0.5 bg-blue-800 text-blue-200 rounded-md text-[9px] font-black">{fertilityAnalytics.overallConceptionRate}% CR</span>
+                      </div>
+                    </button>
                     <button
                       onClick={() => setIsAnimalFormOpen(true)}
                       className="flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-white text-slate-900 hover:bg-slate-50 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-white/5 active:scale-95 group"
@@ -3704,6 +3770,15 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                       P-{animal.pregnancyDays}d
                                     </span>
                                   )}
+                                  {(() => {
+                                    const rb = fertilityAnalytics.repeatBreeders.find(r => r.animal.id === animal.id);
+                                    if (!rb) return null;
+                                    return (
+                                      <span className="text-xs font-black text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded-xl uppercase tracking-wider">
+                                        âš ï¸ Repeat Breeder (AI #{rb.aiCount})
+                                      </span>
+                                    );
+                                  })()}
                                 </h4>
                                 <div className="flex items-center gap-3">
                                   <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border shadow-sm ${getStatusColor(animal.status)}`}>
@@ -3772,6 +3847,15 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                     P-{animal.pregnancyDays}d
                                   </span>
                                 )}
+                                {(() => {
+                                  const rb = fertilityAnalytics.repeatBreeders.find(r => r.animal.id === animal.id);
+                                  if (!rb) return null;
+                                  return (
+                                    <span className="text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                      âš ï¸ AI #{rb.aiCount} Repeat
+                                    </span>
+                                  );
+                                })()}
                               </h4>
                               <p className="text-xs text-slate-400 font-black uppercase tracking-widest">{animal.breed}</p>
                             </div>
@@ -3844,7 +3928,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   <h3 className="text-3xl font-black text-slate-800 tracking-tighter">Reproduction Lab</h3>
                   <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Global fertility logs</p>
                 </div>
-                <div className="flex gap-4 w-full sm:w-auto">
+                <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+              <button
+                onClick={() => setIsFertilityAnalyticsModalOpen(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2.5 bg-indigo-50 text-indigo-700 border-2 border-indigo-100 px-5 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-100 transition-all shadow-xs"
+              >
+                <TrendingUp className="w-4 h-4" /> Fertility Analytics ({fertilityAnalytics.overallConceptionRate}% CR)
+              </button>
                   <button
                     onClick={() => {
                       const label = (reproDateStart || reproDateEnd) ? `${reproDateStart || 'Start'} to ${reproDateEnd || 'End'}` : 'Full History';
@@ -7248,6 +7338,39 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 </div>
               </div>
 
+              {(() => {
+                const rb = fertilityAnalytics.repeatBreeders.find(r => r.animal.id === selectedAnimal.id);
+                if (!rb) return null;
+                return (
+                  <div className="p-4 sm:p-6 bg-rose-50 border-2 border-rose-200 rounded-2xl sm:rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+                    <div className="flex items-center gap-3.5">
+                      <div className="p-3 bg-rose-600 text-white rounded-2xl shadow-xs shrink-0">
+                        <AlertTriangle className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm sm:text-base font-black text-rose-950">âš ï¸ Repeat Breeder Alert</h4>
+                          <span className="text-[10px] font-black uppercase px-2.5 py-0.5 bg-rose-600 text-white rounded-md shadow-2xs">
+                            AI #{rb.aiCount} Inseminations
+                          </span>
+                        </div>
+                        <p className="text-xs text-rose-700 font-bold mt-0.5">
+                          {rb.daysOpenSinceFirstAI} days open â€¢ Last Semen: {rb.lastSemen} â€¢ Tech: {rb.lastTechnician}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsFertilityAnalyticsModalOpen(true)}
+                      className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-xs transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95 self-stretch sm:self-auto justify-center"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>View Recommendations</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-6">
                 <div className="p-3.5 sm:p-6 bg-slate-50 rounded-xl sm:rounded-[2rem] border border-slate-100 shadow-inner">
                   <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1 sm:mb-2">Life Status</p>
@@ -8669,168 +8792,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               <p className="text-sm text-slate-600 font-semibold">Select the result of today's pregnancy examination:</p>
               <div className="grid grid-cols-2 gap-4">
                 <button
-                  onClick={() => setPregnancyCheckResult('Pregnant')}
-                  className={`p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all ${pregnancyCheckResult === 'Pregnant' ? 'bg-emerald-600 text-white border-emerald-600 shadow-xl shadow-emerald-100' : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300'
-                    }`}
-                >
-                  âœ“ Pregnant
-                </button>
-                <button
-                  onClick={() => setPregnancyCheckResult('Non-Pregnant')}
-                  className={`p-6 rounded-2xl border-2 font-black text-sm uppercase tracking-wider transition-all ${pregnancyCheckResult === 'Non-Pregnant' ? 'bg-rose-600 text-white border-rose-600 shadow-xl shadow-rose-100' : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'
-                    }`}
-                >
-                  âœ— Open
-                </button>
-              </div>
-              <button
-                onClick={handlePregnancyCheck}
-                disabled={!pregnancyCheckResult}
-                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 disabled:opacity-40"
-              >
-                Confirm &amp; Update Status
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                  onClick={() => setPregnancyCheckResult('Pregnant')xœìZİnã6¾Ÿ§à‹Ø)F¶ó?ëÄ)‚$E}‘L¶N”–h›ID:¶ëØwØ‹Şôj­O²‡ÔE‘’™)2»h€vDêğèğü~‡ôú2ş\s~Ò_ı9§(f³Ğ#s¸ğÑˆÅ‰C4f¡pF>vŸ áğ Í¢ˆÄ.æ‰æi8qæ¨å0äTP:Ø÷Ñ_WQL&!İåõ”¸O?>óê÷û¨ù¼Mô-j&	HŒ}Ï9ív“ïÌ§TLŒâ[>Å›; cú”½<èv›¨§¸i‹¹q3ÆÉPrš²g÷JŸ8.]!´şimÌ_Z(ÿíß(Ûñú¢3š	ÁBsáEòÂÂ…×>uŸú«Ö>ê_"NÄƒE­­æ=¨=Wë¾)ìë\“.5zÌ8©°xşÊ0·zóy¶V,¾€¡Eï#bš¬ÊÈ>“vÏ­>Å¡çİä¦€åxä¯¿ú‹Íæ‚/4æÎxÖ‹–Î1…ü™a•¢§”dÁ«„‹Lï)×3ÉU÷Ã¾Šì›o©Ç"ìRÒu¥m˜f¹fá˜ÆÚÃAt~Œ<p 4XÌ¸a›••&´!Yú´ê|ƒş>{¡Lı%ºCW^@CÊaÃr·èyØGßt2[¬(—djZúÚÛC^6qƒ–­Í—áÃE«é‚xˆ†œ.úÙùpxÚıˆÆ>Y °XÀ—„bôŸ3.èx™£ÄÈIdü­ÛíœuÑlæÅ,’ºÀkh
+(}7¹Ôm¼pæ°(÷‘‡í“˜3ƒJŸ‘^0öa0¥[Å!¤ 4D?3È½Y¢'˜’QJ"Dçt×Ó,ìGzüKïÉÒËI·F'#"æ„„#(Ëº68Lpäë,¢:GQ*c*U,,épCL=hOĞÔ9i E[¢Id³²Ÿ9'AmÆy¢ÛwÒ:™gƒ"¤_t¦GVÆ‘É—'Ìòü^øJu	ÀÅÛ'VİÈŸ£•8må^ş#¬ÑïÿúÄä²Lááåı,‘xØ¸üR0!Ÿ–ÜVD/:Ñ¯Ë÷¨:á'e~%ı@Ï­1ö9Ù?—¯nŠ·BˆD˜_×æùª{uT‘\°òq^2Ku´"{óí™ùâ»¹om^®O8Ô
+â@jØÓZ"„,a‚!3©dÜwˆ|•3J‰FÏ!i@ØC>Ñ³1N6Ì÷*ÁYãrèN‰7ƒ
 
-      {/* Quick Daily Dose Administration Modal */}
-      {isDoseModalOpen && doseModalData && (
-        <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-            <div className="px-8 py-6 border-b border-slate-100 bg-rose-50 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-rose-500 text-white rounded-2xl shadow-sm">
-                  <Syringe className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-800">Administer Dose</h3>
-                  <p className="text-xs text-rose-600 font-black uppercase tracking-widest mt-0.5">
-                    Cow {doseModalData.animalTag} â€¢ Day {doseModalData.dayNumber} of {doseModalData.totalDays}
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => { setIsDoseModalOpen(false); setDoseModalData(null); }}
-                className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-slate-600 transition-all shadow-xs"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-8 space-y-6">
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">Scheduled Date</span>
-                  <span className="font-black text-slate-700">{doseModalData.doseDate}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">Prescribed Medication</span>
-                  <span className="font-black text-blue-600">{doseModalData.medication || 'Treatment Protocol'}</span>
-                </div>
-                {doseModalData.treatments && doseModalData.treatments.length > 0 && (
-                  <div className="pt-2 border-t border-slate-200/60 space-y-1">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Dosages to Administer:</span>
-                    {doseModalData.treatments.map((t: any, i: number) => (
-                      <div key={i} className="flex justify-between text-xs font-bold text-slate-800">
-                        <span>{t.name}</span>
-                        <span className="text-rose-600">{t.dose}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setIsDoseModalOpen(false); setDoseModalData(null); }}
-                  className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-2xl text-xs uppercase tracking-wider transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAdministerDose(doseModalData.healthEventId, doseModalData.doseDate || dateUtils.today())}
-                  className="flex-1 py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30 transition-all flex items-center justify-center gap-2 active:scale-95"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Administer & Deduct Stock</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Cure Evaluation Modal */}
-      {isCureModalOpen && cureModalData && (
-        <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-            <div className="px-8 py-6 border-b border-slate-100 bg-amber-50 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-amber-500 text-white rounded-2xl shadow-sm">
-                  <Stethoscope className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-800">Cure Evaluation</h3>
-                  <p className="text-xs text-amber-700 font-black uppercase tracking-widest mt-0.5">
-                    Treatment Ended â€¢ Cow {cureModalData.animalTag}
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => { setIsCureModalOpen(false); setCureModalData(null); }}
-                className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-slate-600 transition-all shadow-xs"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-8 space-y-6">
-              <div className="text-center space-y-2">
-                <p className="text-sm font-black text-slate-800">Has Cow {cureModalData.animalTag} completely recovered?</p>
-                <p className="text-xs text-slate-500 font-semibold">
-                  Select Cured to restore the cow health status to Normal, or Not Cured if she remains sick.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={() => handleEvaluateCure(cureModalData.healthEventId, true)}
-                  className="p-5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-2 border-emerald-300 hover:border-emerald-500 rounded-2xl font-black text-center transition-all flex flex-col items-center gap-2 active:scale-95 group shadow-sm hover:shadow-md"
-                >
-                  <CheckCheck className="w-7 h-7 text-emerald-600 group-hover:scale-110 transition-transform" />
-                  <span className="text-sm font-black uppercase tracking-wider">Cured</span>
-                  <span className="text-[10px] text-emerald-600/80 font-bold">Status: Normal</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleEvaluateCure(cureModalData.healthEventId, false)}
-                  className="p-5 bg-rose-50 hover:bg-rose-100 text-rose-700 border-2 border-rose-300 hover:border-rose-500 rounded-2xl font-black text-center transition-all flex flex-col items-center gap-2 active:scale-95 group shadow-sm hover:shadow-md"
-                >
-                  <AlertTriangle className="w-7 h-7 text-rose-600 group-hxœì]_sÛ8’Ï§@¼{±<Ê’l'Çö”cÇW%¶/òÌ^•Ë•¡DHâ˜"y$dÙ£QÕ¾ì=İÓİÛÖ]mİÕİû}¦ùû® (€)ÊcOäİhjb	ÄßÆ¯İ \Óh;îÚµšÍa‘íÇ.sßâ_{A4\!ë{OHî³‡¶OºÇ'öî®0zÃ¬xHzÏ¬gw¯È(iÔµcŠw¯\¿o]‡F+{'#£ˆ:;ëXOõ.šğæ’ğïQSëE£±şª‘´xÎÊ^›Ùlo“¶Û½*ª~g½3b,È=ÙYwÜk=1—”IĞ~®MŸ$ß&ë_‘6ıçõ™k{dÿ˜´É‚èªçcò!p ù«õ©Ìo»é³gÏH­¶Fv÷È$m¦ø1#ÔÏB¥dWù×{®ïÔ(¡u×!»»»dVa½£ğØY{©Îöİ¡í;ZeßÔer|¡ÔÑE<İÏ|‡Ş\š«ƒÊÄ—¤W6öÊN{•ÔëKıˆÆ±ÖòP¢´äw¤¹FÖ•2³î×=ê÷Ù`|EšÙ&×OÒV#ÊF‘OjêÌÂLªˆë¹7Ô!®Sf5ÈÖE«Ñ¸$=ZuÆVš£ùa3·w+†Ö&éô­Ø³µ¾øì ş(3F‘uã­d@–iŠĞ[½‘ç‘¡}c­ÖG`&aØu±Ñá%‰¶ˆ'ğ2É¸C}Aièë“ƒ`ˆQdsîŞh4VrØÏô!´^á0 ÃœËÏ‰^“ CÙ˜R?W¹¨ŞÈçƒ—ãp9’Jæöle˜éÍºr]€<"ıËŸÿ¸³>Ø06æZ¸‰g"CŒŒaR µbhø#í‘ƒÍ(†®Ï©IŞ}òóÿ[p¸`ú.İYMrÇH…,é…xƒ­6b+{“¹L3¦™¹>a›©qÆÖ©¬NYU’ã˜|¤CÛõ!¹:Ñ’Ä9NØg`µR(#C¶òèÏ—ˆ²²ÜfC[mx”²Ó°‰Ù­Gw'Ccƒmòıo'R¦Mÿá{2îı‚„@GkY—Z·Ö«
-½Ï³hß­ÿO…ÓVc&OZ\t ßWüIr5ÂÂLìVIİĞÄFÚ@³¾Å›˜+?UA“AÂ<y³ofÆNâÊÊıMÙızì¹]Z³ZkSÓ€ÌÜY,»aAËÍ2n ÃÕñÖeî5%íQçÚe\ˆ‚ssP~%à«ÈQÔÃ€û4ú Ï6+„¨Ò0"SÓA¢,JèD”:S.*Ó´œBIS -é¨®’ÀÂ]¶;Ø¾ãÑıcË"mªArÓ‹JàîG Àà?V7ğb'œ
- —-,›jä‡İ¡Ş}b)¼ÁæÎiwà»]Ti¬vg·SØ×G¬à!!ì6L:¶R˜Çsc¶»ÒÑbiÓqqöVKì€Âya1v«*Y Ç‰å>MEª³$®ïƒ°	FÌs}*
-ö‚.XR±¥şÂÂ^ÛkwâÓñG
-‚¿>?ùé'²ºj’8âø€Õ>æ<¨›'I%µ	©×ë²ÊçdVç6(úÌú”ÕyÃdjiø1Úo%Òn™ğÛ¦ œ¬¿Áy?>ü5ÑcÃ—¸å#ÇßlÓ*µ¥‹÷"`~((ŸŒÆ¤v¢Êh{k¥hŞÁÊíˆÚÔY6x¡Ş·Y„±ê§Ğ
-h´»²ï8`šŞ’ ÓèšëÏ1€¥¨le¶ëÅåØ¬Ì¤ºÊ¸4ûÂ
-ƒÏ`~¸ŒêÃf…sª`pB‰,ET€¢{µ;n$ À~jÖ|€K!ÛeL«‰Àz•VSºfèWÁ•åĞ‹™c€~‹í´êVÎÌ2±h8°ÁööR+¼@†˜½ÉÓ
-Ô¹:YDı,/Z—:M>•_N@^ëË¼™Zl0-DÙ9.…Å÷4çL i’oÈjÛËæ9Q4>~ş—[%Ûdõ †2ÇÎÏÿñ§æ.›»B{ƒ{põ¦>ËéZM÷ô6ëäĞK´{Er˜H)áå­àQxä;7AÂµÙ(¢kªÿ7¦X{Ôyc;}Ê+C7ğÌÍ<×7¹u'ßäË¬orèhR©šgÒë?˜c2'BFz!×¶NÎ[¡­€‹û*ÍÖ~é~ÄüM`TÉ¢[Å=†R@wº¤^3Tp¤Í”¶^ß¸bL`İâ°i£ê(ˆ>µ Öêüz2æY«p£Äà]ÀÇ@†=œ-bX•ÈYÑfØÔvìgêèÔäÉ5{Ï„40,xíl­Éº§{Õ6Lë¦(ék‘Bÿ¤+c[ 
-meü"†=4³3Œ±œ€ÖÅ‹ÆõàrÆk·–=bAê2Ì«F‡a†5t¾™áw Œ’D%”Ä&‚)ïŸQoï<` 5Š¶É¤:âû›[œØ‹€.Q=¼¸\›y²Ğm¢×ÌˆŞ)áT¯¼K	æNd{.Æ+{ıËÿü9‹hß·}¶Pï{®t—Ûz¡¨¢{û‘Æ#ñİ´UYïêÜ±õ•ï¢òşüŸÿJNCêßcŸ.ÖÇ2¹8Ìö†I[`pC;¬Õº˜7³;ûˆÍKg¿Âö'ÏX7l‚fktc$‘%Ê'ßTa3C¯+z»;Õ»Î4Çek¦®Gl5J$Aù‚ìLÑ3£ßY·[õ(ñi+ÂÛÜ^üÖ‚¹1Œ‡:«ENçÂVuo÷fC;t 7ÈİI“W~0öÉLYM|ßZ^t€ó¬lP„ŞÁ¯9]K¦LÂ %oBd:Œ«1Ì«K¥èü:îh¸²·¢W:]Á™ˆ%Ã¼™|jÌ&ª1­$Òÿ ‰×ÂÓ"ä·&¾Ÿ„KÀ° 0J©›Z§2áUNÇ’O`µçæ”ær0-ÊåËñd,TĞ£é÷Ó’‰›õV[x¤ğ-ôiËõ’1˜¼g£Š%4WIÕqVª¯K\
-ê;yÕ¤À¯®äåŠêw”mÌúõÊlŠÿBWÆ×…¦8ØX™æ'ïÀ¬ÁHÇwÓ«SjÕÁ“³C¡a¥F+ü¹]E¢jªî€…1™˜Ë< )‡³V‡(½¶Š¨ŞìÃó3‹bÂ”O&ŒP™Ìc=K­k(ØÊŒ|èRàyË¶øª:„Êœè	ç°*­íj÷2Šw0
-¶#4Ç+­÷ëÏÑéòisë9i6šÙJ–Í§œí_â
-ÄíädÙ<ïö=KóÖtoFDdÌ³Ê*7Ñ5à¸GØÀEæÖ	hì¯2Bo@åxNÆ”Œ] )še`»]·D*$PŒ	( ğ—¤š@=£äÍŸËgR/%‡®İ÷ƒØÅÓ<¨¢ša]eWİ`«,å®ğürqæˆ¾Õ›¤l­˜|Ï×*îÄ…Îñ¬½0hÁ)<â‹UÌrÔh™õŸĞ1ZYÃH|tıhK_í2*:¤¶õúò›¢ZÁ
-^ĞŠĞ£´JŸşWØB²TêMo˜+P©æ®•fË¶…Ç,qi*47y²¤9WáIá{‡$×şş6àÈ‡RE®G›q(OuçA(5ô@ ¯ú!àj}9úT‹ ¯HÏ[¢5!Y	`‰#•ö¼ÔuJÍ·ô$F´“Í-Šgüœ°±›?xôhTN¸*úÏ¸€r3.å{Ôf¹W&õò2¯@Ñ/+¹½,›ĞYV›Î>5ro	õÌ{Êã&‰³;y:S|ë,r‡@ÎŸ~"O¥äG>¾	P]ëïuZq|Ïİ…Vİ5r”ÛÈ*—A7åçûÈÜà›Kõœ!¬îï¬§ÆìjoÔ	T9õİ(†Üı€™6pMVñ¿ÿ)SK¶¼jC®yö±–eû˜|,ö±pê$C§Î¢«†e*ZÈdApşó—„S™õ^…¿CÉ#Õ8Tª{HNÕì2ËÁéş7ãf£ùâ Ú!¡óQû$r üâ–øâ–ø5İBÙgÔ‡8@ÁëÃY¯¨è–8Mó>:Ï„ÑÄúâ™(÷Lh:§êœPEpúÛdÇ”y+–ä´üâN
-Íö?Åf| âºÖ[¾Â&^Š7#ïŠ@Jt;×Cñ¿ZyQ2ÕŸ5ÿÏ7ÏC‘É´ˆ")úÅKñh½C1ƒÕüf™·ÙiÇ ‚ˆzïÂ“Ú©Ÿx'IÈÓ|Z c\ó«ì«xö›fãµ¼Ÿšfz¦LOoñ£ezÚ†Wø<x¾eWPÈ &&9¿øA9Ï¡ñÊ`ÄÌ¿ÆAâQÃÈXõìš?wÄoIl“d¶É…œ­uœ¢Ë:9îÛ—!—ğ¼‰?`dvÄµèÌIğu™<oßBa=³B-xòä×PÎ
-V—/êY¹z¦°‚ªœ•ˆë2uÌõ·Ü¿B–Ô[E%K²ŞmçˆS‹ì{òBÉÃ(f¨ãvAª‘³QÔàÀAÑ!ßÆvŸ’wÀ At›'o"ÈÂPµÌ«_”’§¼"¥ÇÃä1HÁä[raˆ¬4”—Š›ƒ#Å9TÄÀÉ±Ò¤š%L¨ ÏÓ¯êóµ=6x{Áì@)T~i‰‹»Iôí°‚‡ò›ú4¯«¶‡–?Cø ÊË‰LËÌ’şà²A›İ«oC'ÃMHñbk¶´Š~ÏE±°×k@YwBïÖbÖéüÖ€ÚÈ§†û)Æø:[à­ã"éŞqú;¹NèXä¨eİn(¶É»ÙôCBıøıû“·íöó¬„RmŸ¹ú\[«³à¸}Úf¸ŞÃ¯8ô\V[=_]»h\fËrqRm“„Ù,LR,Ş&âóğ2/q ÛdµÙ Co•L/µÂÓü˜Sú‹%ÇU[ÅÈs]ÍçYÛÔ†I®­²¥óƒ’8H	X×..óycQiºø±´5ÛTGÎ¥œxN–ûEŠÌXºQl˜Ğ"sñö#SZ­66Ñ]A.–÷42Y@Ô.ë.èLªêGêÿqªî>!İÉ±¬PUâËRºÄç5&²â~f£«¸‘n\Š-™9ÂçZKô±b˜çÚËOAf¢“|RjªT¨8	‡n]ƒõ÷ïST™€´„aä³â)Ğr,4²dÕoşåú²ÀÉ²s§HfÔæ(?–‚Iú êa9£~nrvğáy tr+>)-ƒNíò¡“+k Ú†2_ºK¡ˆBâé*SO\ßÅ Áºà9Í}˜mZĞ°{’ôJ/&³¯kªé‘ØØP…»>•œ6(â's{É¢ªrÃ§ ª®bRtP ‡Vk“ÄÃíä,³í1«¹Ş""´47—nxÂÖÅÖÕâR|½¥mÂeBT =½Å/qÕ·4ÓC	;a€¹¡†ŸèÙÿ{.ÿbõ"èlÒçM-*…ñV+Ş0.¾n\/K”Ğ«:h)]–FÕpÙ¿§ˆ[_ñ T¢++F ,¬­7M­Ôç 3À
-ëwÑ¹§M°~õ´äÒØ‡ ãz”¼á´"'öµÛÈ9ÄµKÏS‰4¾bA˜oƒ'æØYà¤™`„#ñ‘©\p±%"0§Ñ4€üÅ÷›m>3FOÖfxó©µÿDı]k<çÿÕ/×À"îX]ÛëÖ<´éï¨]‹íµĞ£g‰Ø,b@kklÌùŒÃc‚"¯ÿÕV;t;r@…²«Ú±#Uhébù®[ô3‡	Ò)¼Q‚ m™4	ªÛé¹]økè¾ØzŸ·Úõğ'3Äò›°¦KÖl™;Î„·@ß3×wÇõñŒå½}ŒØ¡ìŒF$ºcØ±`>a0E½Y\Qëù’÷X&4ë/!:s–Æ²ÏD·~`œÎìÖûÌ1qg%kÒã‘Àg…Ğ·1âªÀQ{üĞ°¡‘ám
-FØ ü>S%tdŒ8¢ûhÿ»l@Â‘—8¬úø>‚™4çU‚¦Àk·º XCf½¬ä	6z{ùÃ{(:ÏlÃ‡åØjnÂ|47s«l?‚zf± ”"{¹|íÚšk3Án47§yw2­o–…šJ~êĞ7¿oC.^›òKâ_;"³½Cü¶dWWÓ¸Üºsæbx/€v/ˆÄæÆe.vQ‰‹ôÎ¢)ÂhŒW0‰î£Ãt–:?õóy¥ÕŒÅwìè#îwU•Zs‡óÀ¢ŒÇæ|%P8–/Ğ’şVHµeƒ îae@)İ~ğU[*ÃÎ,RÛF[C§= ”©æ[°L,e¥;‹rşÍÂK³”_d#8ÆC“›³-ŒG—q#U\z³û­9s·€uŒQ#ÖÅ«-SÌ:É)Œ£$M2ˆÅÃm<Kœ·SÇk²åuK>5ÛšUÌ6³dIâÅ`ÖámaüÖÖJø&çh¶PMV1tºá$É¯ÁsßöqÇ —†pÜ¼Šó^¿rìÇ•½Ÿÿü_	¹O%ókzŒG)š†£J¸s;ÄC ‰Äô¢#Ñ³G~w€ÅlŸy·†XZF’œÇz ¤–~Ğ $¼dz4&}}Æİ‚M.]²IÆk0è²pÿÙ]£5M*òµ²³”ñ¶&;IÉ¦Vv‹Ç…_tõ9á× átšQ×‡$¬¶­†UÃm=Ñ	QKf·)»òãG*XUÆÀ|ÙÈ&m
-GÓü ˜Ä¤H \#Æ©"A0í±2eaö¾LÇÀÉìjÍ;Z{£„«Ò¬VÑû€òÆb›Æ7–¼	ËX÷\_g&
- ½=Æ¿Ã*Ã‘šæ´²‡1®ğ¬•8d%„Î"ï¬2(°üÁÃ°×£³$Ãà‹­zşKÙ©?i¿ıp|²~|zò|¡zÉ\¼ÂÜÆ·Ü/„gwäºÄ4Ïğİì P9ç)†–†÷ÊÏQ™¸/)QÈEÆŞgeD|9^bĞİ++‚¦ÏğØ­«¼‰oyY1s¢&sŠfÎ¹™ÅNÊ˜¾¬®¦g^ğ¸‹d×‚ƒ*%Nª2lr—Nc×ôª\)³¦‘8—†UÓËU†	5³©Ù€ş¬L
-Øöñt°¸4rÏœšŠÉ3âzOãx	95•f1¸Ïvp5Ä«÷”KA¯FCYÜÏ‰c‚¾Y·`‘B/âu=ÚZøó°¼ooì!©®İ3üÛü qä¥ª¥„~ödıbà·‡€pú"q.ğÓlË{Ñ¥@/
-BşÈ‡ï—îü’ßÙáƒ{q›0¹–ÒÁ—ù,'ŞÍ'N«>E¡—So’Ô¹Ÿå[Ì'}Z ôI‰bo Ş<ZÄ£İ.§ü¾Å;?¬»ÎO.˜§…<õ¹!ÿ6}=×Aß½µı,äyÚ\ÀË\ËwŞ£ÀÎóx¨ÿê *ô’@¾}ëwÉY <Ï¬tÜô§×ñ-zÙŸÙÃğ5^$å?—öE‡w /Æ,ä,Kğ´¹,!s-Kğ-À<!KìGQ0şˆû@ï±çKÂÊió{æˆÔğ<-écXü4ÖâìPšuÎ+´´µ×O¦OĞ›0 $9´gcŞÈ»ÙûaŒ„çÄÛ†.F1ğ=½·]’]	m†QöGl€‰ä'‚¬³WhCr›F×n—Öû”ˆBbÆÚ?ŸTŒùŞüä1¯ö[mFŞø‚ô¶×£]VSî‹êF~<êà–”ÖëäµˆkİN­ÖuG;üŸP{şzöLéœv@Ş“ïTâuò¾Ôø“ésÂ¯l¥ÃÇñßı`Ä°»(‰:{l»L†Ç3×’–dGÓ«S^»Û#5…¢kIm™w=e|èúÖÀŠ»¾¹	8ıâ7G¯ö.Â§àD‡;ÈÅ‹ó‚x¢°ÿ;ì+p£îîdÿ÷O¿{{şéıéïO?½Ùo¿}±©_e»+ûı(ø2\­Té¥Ÿßä¯N%Ò¾X²óÀº’W="0ì¤¯£ÉÇÛJ×ãGµ¹ˆö( ":`¥¹İ]ñK&Í²)2kgĞÊ‰
-ÓíçâıñdÜåï{!ò<ÔÎú ¥ô¡D f^¤—¾ÿ©(²¾9Ë÷ xï edä^£@;²£!úm~àYùšìÇ¶õ`ªœSD’@­íÓgE®\´´*˜Åõ“)°Ì; 'û)KĞàa¡´Jy@‡½Ê)šwpßÄ$Š£hw‚ÿNE/Kå}ñ+=±”¾ÿ  ÿÿ e&Å
+  H%Ë¾eü3ùå0‚‘d¾®â^“Š¾.eÀânLG ­;âQWÕ¢ÏĞY†¢•9wôË/¨ù,Ø#4L0—ùÍ—*³œ½2Ü@…wmŸ„1E—¨«ãŒj#EHÂ@ÜÓM|T¤j»¡>t£ÅÇ*A\JQKÈ‚xB ¦0´©I½j³Õ(«à¨Õ=À&Ë·ˆöP¨êƒJÆ6íäz"ËşŠ®·ºsVÿ6ŞX.«_Iõv¹íØWºG½–³ŠÛ|¤¶ğ©p6ù·oí.+´¶T^‘*QVe³,–‘Ä¨êu¹&É¿?¨Ê¢²èÎ¨Gí“M9Ø´¡{£z¦ã¡bEÚÒi•[qsë6K^C—Hü/rHñB½'Mí&d¥[zdN	öÅôöbsà½Eöº#S¨lñ~Ôç€Û ÖµìŞYgŸŒææQ3g:^ÿTË¤ÉŸh'ğ¹Î‘§¶¶o2"v}&=îbš¸“İ¬}¡Îtv ìØÚCdI§ õ÷Ğà	W@?ÍÜ§ê"µóéÇg4Û×³˜ ÛgìÏ*›kI¢5×n6ñgsªEØ±¹Æ²8~%İu&Ë'·×‚ˆ)ã.‹¾»äàŸĞb'Z9û"=ö¥ŞJ¥ª®ZõİZLúîWoœµè/–ôë¢Ä6Î/oœÕÆÒ@­mˆM×äAËy½S!—‘Oñ—(&®T3ñ¾µûUu\dœT¢q«ç‰O àIŸñd“M¢`˜b
+™DM@
+âê€YÜ³„}‹XÙB:{ƒÏ CIA¼µm‰c»!åIL=$ÿç@óÈÁUeö<ş#Qs‚ŞÒäDä[ºÉJØMÄ3²”E‚bÙ5ÜIŒ.øf2·å÷Væ=ı‚O¾î:#;o° 3AÉf±2 „Í¢MáIeIÇ€^ Ù,¸írÀ™®™dÔGôSJ’ƒ-õ¨Ç1øhæÛ¶Õg(ÊÛ_pfRìşË{é¼+œÛ4.“+œ^_Û±ç×ãüIéÙÍû³½Éı>ïJÊNŸ]hZ®9ÿ§ÜıÊ'±xŒ)'>©ôø¼]{ewÏüç¸|ŞÚı}H_¥ÓJd£•Üg^¹ªËN	F¯u¡hE¡rŞ”KÖ‡¬L"ç7!ã”QøÃÀº¢U(¼!ê¯¼’,2ˆÒ\XôW…5êüº …_C”O€„¸ª¦ÔÏ/@pùSBª6‘Vši´tÑC’E)…hä	Ê)³¡ “FclsÒm&tÂü¶,¥ËÇ:Y~o–’åã·ôğ¦‡JV(qËf3vùDn½®ëº|š§ÀÇ†f]4 $xğT}ëeº4,è²¤ä5ê§¼=¦¡×Â’·‚ÉŸ¹ä,ŠBüKyï#İöÆoyq<!"£>¯'Î~øÓ4	\'­T(¤Z5WJŒ‡˜©O^KA	'^"ŒM55;¸ƒÚğ “Oµì\¦–gòÈ²¼–UL¥×œv»‡u.‹'VßAi£>K´m¸1º
+±¿ÔåfFÍ‰sšªœZA¹=µÖ,43lFÒ_eÿ^ó‰böÀø/ağZÛ¸õ È„%¸erZQ&º'sEP*,ÅZ‘<oK$üöZ®ÊÍ#ŒÛƒûáíİàşêqğş¾¼ÀS‰;$su©ÜÚ‡$?¾
+ùñ|£Õ|lîè~Ô–®mY*×ôÎ¹)Åq9`úõ›7d±X Œ±üÅáôÙWQtşæ¿   ÿÿ {<c}

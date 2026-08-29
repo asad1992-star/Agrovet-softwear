@@ -227,7 +227,7 @@ export const computeAnimalStatus = (
     } else if (latestHealth.type === HealthEventType.ILLNESS) {
       if (latestHealth.treatmentDays) {
         const endDate = dateUtils.addDays(latestHealth.date, latestHealth.treatmentDays);
-        if (today <= endDate || latestHealth.cureStatus !== 'Cured') {
+        if (today <= endDate || latestHealth.cureStatus === 'Pending' || !latestHealth.cureStatus) {
           healthStatus = AnimalStatus.SICK;
           isSick = true;
         }
@@ -605,3 +605,47 @@ export const validations = {
     }
   }
 };
+
+
+export function getMedicineDoseSuggestions(
+  medicineName?: string,
+  healthEvents: any[] = [],
+  medicines: any[] = []
+): { suggestions: string[] } {
+  if (!medicineName || !medicineName.trim()) {
+    return { suggestions: [] };
+  }
+  const cleanName = medicineName.trim().toLowerCase();
+  
+  // Historical doses from health events
+  const historyDoses = new Set<string>();
+  healthEvents.forEach(ev => {
+    if (ev.treatments && Array.isArray(ev.treatments) && ev.treatments.length > 0) {
+      ev.treatments.forEach((t: any) => {
+        if (t?.name && t.name.toLowerCase() === cleanName && t.dose && t.dose.trim()) {
+          historyDoses.add(t.dose.trim());
+        }
+      });
+    } else if (ev.medication && ev.medication.toLowerCase() === cleanName && ev.dosage && ev.dosage.trim()) {
+      historyDoses.add(ev.dosage.trim());
+    }
+  });
+
+  const suggestions: string[] = Array.from(historyDoses);
+  
+  // Check matching medicine stock for category defaults
+  const matchedMed = medicines.find((m: any) => m?.name && m.name.toLowerCase() === cleanName);
+  const commonFallbacks = matchedMed?.category === 'Tablet' || matchedMed?.category === 'Bolus'
+    ? ['2 Bolus', '1 Bolus', '4 Bolus']
+    : matchedMed?.category === 'Powder'
+    ? ['50g', '100g', '25g']
+    : ['20ml', '15ml', '10ml', '30ml', '5ml'];
+
+  commonFallbacks.forEach(fb => {
+    if (!suggestions.includes(fb) && suggestions.length < 4) {
+      suggestions.push(fb);
+    }
+  });
+
+  return { suggestions: suggestions.slice(0, 5) };
+}
