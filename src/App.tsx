@@ -1,4 +1,4 @@
-ï»¿ï»¿ï»¿ï»¿/* Agrovet Pro - Farm Reproduction & Health v2.1 */
+/* Agrovet Pro - Farm Reproduction & Health v2.1 */
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard,
@@ -8809,11 +8809,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
       {/* Cure Evaluation Modal */}
       <CureEvaluationModal
-        isOpen={isCureModalOpexœÜWMoÛ8½çW°—F.
-gÏmTÀˆS¬€ã­½ØCÑW¤-")ˆt²†êÿŞ!EJ¤>œdwkÀ ?ŞŸŞh†#~º@ö'øM.$ëh†âO¨n7’T%òæPÑ;Ap~_Ríp.éìcj!K¬pÄyî!NİQ¶ã:õÑ>ÛGœ°ÒT2Šs•İ>R®ò1Ã‚ÜT*
-:à™aNrêÌ5ô#ì®>]ØQ}õİ‰GŠ¶­)G†+zwå5“z{+`³½}‹¢Öëuğ¨2©Ññ¨“‡;—¡ıHp¶E.8+p~ˆ‚ !„LÆµœÂh+Æ÷°éFş.ãL1œohNSE‰;/®‹>…Ş³
-¾cU¡‰ÆuMoÉv©f0;!£„¥ŒSô+“JTÇaÜ¤¥åŸEå°½èY€İŠá›7ÓÏÄ„ÛLÚ5¡ñ­‹‰Ïğ¢—ç QrÖA˜ÊC•fXêıv8ß±\Ñ**5Årîì‚â8FÓGÏ	èz‰îı™;!Ó'ïh”5çaÅ„É$>Wâ7ñD«`©<Ï†ã‚†3ôı{ÿ4UQ¬
-Mª9­›Ï%Ô‡HiŠjÄÙ?8~æ>ûoÒLğ!k9—0ŞÒŸLe%Ò‡?J(¹44]{EûÖáªv`ĞÄàÙäûıÀÒô…J}ê‹2ÏaÃÌ3~ìÖtéô¯/œ}ë©²9’¤Öô™úy6c­‹²]tÁğUx¡ôK&áQ$}‘ö-xD|·7­~€x½üóWèïlÿM œ^VØÕ CèD–˜åG´HMıÚd”ªA®¦D(p'o*<¼K’Q+jgˆ;P\“—ÍYupiÚ0ÏfÔĞK7Z ÕŞˆ¬ÓÈ) -Pù—q…åÃX«©·».2|s‚vîÒ.æa‹À±í2,ÒMÇ@[¼P0aİMdqİB$ø¸:ÑÊâÚySBéG<Jkç=o †–òêE¡ç­½¹œ»vÁÏ~Çi(üTÕa´+ÖÔ€5¹É¨.P‘ÓrÁTp©¬¨(v·\úœDXƒ1´
-æşl]ø¤ØYß³aÕXWtÏ1O†ÅW{ªzP7B0”ÑC®¢ËË!0‘!tRdZš¦£]WÚú³
-;î1iÎ<î±×ºøLsıŠ¥9õm2õ†…ß]Ÿi¥XÎtähCá5Fó£b©VÔÜb¦jêòùÒzÆpXa$®w³ÿß[ó…–•€û´€ãàg=Æ-aºE6„Æ>nhEŸ w±øwE3ï{u,¡ssİla>OV›Û»dµØ&÷«¾1…›Ó'¤+v4ƒ"Ÿlî7ªš0“%¼Ñåöröõ—oéi¬JµJ¿¸6Ù6åúŠ°G=<ô+ôïRT
-ºÃPÑf|Q–/~   ÿÿ ™SWÎ
+        isOpen={isCureModalOpen}
+        oxœÜWMoÛ8½çW°—F.
+gÏmTÀˆS¬€ã­½ØCÑW¤-")ˆt²†êÿŞ!EJ¤>œdwkÀ ?ŞŸŞh†#~“Iã:š¡øª/Pû“T%òæPÑ;Ap~_Ríp.éìcj!K¬pÄyî!N§vH`;®Sİm
+~ûˆóVšJFq®²ÛGÊUBŞ#fXûƒJEA<3ÌIN¹†>ã`„İÕ§;ª¯Ş¡;ñHÑV 5åÈpEï®²fRool¶Â ·oQÔz½U&5:õqòp‚OFÅÆeh?ƒm‘Î
+œ'¤¢ Ha“qm§0ÚŠñ=lº‘¿Ë8SçšÓTQâÎ‹ë¢O¡÷¬‚ïXUh¢qİDÓ[2†DªÌNAÈ(a)ãıÊ¤Õq7ii9ägQ9l/z`w§bøæÍ´Ç3±á6“vMh|ëÂbâ3üƒèå¹@”œu¦òP¥–z¿Îw,W´ŠJM±œ;»„ 8ÑôÑsFº^â{æNÈô	Á;eÍyX1a2ÉŸÏ•øM<ÑêXjÏ³á¸ ¡Å}ÿŞ?MU«B“jNëæs	õ!Rš¢qöŸy‡Ïş›4|AÈÚFÎ%Œ·ô'SÙF‰ôáJ.M—À^Ñ¾u¸ªØ41x6ù~?°ô}¡RŸú¢ÌsØ0óŒ»5]:}Àëgßzªl$©5}¦~ÍXë"¤l]0|^(ı’IxI_¤}ßíM« ^/ÿÀüú;Û ç£—v5Á:ƒ%fù-RS¿6¥j‡kƒi 
+ÜÉÛ‡„
+ï’dÔÂŠÚâ×¤Ç¥ƒAsVA\š6Ì³YuôÒHµ7"«Å4rA
+h$TşeC\aù0Öjêí®‹ßœ û€´‹yØâpl»‹tÓ1ĞïÌCXwY\·	>®Å_´²¸vÂ”PúÒÂÚyÏ¨¡¥ü€zQèyko.ç®]ğ³£ß±C
+?UuíŠu 5`Mn2ªTä´D0\*+*Šİí—>'Ö`­‚¹?[>)¶CÖ÷lX5ÖİsÌÓ£a±ÅÕ*‡Ôeô«èòrLd”™–¦éh×•€ö†ş,Â{Lš3O {ìµ.>ÓÜG¿"FiN}›L½aáw×gZ)–39ÚPxÑ‚ãü¨X*‡µ·˜©š:|¾´1VX‰ëİÀìÿ÷Ö|¡e%à>-àß8øYqK˜n‘¡±[ZÑ'è],ş]ÑŒ€ÇûDK¨ÃÆÜ\7[˜Ï“Õæö.Y-¶Éıªo@Láæô	éŠÍ È'›ûª€&Ìd	ïFt¹½œ}ıå[`z«R­Ò/®M¶M¹¾"ìQı
+ı»•B„î0”Dt‡_”åÇ‹   ÿÿ {„Uj
