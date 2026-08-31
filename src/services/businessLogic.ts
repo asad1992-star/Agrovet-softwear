@@ -633,13 +633,30 @@ export function getMedicineDoseSuggestions(
 
   const suggestions: string[] = Array.from(historyDoses);
   
-  // Check matching medicine stock for category defaults
+  // Check matching medicine stock for category or unit-specific defaults
   const matchedMed = medicines.find((m: any) => m?.name && m.name.toLowerCase() === cleanName);
-  const commonFallbacks = matchedMed?.category === 'Tablet' || matchedMed?.category === 'Bolus'
-    ? ['2 Bolus', '1 Bolus', '4 Bolus']
-    : matchedMed?.category === 'Powder'
-    ? ['50g', '100g', '25g']
-    : ['20ml', '15ml', '10ml', '30ml', '5ml'];
+  const medUnit = (matchedMed?.unit || '').toLowerCase();
+  
+  let commonFallbacks = ['20ml', '15ml', '10ml', '30ml', '5ml'];
+  if (medUnit === 'bottle') {
+    commonFallbacks = ['1 bottle', '2 bottles', '0.5 bottle'];
+  } else if (medUnit === 'vial') {
+    commonFallbacks = ['1 vial', '2 vials', '0.5 vial'];
+  } else if (medUnit === 'bolus' || matchedMed?.category === 'Bolus') {
+    commonFallbacks = ['2 bolus', '1 bolus', '4 bolus'];
+  } else if (medUnit === 'tablet' || medUnit === 'pill' || matchedMed?.category === 'Tablet') {
+    commonFallbacks = ['2 tablets', '1 tablet', '4 tablets'];
+  } else if (medUnit === 'sachet') {
+    commonFallbacks = ['1 sachet', '2 sachets'];
+  } else if (medUnit === 'tube') {
+    commonFallbacks = ['1 tube', '2 tubes'];
+  } else if (medUnit === 'dose') {
+    commonFallbacks = ['1 dose', '2 doses'];
+  } else if (medUnit === 'g' || medUnit === 'gram' || matchedMed?.category === 'Powder') {
+    commonFallbacks = ['50g', '100g', '25g'];
+  } else if (medUnit && medUnit !== 'ml') {
+    commonFallbacks = [`1 ${medUnit}`, `2 ${medUnit}`, `5 ${medUnit}`];
+  }
 
   commonFallbacks.forEach(fb => {
     if (!suggestions.includes(fb) && suggestions.length < 4) {

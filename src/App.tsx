@@ -188,7 +188,7 @@ const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any)
     <div>
       <p className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1 truncate">{title}</p>
       <h3 className="text-2xl sm:text-4xl font-black text-slate-800 tracking-tight">{value}</h3>
-      {onClick && <p className="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-widest mt-1">Tap to view â†’</p>}
+      {onClick && <p className="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-widest mt-1">Tap to view </p>}
     </div>
   </div>
 );
@@ -241,11 +241,11 @@ const formatDateReadable = (dateStr: string) => {
 };
 
 const STICKY_COLORS = [
-  { bg: 'bg-amber-50 border-amber-200 text-amber-800 shadow-amber-100/50', accent: 'bg-amber-400', icon: 'ğŸ¤°' },
-  { bg: 'bg-rose-50 border-rose-200 text-rose-800 shadow-rose-100/50', accent: 'bg-rose-400', icon: 'ğŸ©º' },
-  { bg: 'bg-teal-50 border-teal-200 text-teal-800 shadow-teal-100/50', accent: 'bg-teal-400', icon: 'ğŸ„' },
-  { bg: 'bg-sky-50 border-sky-200 text-sky-800 shadow-sky-100/50', accent: 'bg-sky-400', icon: 'ğŸ“Š' },
-  { bg: 'bg-purple-50 border-purple-200 text-purple-800 shadow-purple-100/50', accent: 'bg-purple-400', icon: 'ğŸ·ï¸' },
+  { bg: 'bg-amber-50 border-amber-200 text-amber-800 shadow-amber-100/50', accent: 'bg-amber-400', icon: '' },
+  { bg: 'bg-rose-50 border-rose-200 text-rose-800 shadow-rose-100/50', accent: 'bg-rose-400', icon: '' },
+  { bg: 'bg-teal-50 border-teal-200 text-teal-800 shadow-teal-100/50', accent: 'bg-teal-400', icon: '' },
+  { bg: 'bg-sky-50 border-sky-200 text-sky-800 shadow-sky-100/50', accent: 'bg-sky-400', icon: '' },
+  { bg: 'bg-purple-50 border-purple-200 text-purple-800 shadow-purple-100/50', accent: 'bg-purple-400', icon: '' },
 ];
 
 const getBadgeStyleForDate = (dateStr: string) => {
@@ -261,7 +261,7 @@ const getBadgeStyleForDate = (dateStr: string) => {
   };
 };
 
-function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
+function App({ user, onLogout, previewMode = 'desktop' }: any) {
   const {
     loading,
     animals,
@@ -324,6 +324,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const [herdViewMode, setHerdViewMode] = useState<HerdViewMode>('medium');
   const [herdTab, setHerdTab] = useState<HerdTab>('adults');
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
+  const [selectedAnimalHealthHistory, setSelectedAnimalHealthHistory] = useState<Animal | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isAlertPanelOpen, setIsAlertPanelOpen] = useState(false);
@@ -334,6 +335,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const alertPanelRef = useRef<HTMLDivElement>(null);
 
   // Modals state
+  const [isMobileQuickActionOpen, setIsMobileQuickActionOpen] = useState(false);
   const [isAnimalFormOpen, setIsAnimalFormOpen] = useState(false);
   const [isReproFormOpen, setIsReproFormOpen] = useState(false);
   const [isHealthFormOpen, setIsHealthFormOpen] = useState(false);
@@ -451,7 +453,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
   const handleConfirmMoveToPen = (animalIds: string[], targetGroup: string, reason?: string) => {
     updateAnimalsHerd(animalIds, targetGroup);
     const count = animalIds.length;
-    setToastMessage(`âœ… Successfully moved ${count} ${count === 1 ? 'cow' : 'cows'} to "${targetGroup}" pen.`);
+    setToastMessage(` Successfully moved ${count} ${count === 1 ? 'cow' : 'cows'} to "${targetGroup}" pen.`);
   };
 
   const handleAddPurchaseWithStockUpdate = (purchase: MedicinePurchase, autoUpdateStock: boolean) => {
@@ -468,12 +470,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         updateMedicine(updatedMed);
       }
     }
-    setToastMessage(`ğŸ“¦ Recorded purchase for "${purchase.medicineName}".`);
+    setToastMessage(` Recorded purchase for "${purchase.medicineName}".`);
   };
 
   const handleDeletePurchaseWithConfirmation = (purchaseId: string) => {
     deletePurchase(purchaseId);
-    setToastMessage('ğŸ—‘ï¸ Deleted purchase record.');
+    setToastMessage(' Deleted purchase record.');
   };
 
   const handleQuickRestock = (
@@ -509,7 +511,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       };
       addPurchase(newPurchase);
 
-      setToastMessage(`âœ… Restocked +${packsToAdd} packs and +${looseToAdd} ${updatedMed.unit} for "${updatedMed.name}".`);
+      setToastMessage(` Restocked +${packsToAdd} packs and +${looseToAdd} ${updatedMed.unit} for "${updatedMed.name}".`);
     }
     setSelectedMedicineForRestock(null);
   };
@@ -561,7 +563,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       } as HealthEvent);
     }
 
-    setToastMessage(`ğŸ’‰ Dispensed ${amountToDeduct} ${selectedMedicineForDispense.unit} of "${selectedMedicineForDispense.name}" (${reason}).`);
+    setToastMessage(` Dispensed ${amountToDeduct} ${selectedMedicineForDispense.unit} of "${selectedMedicineForDispense.name}" (${reason}).`);
     setSelectedMedicineForDispense(null);
   };
   
@@ -855,6 +857,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     }).sort((a, b) => b.date.localeCompare(a.date));
   }, [pdChecks, animals, pdSearchTerm, pdStartDate, pdEndDate]);
 
+  const getLatestHealthEventDate = useCallback((e: HealthEvent): string => {
+    const dates = [e.date, ...(e.dosesAdministered || [])].filter(Boolean);
+    if (dates.length === 0) return e.date || '';
+    dates.sort((a, b) => b.localeCompare(a));
+    return dates[0];
+  }, []);
+
   const filteredHealthEvents = useMemo(() => {
     return healthEvents.filter(e => {
       const animal = animals.find(a => a.id === e.animalId);
@@ -862,11 +871,23 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       const matchesType = healthTypeFilter === 'All' || e.type === healthTypeFilter;
       const matchesTech = healthTechFilter === 'All' || normalizeTechnicianName(e.technician, settings.technicians) === healthTechFilter;
       const matchesMed = healthMedFilter === 'All' || dateUtils.normalizeName(e.medication) === healthMedFilter;
-      const matchesStart = !healthDateStart || e.date >= healthDateStart;
-      const matchesEnd = !healthDateEnd || e.date <= healthDateEnd;
-      return matchesTag && matchesType && matchesTech && matchesMed && matchesStart && matchesEnd;
-    }).sort((a, b) => a.date.localeCompare(b.date));
-  }, [healthEvents, animals, healthTagSearch, healthTypeFilter, healthTechFilter, healthMedFilter, healthDateStart, healthDateEnd, settings.technicians]);
+      
+      // Date filter checks all event dates & daily doses administered
+      const allDates = [e.date, ...(e.dosesAdministered || [])].filter(Boolean);
+      const matchesDateRange = (!healthDateStart && !healthDateEnd) || allDates.some(d => {
+        const afterStart = !healthDateStart || d >= healthDateStart;
+        const beforeEnd = !healthDateEnd || d <= healthDateEnd;
+        return afterStart && beforeEnd;
+      });
+
+      return matchesTag && matchesType && matchesTech && matchesMed && matchesDateRange;
+    }).sort((a, b) => {
+      // Sort by latest treatment / dose date descending (latest activity on top)
+      const dateA = getLatestHealthEventDate(a);
+      const dateB = getLatestHealthEventDate(b);
+      return dateB.localeCompare(dateA);
+    });
+  }, [healthEvents, animals, healthTagSearch, healthTypeFilter, healthTechFilter, healthMedFilter, healthDateStart, healthDateEnd, settings.technicians, getLatestHealthEventDate]);
 
   // 1. Grouped usage data for reports chart
   const usageChartData = useMemo(() => {
@@ -1263,18 +1284,32 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
       : selectedMultipleAnimals;
 
     if (activeAnimals.length === 0) {
-      setToastMessage('âš ï¸ Please select at least one animal patient.');
+      setToastMessage(' Please select at least one animal patient.');
       return;
     }
 
     if (!newHealth.type) {
-      setToastMessage('âš ï¸ Please select a health category.');
+      setToastMessage(' Please select a health category.');
       return;
     }
 
-    const finalTreatments = newHealth.treatments && newHealth.treatments.length > 0
+    const rawTreatments = newHealth.treatments && newHealth.treatments.length > 0
       ? newHealth.treatments
       : (newHealth.medication ? [{ name: newHealth.medication, dose: newHealth.dosage || '' }] : []);
+
+    // Clean & normalize treatments: auto-attach synced units to doses if missing
+    const finalTreatments = rawTreatments
+      .filter(t => t && t.name && t.name.trim())
+      .map(t => {
+        const cleanName = t.name.trim();
+        const matched = medicines.find(m => m.name.toLowerCase() === cleanName.toLowerCase());
+        const unit = matched?.unit || (t as any).unit || 'ml';
+        let dose = (t.dose || '').trim();
+        if (dose && /^\d+(\.\d+)?$/.test(dose)) {
+          dose = `${dose} ${unit}`;
+        }
+        return { name: cleanName, dose: dose || `1 ${unit}` };
+      });
 
     if (editingHealthId) {
       // Find original event before this edit to compute exact delta and prevent multiple deductions
@@ -1312,6 +1347,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     }
 
     const eventDate = newHealth.date || new Date().toISOString().split('T')[0];
+    let mergedCount = 0;
+
     activeAnimals.forEach(animalId => {
       const normalizedHealth = {
         ...newHealth,
@@ -1324,31 +1361,100 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           ? newHealth.dosesAdministered
           : [eventDate],
         completedDoses: newHealth.completedDoses || 1,
-        cureStatus: newHealth.cureStatus || 'Pending'
+        cureStatus: newHealth.cureStatus || 'Pending',
+        isCured: newHealth.cureStatus === 'Cured' ? true : (newHealth.cureStatus === 'Not Cured' ? false : undefined)
       };
 
       if (editingHealthId) {
         updateHealthEvent(normalizedHealth as HealthEvent);
       } else {
-        addHealthEvent({
-          ...normalizedHealth,
-          id: Math.random().toString(36).substr(2, 9),
-          date: eventDate,
-        } as HealthEvent);
+        // Check if this animal has an active ongoing treatment episode in progress (not yet cured)
+        const existingOngoing = (newHealth.type === HealthEventType.ILLNESS)
+          ? healthEvents.find(h => 
+              h.animalId === animalId && 
+              h.type === HealthEventType.ILLNESS && 
+              h.cureStatus !== 'Cured' && 
+              !h.isCured
+            )
+          : null;
+
+        if (existingOngoing) {
+          // Merge new treatment & clinical details into the ongoing treatment record
+          mergedCount++;
+          const prevTreatments = (existingOngoing.treatments && existingOngoing.treatments.length > 0)
+            ? existingOngoing.treatments
+            : (existingOngoing.medication ? [{ name: existingOngoing.medication, dose: existingOngoing.dosage || '' }] : []);
+
+          const mergedTreatments = [...prevTreatments, ...finalTreatments];
+
+          let mergedDetails = existingOngoing.details || '';
+          if (newHealth.details && newHealth.details.trim()) {
+            if (mergedDetails && !mergedDetails.includes(newHealth.details.trim())) {
+              mergedDetails = `${mergedDetails} | ${newHealth.details.trim()}`;
+            } else if (!mergedDetails) {
+              mergedDetails = newHealth.details.trim();
+            }
+          }
+
+          const prevDoses = existingOngoing.dosesAdministered && existingOngoing.dosesAdministered.length > 0
+            ? existingOngoing.dosesAdministered
+            : [existingOngoing.date];
+          const updatedDoses = prevDoses.includes(eventDate) ? prevDoses : [...prevDoses, eventDate];
+          const updatedDays = Math.max(existingOngoing.treatmentDays || 1, newHealth.treatmentDays || 1);
+          const updatedTech = newHealth.technician
+            ? normalizeTechnicianName(newHealth.technician, settings.technicians)
+            : existingOngoing.technician;
+
+          const updatedCureStatus = (newHealth.cureStatus && newHealth.cureStatus !== 'Pending')
+            ? newHealth.cureStatus
+            : (existingOngoing.cureStatus || 'Pending');
+          const isCuredFlag = updatedCureStatus === 'Cured' ? true : (updatedCureStatus === 'Not Cured' ? false : existingOngoing.isCured);
+
+          const mergedHealth: HealthEvent = {
+            ...existingOngoing,
+            treatments: mergedTreatments,
+            medication: mergedTreatments[0]?.name || existingOngoing.medication || '',
+            dosage: mergedTreatments[0]?.dose || existingOngoing.dosage || '',
+            details: mergedDetails,
+            technician: updatedTech,
+            treatmentDays: updatedDays,
+            dosesAdministered: updatedDoses,
+            completedDoses: updatedDoses.length,
+            cureStatus: updatedCureStatus,
+            isCured: isCuredFlag,
+            numberOfDoses: newHealth.numberOfDoses || existingOngoing.numberOfDoses,
+            daysGap: newHealth.daysGap || existingOngoing.daysGap,
+          };
+          updateHealthEvent(mergedHealth);
+        } else {
+          // If animal is Cured or has no ongoing episode, create a brand new separate clinical entry
+          addHealthEvent({
+            ...normalizedHealth,
+            id: Math.random().toString(36).substr(2, 9),
+            date: eventDate,
+          } as HealthEvent);
+        }
       }
     });
 
     setEditingHealthId(null);
     setIsHealthFormOpen(false);
     setSelectedAnimal(null);
-    setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0] });
+    setNewHealth({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0], treatments: [{ name: '', dose: '' }] });
     setHealthAnimalSearch('');
     setSelectedMultipleAnimals([]);
     setTreatmentAnimalType('single');
-    setToastMessage(editingHealthId ? `Updated clinical entry. Inventory synchronized.` : `Logged clinical entry for ${activeAnimals.length} animal(s). Stock updated.`);
+    
+    if (editingHealthId) {
+      setToastMessage('Updated clinical record. Inventory synchronized.');
+    } else if (mergedCount > 0) {
+      setToastMessage(`Added medication & clinical log to existing active treatment for ${mergedCount} animal(s). Stock updated.`);
+    } else {
+      setToastMessage(`Logged new clinical record for ${activeAnimals.length} animal(s). Stock updated.`);
+    }
   };
 
-  const handleAddMedicineSubmit = (e: React.FormEvent) => {
+    const handleAddMedicineSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMedicine.name) return;
 
@@ -1464,7 +1570,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
     const existingDoses = existing.dosesAdministered || [existing.date];
     if (existingDoses.includes(doseDate)) {
-      setToastMessage('â„¹ï¸ Dose already recorded for this date.');
+      setToastMessage(' Dose already recorded for this date.');
       setIsDoseModalOpen(false);
       return;
     }
@@ -1496,7 +1602,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     });
 
     const animal = animals.find(a => a.id === existing.animalId);
-    setToastMessage();
+    setToastMessage(`Recorded dose ${completedCount}/${existing.treatmentDays || completedCount} for Cow #${animal?.tag || ""}.`);
     setIsDoseModalOpen(false);
     setDoseModalData(null);
   };
@@ -1516,9 +1622,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     });
 
     if (isCuredOutcome) {
-      setToastMessage();
+      setToastMessage(`Marked Cow #${animal?.tag || ""} as CURED.`);
     } else {
-      setToastMessage();
+      setToastMessage(`Marked Cow #${animal?.tag || ""} as NOT CURED. Follow-up recommended.`);
     }
 
     setIsCureModalOpen(false);
@@ -1541,11 +1647,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     if (isPregnant && isBreedingHeiferPen(pregnancyCheckTarget.herd)) {
       const pregnantPen = findPregnantPen(settings.customGroups);
       updateAnimal({ ...pregnancyCheckTarget, herd: pregnantPen });
-      setToastMessage(`ğŸ‰ Breeding heifer ${pregnancyCheckTarget.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+      setToastMessage(` Breeding heifer ${pregnancyCheckTarget.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
     } else if (isPregnant) {
-      setToastMessage(`ğŸ¤° Saved pregnancy check: Cow ${pregnancyCheckTarget.tag} confirmed Pregnant (+ve).`);
+      setToastMessage(` Saved pregnancy check: Cow ${pregnancyCheckTarget.tag} confirmed Pregnant (+ve).`);
     } else {
-      setToastMessage(`ğŸ“‹ Saved pregnancy check: Cow ${pregnancyCheckTarget.tag} is Open (-ve). Remains in ${pregnancyCheckTarget.herd || 'current pen'}.`);
+      setToastMessage(` Saved pregnancy check: Cow ${pregnancyCheckTarget.tag} is Open (-ve). Remains in ${pregnancyCheckTarget.herd || 'current pen'}.`);
     }
 
     setIsPregnancyCheckModalOpen(false);
@@ -1598,12 +1704,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               if (animal && isBreedingHeiferPen(animal.herd)) {
                 const pregnantPen = findPregnantPen(settings.customGroups);
                 updateAnimal({ ...animal, herd: pregnantPen });
-                setToastMessage(`ğŸ‰ Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+                setToastMessage(` Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
               } else {
-                setToastMessage(`ğŸ¤° Pregnancy check saved: ${animal?.tag || ''} confirmed Pregnant (+ve).`);
+                setToastMessage(` Pregnancy check saved: ${animal?.tag || ''} confirmed Pregnant (+ve).`);
               }
             } else {
-              setToastMessage(`ğŸ“‹ Pregnancy check saved: ${animal?.tag || ''} is Open (-ve). Remains in ${animal?.herd || 'current group'}.`);
+              setToastMessage(` Pregnancy check saved: ${animal?.tag || ''} is Open (-ve). Remains in ${animal?.herd || 'current group'}.`);
             }
           }
 
@@ -1629,9 +1735,9 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 fatherId: newRepro.bullId,
                 isCalf: true,
               } as Animal);
-              setToastMessage(`ğŸ„ Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group! New calf (${calfTag}) registered.`);
+              setToastMessage(` Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group! New calf (${calfTag}) registered.`);
             } else {
-              setToastMessage(`ğŸ„ Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group (Calf Expired/Stillborn).`);
+              setToastMessage(` Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group (Calf Expired/Stillborn).`);
             }
           }
         }
@@ -1690,11 +1796,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     if (isPregnant && isBreedingHeiferPen(animal.herd)) {
       const pregnantPen = findPregnantPen(settings.customGroups);
       updateAnimal({ ...animal, herd: pregnantPen });
-      setToastMessage(`ğŸ‰ Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+      setToastMessage(` Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
     } else if (isPregnant) {
-      setToastMessage(`ğŸ¤° Saved check: Cow ${pdAnimalId} confirmed Pregnant (+ve).`);
+      setToastMessage(` Saved check: Cow ${pdAnimalId} confirmed Pregnant (+ve).`);
     } else {
-      setToastMessage(`ğŸ“‹ Saved check: Cow ${pdAnimalId} is Open (-ve). Remains in ${animal.herd}.`);
+      setToastMessage(` Saved check: Cow ${pdAnimalId} is Open (-ve). Remains in ${animal.herd}.`);
     }
     
     // Reset form states
@@ -1758,11 +1864,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     if (isPregnant && isBreedingHeiferPen(animal.herd)) {
       const pregnantPen = findPregnantPen(settings.customGroups);
       updateAnimal({ ...animal, herd: pregnantPen });
-      setToastMessage(`ğŸ‰ Breeding heifer ${animal.tag} checked on ${formattedDate} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+      setToastMessage(` Breeding heifer ${animal.tag} checked on ${formattedDate} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
     } else if (isPregnant) {
-      setToastMessage(`âœ… Added check for ${formattedDate} (Pregnant +ve)!`);
+      setToastMessage(` Added check for ${formattedDate} (Pregnant +ve)!`);
     } else {
-      setToastMessage(`âœ… Added check for ${formattedDate} (Open -ve). Remains in ${animal.herd}.`);
+      setToastMessage(` Added check for ${formattedDate} (Open -ve). Remains in ${animal.herd}.`);
     }
 
     // Reset form states
@@ -1803,8 +1909,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
         tag = trimmed.substring(0, trimmed.lastIndexOf(' ')).trim();
       } else {
         // If no explicit word is matched at the end, try searching for keywords inside the line
-        const matchPreg = trimmed.match(/(.+)\s+(pregnant|preg|ğŸ¤°)/i);
-        const matchOpen = trimmed.match(/(.+)\s+(open|âŒ)/i);
+        const matchPreg = trimmed.match(/(.+)\s+(pregnant|preg|)/i);
+        const matchOpen = trimmed.match(/(.+)\s+(open|)/i);
         if (matchPreg) {
           tag = matchPreg[1].trim();
           result = 'Pregnant';
@@ -1817,7 +1923,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           if (parts.length >= 2) {
             tag = parts[0];
             const second = parts[1].toLowerCase();
-            result = (second.startsWith('preg') || second.startsWith('p') || second.includes('ğŸ¤°')) ? 'Pregnant' : 'Open';
+            result = (second.startsWith('preg') || second.startsWith('p') || second.includes('')) ? 'Pregnant' : 'Open';
           }
         }
       }
@@ -1859,7 +1965,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
     });
 
     const formattedDate = formatDateReadable(multiPdDate);
-    setToastMessage(`âœ… Added ${addedCount} checks for ${formattedDate}`);
+    setToastMessage(` Added ${addedCount} checks for ${formattedDate}`);
     
     // Reset form states
     setMultiPdText('');
@@ -2191,15 +2297,15 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
     switch (selectedReportType) {
       case 'summary': {
-        let text = `*ğŸ“Š Executive Herd Summary Report*\n`;
-        if (settings?.farmName) text += `ğŸ¢ *${settings.farmName}*\n`;
-        text += `ğŸ„ Total Herd: ${stats.total}\n`;
-        text += `ğŸ¥› Lactating/Milking: ${stats.milking}\n`;
-        text += `ğŸ¤° Pregnant: ${stats.pregnant}\n`;
-        text += `ğŸœï¸ Dry: ${stats.dry}\n`;
-        text += `ğŸ©º Sick/Isolated: ${stats.sick}\n`;
-        text += `ğŸ¯ Conception Rate: ${stats.conceptionRate}%\n`;
-        text += `â±ï¸ Avg Days in Milk: ${stats.avgDim} days\n\n`;
+        let text = `* Executive Herd Summary Report*\n`;
+        if (settings?.farmName) text += ` *${settings.farmName}*\n`;
+        text += ` Total Herd: ${stats.total}\n`;
+        text += ` Lactating/Milking: ${stats.milking}\n`;
+        text += ` Pregnant: ${stats.pregnant}\n`;
+        text += ` Dry: ${stats.dry}\n`;
+        text += ` Sick/Isolated: ${stats.sick}\n`;
+        text += ` Conception Rate: ${stats.conceptionRate}%\n`;
+        text += ` Avg Days in Milk: ${stats.avgDim} days\n\n`;
         text += `_Generated via AgroVet Pro Management_`;
         shareToWhatsApp(text);
         break;
@@ -2498,7 +2604,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                     </span>
                                   )}
                                 </p>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed} â€¢ {a.herd}</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed}  {a.herd}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -2614,7 +2720,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           </span>
                         )}
                       </p>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed} â€¢ {a.herd}</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">{a.breed}  {a.herd}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -2720,7 +2826,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     </button>
 
                     <button
-                      onClick={() => setIsNewPdFormOpen(true)}
+                      onClick={() => setView('pd-check')}
                       className="flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl sm:rounded-2xl font-black text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest transition-all shadow-lg shadow-emerald-600/20 active:scale-95 group"
                     >
                       <div className="p-1.5 sm:p-2 bg-emerald-500 text-white rounded-lg sm:rounded-xl group-hover:scale-110 transition-transform shrink-0">
@@ -2854,8 +2960,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         <div className="flex items-center justify-between pt-2 border-t border-slate-500/10">
                           <span className="text-[10px] font-bold">Checks: {badge.checks.length}</span>
                           <div className="flex items-center gap-2 text-[10px] font-black">
-                            <span className="text-emerald-700">ğŸ¤° {badge.checks.filter(e => e.pregnancyResult === 'Pregnant').length}</span>
-                            <span className="text-rose-700">âŒ {badge.checks.filter(e => e.pregnancyResult !== 'Pregnant').length}</span>
+                            <span className="text-emerald-700"> {badge.checks.filter(e => e.pregnancyResult === 'Pregnant').length}</span>
+                            <span className="text-rose-700"> {badge.checks.filter(e => e.pregnancyResult !== 'Pregnant').length}</span>
                           </div>
                         </div>
                       </div>
@@ -3392,14 +3498,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   className={`px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${herdTab === 'youngstock' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                     }`}
                 >
-                  ğŸŒ± Young Stock ({youngStockAnimals.length})
+                   Young Stock ({youngStockAnimals.length})
                 </button>
                 <button
                   onClick={() => setHerdTab('calves')}
                   className={`px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${herdTab === 'calves' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                     }`}
                 >
-                  ğŸ„ Calves ({calfAnimals.length})
+                   Calves ({calfAnimals.length})
                 </button>
               </div>
 
@@ -3452,7 +3558,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                   <h4 className="font-black text-slate-800 text-xl tracking-tighter group-hover:text-amber-600 transition-colors">{animal.tag}</h4>
                                   <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                                     <span className="text-[9px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-amber-200">
-                                      ğŸŒ± {animal.herd || 'Young Stock'}
+                                       {animal.herd || 'Young Stock'}
                                     </span>
                                     {animal.breed && <span className="text-[9px] font-bold text-slate-400 uppercase">{animal.breed}</span>}
                                   </div>
@@ -3510,11 +3616,11 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               </div>
                               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sex & Breed</span>
-                                <span className="text-xs font-black text-slate-700">{animal.sex || 'Female'} â€¢ {animal.breed || 'Standard'}</span>
+                                <span className="text-xs font-black text-slate-700">{animal.sex || 'Female'}  {animal.breed || 'Standard'}</span>
                               </div>
                               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</span>
-                                <span className="text-xs font-black text-slate-700">{animal.dob || 'â€”'}</span>
+                                <span className="text-xs font-black text-slate-700">{animal.dob || ''}</span>
                               </div>
                             </div>
                           </div>
@@ -3596,15 +3702,15 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         <div className="space-y-3">
                           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mother</span>
-                            <span className="text-xs font-black text-slate-700">{mother?.tag || calf.motherId || 'â€”'}</span>
+                            <span className="text-xs font-black text-slate-700">{mother?.tag || calf.motherId || ''}</span>
                           </div>
                           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Father (Bull)</span>
-                            <span className="text-xs font-black text-slate-700">{calf.fatherId || 'â€”'}</span>
+                            <span className="text-xs font-black text-slate-700">{calf.fatherId || ''}</span>
                           </div>
                           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Born</span>
-                            <span className="text-xs font-black text-slate-700">{calf.dob || 'â€”'}</span>
+                            <span className="text-xs font-black text-slate-700">{calf.dob || ''}</span>
                           </div>
                           {calf.herd && (
                             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
@@ -3680,7 +3786,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                   </span>
                                 )}
                               </p>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase">{animal.breed} â€¢ {animal.herd}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">{animal.breed}  {animal.herd}</p>
                             </div>
                           </div>
                           
@@ -3779,7 +3885,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                     if (!rb) return null;
                                     return (
                                       <span className="text-xs font-black text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded-xl uppercase tracking-wider">
-                                        âš ï¸ Repeat Breeder (AI #{rb.aiCount})
+                                         Repeat Breeder (AI #{rb.aiCount})
                                       </span>
                                     );
                                   })()}
@@ -3856,7 +3962,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                   if (!rb) return null;
                                   return (
                                     <span className="text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                                      âš ï¸ AI #{rb.aiCount} Repeat
+                                       AI #{rb.aiCount} Repeat
                                     </span>
                                   );
                                 })()}
@@ -4132,7 +4238,6 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               {event.type}
                             </span>
                           </td>
-                          <td className="px-8 py-6 text-sm text-slate-700 font-bold">{event.technician ? normalizeTechnicianName(event.technician, settings.technicians) : '--'}</td>
                           <td className="px-8 py-6 text-sm text-slate-500 font-black">{event.semenName ? normalizeSemenName(event.semenName, settings.semenCatalog) : (event.bullId ? normalizeSemenName(event.bullId, settings.semenCatalog) : '--')}</td>
                           <td className="px-8 py-6">
                             {event.type === ReproEventType.PREGNANCY_CHECK ? (
@@ -4218,7 +4323,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     <div className="flex items-center gap-3">
                       <AlertTriangle className="w-6 h-6 text-rose-600 animate-pulse" />
                       <div>
-                        <h4 className="text-sm font-black text-rose-900 uppercase tracking-wider">âš ï¸ Medicine Inventory Warning Alerts</h4>
+                        <h4 className="text-sm font-black text-rose-900 uppercase tracking-wider"> Medicine Inventory Warning Alerts</h4>
                         <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">Action Required: Several item stocks are below safe levels</p>
                       </div>
                     </div>
@@ -4232,7 +4337,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {lowStockAlerts.map(alert => (
                       <div key={alert.id} className="flex items-start gap-2.5 bg-white p-3 rounded-xl border border-rose-100 text-xs text-rose-700 font-bold leading-relaxed">
-                        <span>â€¢</span>
+                        <span></span>
                         <span>{alert.msg}</span>
                       </div>
                     ))}
@@ -4397,7 +4502,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     <div className="bg-blue-50/50 border border-blue-100 rounded-[2.5rem] p-8 space-y-4 shadow-sm">
                       <div className="flex items-center gap-3 mb-2">
                         <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                        <h4 className="text-xs font-black text-blue-700 uppercase tracking-widest">Pregnancy Check Queue â€” {inseminatedAnimals.length} Inseminated</h4>
+                        <h4 className="text-xs font-black text-blue-700 uppercase tracking-widest">Pregnancy Check Queue  {inseminatedAnimals.length} Inseminated</h4>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {inseminatedAnimals.map(a => {
@@ -4443,23 +4548,33 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                             return (
                               <tr key={event.id} className="hover:bg-slate-50 transition-colors group">
                                 <td className="px-8 py-6 text-xs font-black text-slate-400 text-center">{index + 1}</td>
-                                <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedAnimal(animal || null)}>
-                                  <span className="font-black text-slate-800 group-hover:text-blue-600">{animal?.tag || 'Unknown Tag'}</span>
-                                  <br />
+                                <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedAnimalHealthHistory(animal || null)}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-slate-800 group-hover:text-rose-600 transition-colors">{animal?.tag || 'Unknown Tag'}</span>
+                                    <span className="text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                                      <HeartPulse className="w-2.5 h-2.5" /> History
+                                    </span>
+                                  </div>
                                   <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">
-                                    {animal?.status || 'Active'}
+                                    {animal?.status || 'Active'} {animal?.group ? `â€¢ ${animal.group}` : ''}
                                   </span>
                                 </td>
                                 <td className="px-8 py-6">
-                                  <div className="flex flex-col">
+                                  <div className="flex flex-col gap-1">
                                     <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tighter shadow-sm border inline-block w-fit ${event.type === HealthEventType.ILLNESS ? 'bg-rose-50 text-rose-600 border-rose-100' :
                                         'bg-emerald-50 text-emerald-600 border-emerald-100'
                                       }`}>
                                       {event.type}
                                     </span>
-                                    <span className="text-[9px] text-slate-500 font-bold mt-1.5 uppercase tracking-wider">
-                                      {event.date}
-                                    </span>
+                                    <div className="text-[9px] font-bold text-slate-500 space-y-0.5 mt-0.5">
+                                      <div>Start: <strong className="text-slate-700">{event.date}</strong></div>
+                                      {event.dosesAdministered && event.dosesAdministered.length > 0 && (
+                                        <div className="text-rose-600 font-black flex items-center gap-1">
+                                          <span>Last Dose:</span>
+                                          <span className="bg-rose-50 px-1 py-0.5 rounded border border-rose-100">{event.dosesAdministered[event.dosesAdministered.length - 1]}</span>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
                                 <td className="px-8 py-6">
@@ -4673,12 +4788,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
                 const getCategoryEmoji = (category: string) => {
                   switch (category?.toLowerCase()) {
-                    case 'injection': return 'ğŸ’‰';
-                    case 'liquid': return 'ğŸ§´';
-                    case 'powder': return 'ğŸ§ª';
-                    case 'pill': return 'ğŸ’Š';
-                    case 'topical': return 'ğŸ©¹';
-                    default: return 'ğŸ“¦';
+                    case 'injection': return '';
+                    case 'liquid': return '';
+                    case 'powder': return '';
+                    case 'pill': return '';
+                    case 'topical': return '';
+                    default: return '';
                   }
                 };
 
@@ -4776,12 +4891,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               onChange={e => setMedInventoryCat(e.target.value)}
                             >
                               <option value="All">All Categories</option>
-                              <option value="Injection">ğŸ’‰ Injection</option>
-                              <option value="Liquid">ğŸ§´ Liquid</option>
-                              <option value="Powder">ğŸ’Š Powder</option>
-                              <option value="Pill">ğŸ’Š Pill</option>
-                              <option value="Topical">ğŸ§´ Topical</option>
-                              <option value="Other">ğŸ“¦ Other</option>
+                              <option value="Injection"> Injection</option>
+                              <option value="Liquid"> Liquid</option>
+                              <option value="Powder"> Powder</option>
+                              <option value="Pill"> Pill</option>
+                              <option value="Topical"> Topical</option>
+                              <option value="Other"> Other</option>
                             </select>
                           </div>
                         </div>
@@ -4932,7 +5047,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                             {m.name}
                                           </button>
                                           <p className="text-[10px] font-bold text-slate-400">
-                                            {m.loosePerPack} {m.unit} per pack â€¢ Min: {m.minStockLevel} {m.unit}
+                                            {m.loosePerPack} {m.unit} per pack  Min: {m.minStockLevel} {m.unit}
                                           </p>
                                         </div>
                                       </div>
@@ -4966,7 +5081,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                         </span>
                                       ) : (
                                         <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
-                                          âœ“ In Stock
+                                           In Stock
                                         </span>
                                       )}
                                     </td>
@@ -5078,7 +5193,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                   }`}>
                                     {totalUnits} <span className="text-[10px] font-bold text-slate-400">{m.unit}</span>
                                   </p>
-                                  <p className="text-[9px] font-bold text-slate-400">{m.packs} pk â€¢ {m.loose} loose</p>
+                                  <p className="text-[9px] font-bold text-slate-400">{m.packs} pk  {m.loose} loose</p>
                                 </div>
                               </div>
 
@@ -5185,7 +5300,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                     <span>History ({medPurchases.length} buys, {medUsages.length} uses)</span>
                                   </div>
                                   <span className="text-[10px] font-black text-blue-600 group-hover:translate-x-0.5 transition-transform">
-                                    View Audit â†’
+                                    View Audit 
                                   </span>
                                 </button>
 
@@ -5318,7 +5433,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                   <div>
                                     <h4 className="text-xl font-black text-slate-800 tracking-tight">{m.name}</h4>
                                     <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-0.5">
-                                      Category: {m.category} â€¢ Capacity: {m.loosePerPack} {m.unit}/pack
+                                      Category: {m.category}  Capacity: {m.loosePerPack} {m.unit}/pack
                                     </p>
                                   </div>
                                 </div>
@@ -5360,14 +5475,14 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 <div>
                                   <p className="text-[10px] font-black text-blue-600 uppercase tracking-wider">Lifetime Activity</p>
                                   <p className="font-bold text-slate-700 mt-0.5">
-                                    {medPurchases.length} Restocks Recorded â€¢ {medUsages.length} Clinical Administrations
+                                    {medPurchases.length} Restocks Recorded  {medUsages.length} Clinical Administrations
                                   </p>
                                 </div>
                                 <button
                                   onClick={() => setSelectedMedicineForHistory(m)}
                                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shadow-md shadow-blue-100"
                                 >
-                                  View Audit Trail â†’
+                                  View Audit Trail 
                                 </button>
                               </div>
 
@@ -5669,7 +5784,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         <div className="p-2 bg-amber-600 rounded-xl"><CalendarIcon className="w-5 h-5 text-white" /></div>
                         <div>
                           <h4 className="text-sm font-black text-amber-800 uppercase tracking-widest">Today's Protocol Steps</h4>
-                          <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">{todaySteps.length} steps due today â€” {today}</p>
+                          <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">{todaySteps.length} steps due today  {today}</p>
                         </div>
                       </div>
                       <button
@@ -5695,7 +5810,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-700 font-black text-xs">D{step.dayOffset}</div>
                               <div>
                                 <p className="font-black text-slate-800">{animal?.tag || 'Unk'}</p>
-                                <p className="text-xs text-slate-500 font-semibold">{step.action}{step.time ? ` @ ${step.time}` : ''} â€” {template.name}</p>
+                                <p className="text-xs text-slate-500 font-semibold">{step.action}{step.time ? ` @ ${step.time}` : ''}  {template.name}</p>
                               </div>
                             </div>
                             <button
@@ -5844,7 +5959,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                   <h5 className="font-black text-slate-800 text-2xl group-hover:text-amber-600 transition-colors tracking-tighter">{template?.name || 'Protocol Batch'}</h5>
                                   <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{(batch.animalIds || []).length} Cows</span>
-                                    <span className="text-[10px] text-slate-300">â€¢</span>
+                                    <span className="text-[10px] text-slate-300"></span>
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Started {batch.startDate}</span>
                                   </div>
                                 </div>
@@ -6027,7 +6142,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 onClick={() => setSelectedHistoryProtocolId(null)}
                                 className="flex items-center gap-2 bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-colors shadow-sm"
                               >
-                                â† Back
+                                 Back
                               </button>
                             </div>
                           </div>
@@ -6101,7 +6216,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         <div>
                           <h5 className="font-black text-slate-800 text-lg group-hover:text-blue-600 transition-colors">{p.name}</h5>
                           <span className={`text-[9px] font-black uppercase tracking-widest ${p.isPredefined ? 'text-slate-400' : 'text-blue-500'
-                            }`}>{p.isPredefined ? 'ğŸ”’ Standard / Predefined' : 'âœï¸ Custom / Manual'}</span>
+                            }`}>{p.isPredefined ? ' Standard / Predefined' : ' Custom / Manual'}</span>
                         </div>
                       </div>
                       <p className="text-xs text-slate-500 font-semibold mb-6 line-clamp-2">{p.description || 'No description provided.'}</p>
@@ -6121,7 +6236,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           onClick={() => { setNewEnrollment({ startDate: new Date().toISOString().split('T')[0], animalIds: [], templateId: p.id }); setProtocolAnimalSearch(''); setIsEnrollmentFormOpen(true); }}
                           className="ml-auto px-4 py-2 bg-amber-50 text-amber-700 rounded-xl font-black text-[9px] uppercase tracking-wider hover:bg-amber-600 hover:text-white transition-all border border-amber-100"
                         >
-                          Enroll â†’
+                          Enroll 
                         </button>
                       </div>
                     </div>
@@ -6228,8 +6343,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                             >
                               <option value="All">All Items</option>
                               <option value="In Stock">In Stock Only</option>
-                              <option value="Low Stock">âš ï¸ Low Stock Only</option>
-                              <option value="Out of Stock">âŒ Depleted / Out of Stock</option>
+                              <option value="Low Stock"> Low Stock Only</option>
+                              <option value="Out of Stock"> Depleted / Out of Stock</option>
                             </select>
                           </div>
                           <div>
@@ -6240,12 +6355,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-blue-500/20"
                             >
                               <option value="All">All Categories</option>
-                              <option value="Injection">ğŸ’‰ Injection</option>
-                              <option value="Liquid">ğŸ§´ Liquid</option>
-                              <option value="Powder">ğŸ’Š Powder</option>
-                              <option value="Pill">ğŸ’Š Pill</option>
-                              <option value="Topical">ğŸ§´ Topical</option>
-                              <option value="Other">ğŸ“¦ Other</option>
+                              <option value="Injection"> Injection</option>
+                              <option value="Liquid"> Liquid</option>
+                              <option value="Powder"> Powder</option>
+                              <option value="Pill"> Pill</option>
+                              <option value="Topical"> Topical</option>
+                              <option value="Other"> Other</option>
                             </select>
                           </div>
                         </div>
@@ -6262,12 +6377,12 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                           className="w-full px-4 py-3 bg-white border border-amber-200 rounded-xl text-xs font-black shadow-sm outline-none focus:ring-2 focus:ring-amber-500/20"
                         >
                           <option value="All">All Categories</option>
-                          <option value="Injection">ğŸ’‰ Injection</option>
-                          <option value="Liquid">ğŸ§´ Liquid</option>
-                          <option value="Powder">ğŸ’Š Powder</option>
-                          <option value="Pill">ğŸ’Š Pill</option>
-                          <option value="Topical">ğŸ§´ Topical</option>
-                          <option value="Other">ğŸ“¦ Other</option>
+                          <option value="Injection"> Injection</option>
+                          <option value="Liquid"> Liquid</option>
+                          <option value="Powder"> Powder</option>
+                          <option value="Pill"> Pill</option>
+                          <option value="Topical"> Topical</option>
+                          <option value="Other"> Other</option>
                         </select>
                       </div>
                     )}
@@ -6749,7 +6864,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
               {/* Quick Actions Panel */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <button
-                  onClick={() => setIsNewPdFormOpen(true)}
+                  onClick={() => setView('pd-check')}
                   className="p-6 bg-emerald-50 border border-emerald-100 hover:border-emerald-300 hover:bg-emerald-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-emerald-50"
                 >
                   <div className="p-4 bg-emerald-500 text-white rounded-2xl group-hover:scale-110 transition-transform">
@@ -6802,7 +6917,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
                 <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
                   <div className="p-4 bg-emerald-50 text-emerald-600 rounded-[1.25rem]">
-                    <span className="text-xl">ğŸ¤°</span>
+                    <span className="text-xl"></span>
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pregnant Checks</p>
@@ -6814,7 +6929,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
                 <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
                   <div className="p-4 bg-rose-50 text-rose-600 rounded-[1.25rem]">
-                    <span className="text-xl">âŒ</span>
+                    <span className="text-xl"></span>
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Open Checks</p>
@@ -6946,7 +7061,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                 <span className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider ${
                                   isPreg ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
                                 }`}>
-                                  {isPreg ? 'ğŸ¤° Pregnant' : 'âŒ Open'}
+                                  {isPreg ? ' Pregnant' : ' Open'}
                                 </span>
                               </td>
                               <td className="px-8 py-5 text-xs text-slate-500 font-bold max-w-xs truncate">
@@ -6966,6 +7081,79 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
           {/* WhatsApp Support & Feedback Footer */}
           <WhatsAppFooter />
         </div>
+        {/* Mobile Bottom Navigation Bar with 44px+ Touch Targets & Safe Area */}
+        {!isDesktop && (
+          <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[85] bg-white/95 backdrop-blur-2xl border-t border-slate-200/90 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] px-2 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom))] flex items-center justify-around">
+            {/* Home / Dashboard */}
+            <button
+              onClick={() => { setView('dashboard'); }}
+              className={`flex flex-col items-center justify-center min-w-[54px] min-h-[48px] py-1 px-1.5 rounded-2xl transition-all active:scale-90 ${view === "dashboard" ? "text-blue-600 font-black" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <div className={`p-1.5 rounded-xl transition-all ${view === "dashboard" ? "bg-blue-50 text-blue-600 shadow-xs" : ""}`}>
+                <LayoutDashboard className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <span className="text-[10px] font-bold tracking-tight mt-0.5">Home</span>
+            </button>
+
+            {/* Herd Hub */}
+            <button
+              onClick={() => { setView('animals'); }}
+              className={`flex flex-col items-center justify-center min-w-[54px] min-h-[48px] py-1 px-1.5 rounded-2xl transition-all active:scale-90 ${view === "animals" ? "text-blue-600 font-black" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <div className={`p-1.5 rounded-xl transition-all ${view === "animals" ? "bg-blue-50 text-blue-600 shadow-xs" : ""}`}>
+                <Users className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <span className="text-[10px] font-bold tracking-tight mt-0.5">Herd</span>
+            </button>
+
+            {/* Prominent Quick Action (+) Button */}
+            <div className="relative -mt-6 flex flex-col items-center">
+              <button
+                onClick={() => setIsMobileQuickActionOpen(true)}
+                className="w-13 h-13 rounded-full bg-gradient-to-tr from-emerald-600 via-teal-600 to-emerald-500 text-white shadow-xl shadow-emerald-500/30 flex items-center justify-center border-[3px] border-white active:scale-90 hover:scale-105 transition-all focus:outline-none"
+                title="Quick Actions (+)"
+              >
+                <Plus className="w-6 h-6 stroke-[3]" />
+              </button>
+              <span className="text-[9px] font-black text-emerald-700 tracking-tight mt-0.5">Quick Add</span>
+            </div>
+
+            {/* Health Bay */}
+            <button
+              onClick={() => { setView('health'); }}
+              className={`flex flex-col items-center justify-center min-w-[54px] min-h-[48px] py-1 px-1.5 rounded-2xl transition-all active:scale-90 ${view === "health" ? "text-rose-600 font-black" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <div className={`p-1.5 rounded-xl transition-all ${view === "health" ? "bg-rose-50 text-rose-600 shadow-xs" : ""}`}>
+                <Stethoscope className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <span className="text-[10px] font-bold tracking-tight mt-0.5">Health</span>
+            </button>
+
+            {/* Reproduction */}
+            <button
+              onClick={() => { setView('repro'); }}
+              className={`flex flex-col items-center justify-center min-w-[54px] min-h-[48px] py-1 px-1.5 rounded-2xl transition-all active:scale-90 ${view === "repro" ? "text-indigo-600 font-black" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <div className={`p-1.5 rounded-xl transition-all ${view === "repro" ? "bg-indigo-50 text-indigo-600 shadow-xs" : ""}`}>
+                <CalendarRange className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <span className="text-[10px] font-bold tracking-tight mt-0.5">Repro</span>
+            </button>
+
+            {/* Menu / More */}
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="flex flex-col items-center justify-center min-w-[54px] min-h-[48px] py-1 px-1.5 rounded-2xl text-slate-500 hover:text-slate-800 transition-all active:scale-90"
+              title="Open Menu"
+            >
+              <div className="p-1.5 rounded-xl">
+                <Menu className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <span className="text-[10px] font-bold tracking-tight mt-0.5">Menu</span>
+            </button>
+          </nav>
+        )}
+
       </main>
 
       {/* ====== ALERT PANEL SLIDE-IN ====== */}
@@ -7088,10 +7276,10 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     const catAlerts = alerts.filter(a => a.type === category);
                     if (catAlerts.length === 0) return null;
                     const catConfig = {
-                      Protocol: { color: 'bg-amber-50/70 border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500', label: 'ğŸ§ª Synchronization & Protocols' },
-                      Health: { color: 'bg-rose-50/70 border-rose-200', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500', label: 'ğŸ©º Clinical & Treatments' },
-                      Repro: { color: 'bg-blue-50/70 border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500', label: 'ğŸ„ Reproduction & Calving' },
-                      System: { color: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500', label: 'ğŸ”„ Pen & Relocation' },
+                      Protocol: { color: 'bg-amber-50/70 border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500', label: ' Synchronization & Protocols' },
+                      Health: { color: 'bg-rose-50/70 border-rose-200', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500', label: ' Clinical & Treatments' },
+                      Repro: { color: 'bg-blue-50/70 border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500', label: ' Reproduction & Calving' },
+                      System: { color: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500', label: ' Pen & Relocation' },
                     }[category];
 
                     return (
@@ -7353,13 +7541,13 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm sm:text-base font-black text-rose-950">âš ï¸ Repeat Breeder Alert</h4>
+                          <h4 className="text-sm sm:text-base font-black text-rose-950"> Repeat Breeder Alert</h4>
                           <span className="text-[10px] font-black uppercase px-2.5 py-0.5 bg-rose-600 text-white rounded-md shadow-2xs">
                             AI #{rb.aiCount} Inseminations
                           </span>
                         </div>
                         <p className="text-xs text-rose-700 font-bold mt-0.5">
-                          {rb.daysOpenSinceFirstAI} days open â€¢ Last Semen: {rb.lastSemen} â€¢ Tech: {rb.lastTechnician}
+                          {rb.daysOpenSinceFirstAI} days open  Last Semen: {rb.lastSemen}  Tech: {rb.lastTechnician}
                         </p>
                       </div>
                     </div>
@@ -7434,7 +7622,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                     ? 'bg-rose-50 text-rose-700 border-rose-200'
                                     : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 }`}>
-                                  {e.calfStatus === 'Expired' ? 'ğŸ”´ Expired' : `ğŸŸ¢ Calf: ${e.offspringTag || 'Alive'}${e.offspringGender ? ` (${e.offspringGender})` : ''}`}
+                                  {e.calfStatus === 'Expired' ? ' Expired' : ` Calf: ${e.offspringTag || 'Alive'}${e.offspringGender ? ` (${e.offspringGender})` : ''}`}
                                 </span>
                               )}
                               {e.type === ReproEventType.PREGNANCY_CHECK && (
@@ -7465,7 +7653,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                               )}
                               {e.type === ReproEventType.ABORTION && (
                                 <span className="px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200">
-                                  âš ï¸ Aborted
+                                   Aborted
                                 </span>
                               )}
                             </div>
@@ -7498,12 +7686,37 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
-                            <p className="text-base font-black text-slate-800">{e.type}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-base font-black text-slate-800">{e.type}</p>
+                              {e.cureStatus === 'Cured' ? (
+                                <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                  âœ“ Cured
+                                </span>
+                              ) : e.cureStatus === 'Not Cured' ? (
+                                <span className="text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                                  âš  Ongoing / Not Cured
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                  Ongoing ({(e.dosesAdministered || [e.date]).length}/{e.treatmentDays || 1} doses)
+                                </span>
+                              )}
+                            </div>
                             <button onClick={(event) => handleEditHealth(e, event)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-rose-600">
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                          <p className="text-xs text-slate-500 font-semibold">{e.details || '--'}</p>
+                          <div className="flex items-center gap-2.5 text-xs text-slate-500 font-bold mt-1">
+                            <span>Started: <strong className="text-slate-700">{e.date}</strong></span>
+                            <span>â€¢</span>
+                            <span>Last Dose: <strong className="text-rose-600">{
+                              (e.dosesAdministered && e.dosesAdministered.length > 0)
+                                ? e.dosesAdministered[e.dosesAdministered.length - 1]
+                                : e.date
+                            }</strong></span>
+                            {e.treatmentDays && <span>â€¢ Course: {e.treatmentDays} days</span>}
+                          </div>
+                          <p className="text-xs text-slate-500 font-semibold mt-1">{e.details || '--'}</p>
                           <div className="flex flex-wrap gap-2 mt-2">
                             {e.technician && <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-md">Vet: {normalizeTechnicianName(e.technician, settings.technicians)}</span>}
                             {(e.treatments && e.treatments.length > 0) ? (
@@ -7533,7 +7746,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                     title="Click to view medicine purchase and usage history"
                                   >
                                     <Pill className="w-3 h-3 text-indigo-500" />
-                                    {t.name} ({t.dose || 'dose'}) â†’ History
+                                    {t.name} ({t.dose || 'dose'})  History
                                   </button>
                                 );
                               })
@@ -7563,7 +7776,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                                     title="Click to view medicine purchase and usage history"
                                   >
                                     <Pill className="w-3 h-3 text-indigo-500" />
-                                    {e.medication} ({e.dosage || 'dose'}) â†’ History
+                                    {e.medication} ({e.dosage || 'dose'})  History
                                   </button>
                                 );
                               })()
@@ -7846,7 +8059,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                       >
                         <div>
                           <p className="text-sm font-black text-slate-800">{a.tag}</p>
-                          <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} â€¢ {a.breed}</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status}  {a.breed}</p>
                         </div>
                         {newRepro.animalId === a.id && <Check className="w-4 h-4 text-blue-600" />}
                       </button>
@@ -8005,7 +8218,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                 <p className={`text-[10px] font-black uppercase tracking-widest ${
                   newRepro.calfStatus === 'Expired' ? 'text-rose-700' : 'text-emerald-700'
                 }`}>
-                  {newRepro.calfStatus === 'Expired' ? 'âš ï¸ Calf Outcome: Expired / Stillborn' : 'ğŸ„ Calf Details (auto-added to herd)'}
+                  {newRepro.calfStatus === 'Expired' ? ' Calf Outcome: Expired / Stillborn' : ' Calf Details (auto-added to herd)'}
                 </p>
 
                 {/* Quick Toggle for Alive vs Expired */}
@@ -8048,8 +8261,8 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     value={newRepro.calfStatus || 'Alive'}
                     onChange={e => setNewRepro({ ...newRepro, calfStatus: e.target.value as any })}
                   >
-                    <option value="Alive">ğŸŸ¢ Alive (Add to Herd)</option>
-                    <option value="Expired">ğŸ”´ Expired / Stillborn (No Herd Entry)</option>
+                    <option value="Alive"> Alive (Add to Herd)</option>
+                    <option value="Expired"> Expired / Stillborn (No Herd Entry)</option>
                   </select>
                 </div>
 
@@ -8091,7 +8304,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
               {newRepro.calfStatus === 'Expired' && (
                 <div className="p-3 bg-rose-100/60 rounded-xl text-[11px] text-rose-800 font-bold flex items-center gap-2">
-                  <span>â„¹ï¸</span> This calving record will note the expired/stillborn calf without creating an active animal in the living herd.
+                  <span></span> This calving record will note the expired/stillborn calf without creating an active animal in the living herd.
                 </div>
               )}
             </div>
@@ -8290,7 +8503,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     >
                       <div>
                         <p className="text-sm font-black text-slate-800">{a.tag}</p>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} â€¢ {a.breed}</p>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status}  {a.breed}</p>
                       </div>
                       {newHealth.animalId === a.id && <Check className="w-4 h-4 text-rose-600" />}
                     </button>
@@ -8333,7 +8546,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                     >
                       <div>
                         <p className="text-sm font-black text-slate-800">{a.tag}</p>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} â€¢ {a.breed}</p>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status}  {a.breed}</p>
                       </div>
                       <Plus className="w-4 h-4 text-emerald-600" />
                     </button>
@@ -8552,7 +8765,7 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
                             }`}
                             title={`Click to fill ${sug} into dosage`}
                           >
-                            {sIdx === 0 && <span className="mr-1 text-[8px] opacity-75">â˜…</span>}
+                            {sIdx === 0 && <span className="mr-1 text-[8px] opacity-75"></span>}
                             {sug}
                           </button>
                         ))}
@@ -8582,240 +8795,20 @@ function MainApp({ user, onLogout, previewMode = 'desktop' }: any) {
 
           {/* Optional Direct Cure Status Override (for editing/logging completed treatments) */}
           <div className="space-y-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex items-center justify-between">
-              <span>Cure Evaluation (Optional)</span>
-              <span className="text-[9px] text-blue-600 font-bold">Outcome</span>
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { id: 'Pending', label: 'â³ In Progress', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-                { id: 'Cured', label: 'âœ… Cured', color: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
-                { id: 'Not Cured', label: 'âŒ Not Cured', color: 'bg-rose-50 text-rose-700 border-rose-300' }
-              ].map(opt => {
-                const isSelected = (newHealth.cureStatus || 'Pending') === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setNewHealth({ 
-                      ...newHealth, 
-                      cureStatus: opt.id as any,
-                      isCured: opt.id === 'Cured' ? true : opt.id === 'Not Cured' ? false : undefined
-                    })}
-                    className={`py-2 px-2 text-[10px] font-black rounded-xl border transition-all ${
-                      isSelected
-                        ? `${opt.color} shadow-sm ring-2 ring-blue-500/20`
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="p-5 bg-amber-50 border border-amber-100 rounded-2xl space-y-4">
-            <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">ğŸ’‰ Multi-Dose Protocol (Optional)</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Number of Doses</label>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="e.g. 3"
-                  className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner"
-                  value={newHealth.numberOfDoses || ''}
-                  onChange={e => setNewHealth({ ...newHealth, numberOfDoses: e.target.value ? parseInt(e.target.value) : undefined })}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Days Between Doses</label>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="e.g. 2"
-                  className="w-full px-4 py-3 bg-white border-none rounded-xl text-sm font-black shadow-inner"
-                  value={newHealth.daysGap || ''}
-                  onChange={e => setNewHealth({ ...newHealth, daysGap: e.target.value ? parseInt(e.target.value) : undefined })}
-                />
-              </div>
-            </div>
-            <p className="text-[9px] text-amber-600 font-bold">System will create dose reminder alerts automatically</p>
-          </div>
-          <button type="submit" className="w-full py-5 bg-rose-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-100">
-            {editingHealthId ? "Save Changes" : "Save Clinical Record"}
-          </button>
-        </form>
-      </FormModal>
-
-      {/* Medicine FormModal */}
-      <FormModal title={editingMedicineId ? "Edit Medicine Stock" : "Register New Medicine"} isOpen={isMedicineFormOpen} onClose={() => { setIsMedicineFormOpen(false); setEditingMedicineId(null); }}>
-        <form onSubmit={handleAddMedicineSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Medicine Name *</label>
-            <input
-              required
-              placeholder="e.g. Oxytetracycline LA"
-              className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-              value={newMedicine.name || ''}
-              onChange={e => setNewMedicine({ ...newMedicine, name: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Category</label>
-              <select
-                className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
-                value={newMedicine.category || 'Injection'}
-                onChange={e => setNewMedicine({ ...newMedicine, category: e.target.value as any })}
-              >
-                <option value="Injection">ğŸ’‰ Injection</option>
-                <option value="Liquid">ğŸ§´ Liquid</option>
-                <option value="Powder">ğŸ’Š Powder</option>
-                <option value="Pill">ğŸ’Š Pill</option>
-                <option value="Topical">ğŸ§´ Topical</option>
-                <option value="Other">ğŸ“¦ Other</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Measurement Unit</label>
-              <select
-                className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
-                value={newMedicine.unit || 'ml'}
-                onChange={e => setNewMedicine({ ...newMedicine, unit: e.target.value as any })}
-              >
-                <option value="ml">ml (Milliliters)</option>
-                <option value="dose">dose (Doses)</option>
-                <option value="g">g (Grams)</option>
-                <option value="pill">pill (Pills)</option>
-                <option value="bottle">bottle (Bottles)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="p-5 bg-slate-50/50 rounded-2xl border border-slate-100/80 space-y-4">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stock Configuration</h4>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Unopened Packs</label>
-                <input
-                  type="number"
-                  min="0"
-                  className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold shadow-sm"
-                  value={newMedicine.packs ?? 0}
-                  onChange={e => setNewMedicine({ ...newMedicine, packs: parseInt(e.target.value) || 0 })}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Capacity / Pack</label>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="e.g. 100 ml"
-                  className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold shadow-sm"
-                  value={newMedicine.loosePerPack ?? 100}
-                  onChange={e => setNewMedicine({ ...newMedicine, loosePerPack: parseInt(e.target.value) || 100 })}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Loose Qty (Open Pack)</label>
-                <input
-                  type="number"
-                  min="0"
-                  className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold shadow-sm"
-                  value={newMedicine.loose ?? 0}
-                  onChange={e => setNewMedicine({ ...newMedicine, loose: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-            </div>
-            <p className="text-[9px] text-slate-400 font-bold italic">
-              Total stock: {((newMedicine.packs || 0) * (newMedicine.loosePerPack || 100)) + (newMedicine.loose || 0)} {newMedicine.unit || 'ml'}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Min Stock Alert Level (Total Units)</label>
-            <input
-              type="number"
-              min="0"
-              placeholder="Warn me when stock falls below e.g. 50"
-              className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
-              value={newMedicine.minStockLevel ?? 50}
-              onChange={e => setNewMedicine({ ...newMedicine, minStockLevel: parseFloat(e.target.value) || 0 })}
-            />
-            <p className="text-[10px] text-slate-400 font-bold px-1">âš ï¸ Warning alerts will display if total inventory drops below this number.</p>
-          </div>
-
-          <button type="submit" className="w-full py-5 bg-rose-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-100">
-            {editingMedicineId ? "Update Stock" : "Register Medicine"}
-          </button>
-        </form>
-      </FormModal>
-
-      {/* Confirmation Dialog */}
-      {confirmDialog.isOpen && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300 p-8 space-y-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-rose-50 rounded-2xl">
-                <Trash2 className="w-6 h-6 text-rose-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-800">Confirm Delete</h3>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">This cannot be undone</p>
-              </div>
-            </div>
-            <p className="text-sm text-slate-600 font-semibold leading-relaxed">{confirmDialog.message}</p>
-            <div className="flex gap-4">
-              <button onClick={() => setConfirmDialog(d => ({ ...d, isOpen: false }))} className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">
-                Cancel
-              </button>
-              <button onClick={confirmDialog.onConfirm} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-rose-700 transition-all shadow-lg shadow-rose-100">
-                Yes, Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Pregnancy Check Modal */}
-      <PregnancyCheckModal
-        isOpen={isPregnancyCheckModalOpen}
-        onClose={() => setIsPregnancyCheckModalOpen(false)}
-        targetAnimal={pregnancyCheckTarget}
-        result={pregnancyCheckResult}
-        onSelectResult={(res) => setPregnancyCheckResult(res)}
-        onSave={() => {
-          handlePregnancyCheck();
-          setIsPregnancyCheckModalOpen(false);
-        }}
-      />
-
-      {/* Dose Administration Modal */}
-      <DoseAdministrationModal
-        isOpen={isDoseModalOpen}
-        onClose={() => {
-          setIsDoseModalOpen(false);
-          setDoseModalData(null);
-        }}
-        data={doseModalData}
-        onConfirm={(healthEventId, doseDate) => {
-          handleAdministerDose(healthEventId, doseDate);
-          setIsDoseModalOpen(false);
-          setDoseModalData(null);
-        }}
-      />
-
-      {/* Cure Evaluation Modal */}
-      <CureEvaluationModal
-        isOpen={isCureModalOpen}
-        oxœÜWMoÛ8½çW°—F.
-gÏmTÀˆS¬€ã­½ØCÑW¤-")ˆt²†êÿŞ!EJ¤>œdwkÀ ?ŞŸŞh†#~“Iã:š¡øª/Pû“T%òæPÑ;Ap~_Ríp.éìcj!K¬pÄyî!N§vH`;®Sİm
-~ûˆóVšJFq®²ÛGÊUBŞ#fXûƒJEA<3ÌIN¹†>ã`„İÕ§;ª¯Ş¡;ñHÑV 5åÈpEï®²fRool¶Â ·oQÔz½U&5:õqòp‚OFÅÆeh?ƒm‘Î
-œ'¤¢ Ha“qm§0ÚŠñ=lº‘¿Ë8SçšÓTQâÎ‹ë¢O¡÷¬‚ïXUh¢qİDÓ[2†DªÌNAÈ(a)ãıÊ¤Õq7ii9ägQ9l/z`w§bøæÍ´Ç3±á6“vMh|ëÂbâ3üƒèå¹@”œu¦òP¥–z¿Îw,W´ŠJM±œ;»„ 8ÑôÑsFº^â{æNÈô	Á;eÍyX1a2ÉŸÏ•øM<ÑêXjÏ³á¸ ¡Å}ÿŞ?MU«B“jNëæs	õ!Rš¢qöŸy‡Ïş›4|AÈÚFÎ%Œ·ô'SÙF‰ôáJ.M—À^Ñ¾u¸ªØ41x6ù~?°ô}¡RŸú¢ÌsØ0óŒ»5]:}Àëgßzªl$©5}¦~ÍXë"¤l]0|^(ı’IxI_¤}ßíM« ^/ÿÀüú;Û ç£—v5Á:ƒ%fù-RS¿6¥j‡kƒi 
-ÜÉÛ‡„
-ï’dÔÂŠÚâ×¤Ç¥ƒAsVA\š6Ì³YuôÒHµ7"«Å4rA
-h$TşeC\aù0Öjêí®‹ßœ û€´‹yØâpl»‹tÓ1ĞïÌCXwY\·	>®Å_´²¸vÂ”PúÒÂÚyÏ¨¡¥ü€zQèyko.ç®]ğ³£ß±C
-?UuíŠu 5`Mn2ªTä´D0\*+*Šİí—>'Ö`­‚¹?[>)¶CÖ÷lX5ÖİsÌÓ£a±ÅÕ*‡Ôeô«èòrLd”™–¦éh×•€ö†ş,Â{Lš3O {ìµ.>ÓÜG¿"FiN}›L½aáw×gZ)–39ÚPxÑ‚ãü¨X*‡µ·˜©š:|¾´1VX‰ëİÀìÿ÷Ö|¡e%à>-àß8øYqK˜n‘¡±[ZÑ'è],ş]ÑŒ€ÇûDK¨ÃÆÜ\7[˜Ï“Õæö.Y-¶Éıªo@Láæô	éŠÍ È'›ûª€&Ìd	ïFt¹½œ}ıå[`z«R­Ò/®M¶M¹¾"ìQı
-ı»•B„î0”Dt‡_”åÇ‹   ÿÿ {„Uj
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex itemxœä=ÙrÛ8¶ïù
+´f*–º­ÅvìN/å¶ÓWe»#Ï¼¤RÕ´K¼¡H]²­«¨ê~Ë|Ú|É=à€ I9Êtf†²ÛÁÙšuÇ4â4!ÿ½`<¸]vo(¿§4j>!ÚuÌæ^tz±H(yuç…qDÚïçø×;Ç}ñ€­‡cï¼=iqúÀ»_Ì>ñõ&\ĞîÑ`@nã~Å¡ß:}¿àãxFm#÷Cï††F£Ü©sL’À'øÑÇ!ë‰7ïî—v´úh4@	ü!Ùù@#?ˆ&;»DÌ-ä*"’x’PÆ Æh¾™t½ÙMº‡¹ùëgØÏMœøğU6ì;d½ëš¡ê«³eÊ<tF/ôó™²ßÊ\YÓAõlïbNJ3ªÊ¬IÌh>¥ø¡Ì'~ËÉŒ¹>õfŞ¼Ï999%«ÒBÆqÄ8	Øˆ†tÌ©ONH;¢÷¯©òioËq/ùò¥8Œ999!0f/ğ_–†L(_$€¥€7ÎãÈr‡Ïty²’cš{_Î£ä-ëqtãÏ'«vwË(—m¥½"Ö.„ôz½|Ã»®‡
+@Ó}/Z–V^G˜? K‘‹œ,(Ñï§÷o½á‹È§·AD}ë,ëPı­~Ÿ/»ûdş ’Ü÷Hï’ÂCoü™$1NâwÂ—`q^Ää%]/ÉŸËH“m1CÇvòûŸÅ™
+<^6õüø¾Ëf$<‚E‰?‚ñııÁïÎ¡$ÜON3¤g¡Ç)´Ü›ü‰lßÑdË¦= ; ·ĞdNòÛ4jësÜ—xYîÛ1	Ä<µã>ğLµ_¹Á`ªóî!QÙ]zn›ƒ=çG»gü{L»Ëî3ƒ÷ÏË"¡„#?]Ìç4{€¡€*ãÏx„÷Oo’·‹İK`GÈ¤y¯I¦ùFòb_ÈsÍånÙîöJOÂ³âĞšîRbÌ³ê]¾[ ,H|Kp£Ì*	ÅÔA4_pºHV‰al¬lD'­=Û9,•NA6Óä¤E{“9°=¦ìö¾{» 2ğŒ 78 &EqDU6 á0SA“ÒmEöõ¢Ü¦rkïo|„ìØ±‘0ì©M +µ0l3kC	íq/™PŞs§™{	£Woëw:*µ²Ì~	»L,Ê]zKF~‘
+á÷€uûß#Öù ¤ß¼ùvğ-ìŸi¶&.ÔvÉ—½}´dœÎÈ} g0N( ñ‘''……Ò„ƒ³àñì‡1Hú¥ÁËrHÊ¸Øâfğ–íĞ—R@	¥ô(Ïòô³ÿ¸×;„Å”©á¹É Ã”gò›˜dA„+êƒMäY^ùph­‘wG‰<~Ö‚£JÂ Âİ“¿Ğ1 fk­ÀêÇıÛ8™e¿û¿Â¯·±ï¦m«şä-Ì>$ ùmòc?ø¸häåZ³^rµ¯ ±h‚ô³Xô_è$`h$âæ÷[kPÆŞÏit²
+XÖˆó`ÛZ¨Å §L-^!Ş_•k¥³óï¾2—Ôà`áŞz­ aƒ"œ¬ ´~HÏ}?ë&o¬m\ó¨U¥àdO™†âÖù*ò'`à9œqPò£İ²ı#ç¶qô„şÏ"HJÊw™U¿XrŠ“/Ç!NôæÜd¦V¾}ˆtüŒäZt®hê¬{?ãİ@¸9ªdİÛÎöŞ‹`n“]ZyuÖ#çÖYè0F‰Y›\¸oapˆØHm®|+º€'q²t¨ÇLØieÛÛÇ^Ò–³§‹-‹ÇMO<©têÒ4·ˆ`‹²Û$]hë<âÁMƒ@lßûò©Úî¯#”Z§é—Æÿæ#?M¿4îˆ‹œ/
+«$}ònt~u)Wn46pÈÒ8t}KI¼ô	Kkã!/é=€Áiöm£í1:—¹ç(ªåşÌÖÆC¾çS\ŠøãêtÜ—$cUÍ¾3âÿkš˜¢o©Ç‰8£	>°€u=ÀQ¶Hÿ3À®YHÚoAqBPXÖiŒYw"'~6îÂ½›‚y'ÿ6î@^°Ö©øÓ|®Å0ülÜm†Ö)~6îÂ¼ñw$ÿn°#Ê0n	ÿ>Š.Kõ.´µû‡º·L÷¨å^ÄşóÛ‘6}¶Uƒ_¨üä"nƒÉ"!ãşôÙ#Â-ßÆ}öâQ;K_Å`m€…üÚ¿•cğ•î‰ÒÑ—\6u—Íªİ9ï›ãÖÉÙ4öRTğ@1ÚĞí–øò…ş`Ï×£±åÂƒÙ¾AøòÇ:½@B|×¨ÆÀ­?Ğ¡…lÇÔaSTû5Œ=+²íıË"Û"IPÅ}‰÷ŸÈ™Ä9o3‰ÑêĞåñ¼é‚ÿ6¤R*’9/qk|º*ğl„œ¿Î·ævËà²»{†J¾WuZ‚¡9X5µ^‹ë7çÂ‹Æ44Ç­‚pêQn…,ÉBùªÉŠßùÑPH	(œdß”Yû3ZîypG‡,RÚ}qX5«ëwç¯sıõYã†¾…¯:o1Èe@”ÑÌo½×#—8…‡y çQ0óÂÂ?~Qá x0'K"Øméc'¿xËÕÍ/"uw·ò!Ÿ–‚Æ{OşÔ"?‘6K³äJä4écgÀE&È;Z-…ud>ğ~¨èZ<n¸Å4Gîn’H³ÎdWS‘§OI;åÊÙÈ”OÂ÷„Tğ²Ôk*o¼º˜1è<ËŸRônƒ¬×¶àÓ´'g»’¹&òG/ğ;z'¼İövÉX3pé7€
+Œ¿.&¹„†öMÄ"øE<ÖNÛÎ'½NGËP¾Z³„\Òÿ¨œ1øŠ¨2ZÌf€fFáX  kÈÔò›$À2»<îŞ$ä6‰gy†Xğ…Óî‘LâZ31‹E¡•(ÄğkšÔ'WjË=±Š0ml”g–EokÚ®Ş®!½À`š ÂUŠ'@jk{JaÕ¹"& uæ ùö^¡Î(jKÖcNGYàÏ¥hŸ‚é’o
+,ÃÀ¿ˆoïúçÖx°ğ(loc9zÅNkÎŠd»s!I6^¶U«7ÊQdØŠØC5„Lf¼»×;t,øú¿Á¶æC OâhR[9¬lsì!ööd ÚÄßAäcœ’/äPáìØhä0ë•fæ İ£{sœNpO!{^Íû˜Hâš&‹^Ã,×í…4šği1¼õæú¶ŸŒ;'².áÑÔ=­GUhœY0<Õ7]O+dÅu‰Âë¯¡¡wõæÍ»W£‘+!uš!ë€ÉĞéñøjô~Ä1~±yğöÎõNçãà“kŒLŠæz”gšœğÇUÜÙÙiø¬?Y»®İ‘;–rzD½d<m,ÒİíŠÉ¹1€ÙŸîÇk•[Ï’í€—*õRsr¿§gfäjsÎ¬,¹%ÃRp>—m‘}(Ÿ€™d|~ækéG"ós#E/+İ}{jÖôÌ;ÅÏ˜”`ÙODæD®xZ¨ÔÉişH5äW´×¯ƒÑõøÖ¢3³ŠIîX&3ï¡;í~<ÜM?< Û`µìb²™'V_ˆ•G‘S0®Ï¬™Øúã˜"Ş¦ø}—şC;‘j(Å~	êg3r¶£z60f‘ÜvBÄz9åŠVt'UõGrf¿¦Dù ¢éÜŸÁ!`¦ŒT>¦÷`±•ëñ”~€ÿ†-æHáZ5@ÀP+©Ì¥/wzRì¹j@y~^mKË!]²÷	7Yìñ¥‰¨òªHÍÇK ¤ÈÃ—#şÚ¢:ëÌÁ.Ùª~1P2¾üN™¢5·…înpiJ•ú0¨O	7UmG¤jÈ*¯cÃ¥(¬™®p]Ü'Ş¼fÄ²Ö¹BæC-3{8q%ô;ù²0ªS-LA‡Ç4§>+òĞOKş€âz³¼nŸèşÈc×r T¨éÊS–œRª(Ï+ìˆÒ}Ê½ d‘Í¤£#˜¨ĞŒT±tèíêÌ`sr¥
+G/#qÑ±2‹½èË—Ôê˜´2'À³Hµ¢´0s šá¦p`;´€ ‡U_Léø³ø0„9Šr!ÈQè.eÁL=!¦ïÚá­•ælæE!WQáeq+|;PŸc"ğuxÑ$¤.hçØ"¬·H¥Ü¯¦4¦
+–`ö>šÄÀV	ôØl{U’òëş*òk™®ßÙèª‹ÓüWÙÈP'¿ÛÁHv>#T
+°¯‰C¡P¡ÿÁ?şïïD:8ÅYU¹lä@P•9eÜL Òñ Atÿãd£¼­Xú‰ÀpôÂàéuş NÓ6{ï¢ùˆ–>SÒš½B¼Í_±ÍìÖ“z¡%…./¨¿Í„p0T•2ÕbDis4SÆ¤*Æ¦`©|îÖ© ¸ªKY8åHõiDpŠºÀ¯8eÕ«ƒ±~PmŒÔ©Õ²êU_«^¼Fúh…@á@aÏéÒ/%8>›Ì¦p¹lôk_­ãµ7É{roÒ¬k¡ÔMc”õÀ’=™êN-p§Ù4`;K?åĞbşDöš’˜añµáü)'J;¾átŠCÍ„Mƒ\n5ıŞ²ÕêœeÚøuú¶é“^û¯q‡m`z944%ğ±©÷K¿êµ›g,Wïdí“dteeQ²ŞšqÕ?«è.µÜV¼Ö"–¯ DË_o‘²İ:&ÛŒgnÂ17æ—€Ä¸‰Í¸åWğÊGrÊ¯`vÍWe°áz2n@ê‚IänÎ$jY„›A4Í·ùÙ’µ6Q•‰c^µ>’§|³q<·™{†¶-ØCú’*ølY£	Ö³‚+¥N[D>ñ!¡lœ7 J½Í“‘§ÈÅ¼	µyÜ•	JI==!üùÀòfŒRXÚU¨hÌ6=Üjj¸}ëÇıéá&>Nl¹[Òñbîm“Q k¶)Á‡N‡I©»Fğ]Â³HDOAî¸ÆNëz+ ¥k)ØUbWü«¯¶%ÉR÷*fR}ÿ5sÁ|UÚÖ •:M@9’ôØdHáIXqYXÙÌ±÷ÛW[§í•»-¿ì¬o¡²ÌYï± Í¡Ú}Røî¼õšYŒß®lSR<1A×c/y¨xõæXÓ gš¸	>/À¼ÂŠĞw1p|:nƒ±¢>1Æ“	õ›,½Ò{·©xéáR*òyDú(óIÃ<úåÌÿIûmY®i1Ûb'ÿÉ¦U…üÉlä]â7C…ò›!CÑls1c€eş’=İ,ÆUnÑGÜŒ³Dü“€‡°"‡Í‹t‘®ü’×t¬¡Æ‡¾¹£®±1»6NQÔòÙ†­ŠİÎ’ô%ÛcÄ_Ïò6¾iÏ‘*ë.!a¨€tz”xz“«™ò}¦N+¹SÉ2Î²†rU8ó{³ÔûÈˆ.ñRrnÏ¶;pJ‡Ñ¤ªFæºÓÎ‡p•ì÷È-à%Z¬D–°÷ëpò9²:Ì+•µ8ÀWıÑg½ÜÛà,
+t¿¢³`esB*å;º#Ü,İQ
+´š\¤i¢{ÙP}V)6^üW[û»ÕLõó/
+‘0Šk,xíJ¨æş\-ÁyàTpÒĞaöÙaêÕW”ûñ×˜õgÜ,Û #]ı¬„»AêpÙQ“_o&mó–x†oè4#«à·Wq:¹J%v»jë7UQ¿Õ«6,à²ñ8ÔW,pz\9)†¢7,Õ]YÕ¯í¨"Ï¦/à3°;KZ¼o–Ú¬ÒÔˆ@b­©6ñ®×ªy^®úR£Õ¤jÍóåº§¦ßZÕG[·)ô=>Î2¯²Î¬|R¾¥â|Áãî%õiü ñÇ…©(\Ù0Óy2¹±Îp+¶z{ÍÌ)­tìT•(Î9áû(¼¸;µ®ûÁæÌâh[§ªSnHKõğU*µUw	&[³ı½Ç•!¯Ö>Àjí2¦»¢}Õñ={Íö#5¾â²*l@úfÛ¶À¥h»¢şa Î^™)}Z]•ïiĞ]SsÚX¶X°¶êœšel¯˜</€Ù°’Üzœø® dFªñüF§[÷
+òZ“ï 'ãöé¿‹Pÿ-Å_)Î¨|c5¤ŞÌàÓbÄuŸPVÈ_åW|Ú
+·gğ9Ë•í%ÊÏšiªGÃ­I˜«¹ïîíƒ% Z2,0]@>tú[˜\Našşœ=ÈÒ&Mİ´gäÚeØm‹‘zã±2UW•	ä¨ª½?qV±_5„Pì×Ò*Ëæì¦ÅºŞCWÙ¤ ´¬øµı§ 8XÚ8un†KáYºwÄ)‰Íü6Ñ?Ûğ8ü@ê,»öìÇ”Á1gï¥%°VŠ(Rø³ÎJ7ÿ@• éØ¸ÊÎÎ†La%ÒP*NJÎŠ›¿ôâ’ô)Åî[ş£LÙŠé-'ŠMlÊYymH”Â-P/[ÊŒà9ĞÜs-ª¿E—u@,¯+!!W··§ÉCñ_ab·u\ñ6÷Z8ü¾9Û¨xY‚RŠ²É°š-VŠÜ"}KÀÒô°%ÈöÂ;œ¦'”ÅáĞ[ŒÇ”1äÈËÃ-“IÿïZ¤ŒmB.™»SWÊ„’ı+¤ï–Jl¯Åÿæ$RQæóÍ¨DlTH^?ôõ’W!*Ô‚ãcËÙ<ıoP1DŒÜQá_Æ×Ä$´[ä”Ö‰ÕºÚ·6Q©£—õ5ü›˜¨3b´;/Ÿ¬Ÿ<¡ó8áÄ§·Ş"ää|>ùäÿ  ÿÿ 6×‘
