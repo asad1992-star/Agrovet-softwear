@@ -1,4 +1,4 @@
-import { Animal, ReproductionEvent, HealthEvent, ReproEventType, Medicine } from '../types';
+import { Animal, ReproductionEvent, HealthEvent, HealthEventType, ReproEventType, Medicine } from '../types';
 
 export const formatWhatsAppMessage = (text: string) => {
   return encodeURIComponent(text);
@@ -247,6 +247,85 @@ export const generatePdCheckShareText = (
   }
 
   text += `\n_Generated via AgroVet Pro Management_`;
+  return text;
+};
+
+export const generateVeterinaryMedicalCardShareText = (
+  animal: Animal,
+  reproEvents: ReproductionEvent[],
+  healthEvents: HealthEvent[],
+  farmName?: string
+) => {
+  const animalRepros = reproEvents.filter(e => e.animalId === animal.id).sort((a, b) => b.date.localeCompare(a.date));
+  const animalHealth = healthEvents.filter(e => e.animalId === animal.id).sort((a, b) => b.date.localeCompare(a.date));
+
+  const totalInsems = animalRepros.filter(r => r.type === ReproEventType.INSEMINATION).length;
+  const totalCalvings = animalRepros.filter(r => r.type === ReproEventType.CALVING).length;
+  const totalIllnesses = animalHealth.filter(h => h.type === HealthEventType.ILLNESS).length;
+  const curedCases = animalHealth.filter(h => h.cureStatus === 'Cured' || h.isCured === true).length;
+  const cureRate = totalIllnesses > 0 ? Math.round((curedCases / totalIllnesses) * 100) : 100;
+
+  const pregStatus = animal.status === 'Pregnant' || animal.status === 'Closeup' || animal.pregnancyDays
+    ? `🤰 PREGNANT (P-${animal.pregnancyDays || 0}d${animal.expectedCalving ? `, Due: ${animal.expectedCalving}` : ''})`
+    : `${animal.status || 'Active / Open'}`;
+
+  let text = `*🩺 OFFICIAL VETERINARY MEDICAL CARD & HEALTH PASSPORT*\n`;
+  if (farmName) text += `🏢 *${farmName}*\n`;
+  text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  text += `🐄 *Animal Identification: Cow #${animal.tag}*\n`;
+  if (animal.name) text += `• Name/ID: ${animal.name}\n`;
+  text += `• Breed: ${animal.breed || 'Cross'} | Sex: ${animal.sex || 'Female'}\n`;
+  text += `• DOB / Age: ${animal.dob || 'N/A'}\n`;
+  text += `• Pen / Group: ${animal.herd || 'General'}\n`;
+  text += `• Reproductive State: *${pregStatus}*\n\n`;
+
+  text += `📊 *Lifetime Summary Metrics:*\n`;
+  text += `• Services (AI): ${totalInsems} attempt(s)\n`;
+  text += `• Calvings: ${totalCalvings} recorded\n`;
+  text += `• Clinical Cases: ${animalHealth.length} (${totalIllnesses} Illnesses)\n`;
+  text += `• Cured Cases: ${curedCases} (${cureRate}% Cure Rate)\n\n`;
+
+  text += `🏥 *Clinical & Medical History:*\n`;
+  if (animalHealth.length === 0) {
+    text += `• No clinical illnesses logged.\n`;
+  } else {
+    animalHealth.slice(0, 5).forEach((h, idx) => {
+      const rx = [
+        h.medication ? `${h.medication} (${h.dosage || 'Std'})` : null,
+        ...(h.treatments?.map(t => `${t.name} (${t.dose})`) || [])
+      ].filter(Boolean).join(', ') || 'No medication';
+      const outcome = h.cureStatus === 'Cured' || h.isCured === true ? '✅ Cured' : h.cureStatus === 'Not Cured' ? '⚠️ Sick' : '⏳ Under Care';
+
+      text += `${idx + 1}. [${h.date}] *${h.type}*: ${h.details || 'N/A'}\n`;
+      text += `   • Rx: ${rx}\n`;
+      text += `   • Status: ${outcome}${h.technician ? ` | Vet: ${h.technician}` : ''}\n`;
+    });
+    if (animalHealth.length > 5) text += `   _...and ${animalHealth.length - 5} older clinical events._\n`;
+  }
+  text += `\n`;
+
+  text += `🧬 *Reproductive & Insemination History:*\n`;
+  if (animalRepros.length === 0) {
+    text += `• No reproduction events logged.\n`;
+  } else {
+    animalRepros.slice(0, 5).forEach((r, idx) => {
+      let outcome = '-';
+      if (r.type === ReproEventType.PREGNANCY_CHECK) {
+        outcome = r.pregnancyResult || (r.success ? 'Pregnant (+ve)' : 'Open (-ve)');
+      } else if (r.type === ReproEventType.INSEMINATION) {
+        outcome = `AI with ${r.semenName || r.bullId || 'Standard Straw'}`;
+      } else if (r.type === ReproEventType.CALVING) {
+        outcome = `Calved (${r.calfStatus || 'Alive'})`;
+      } else {
+        outcome = r.type;
+      }
+      text += `${idx + 1}. [${r.date}] *${r.type}*: ${outcome}${r.technician ? ` (Tech: ${r.technician})` : ''}\n`;
+    });
+    if (animalRepros.length > 5) text += `   _...and ${animalRepros.length - 5} older breeding events._\n`;
+  }
+
+  text += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+  text += `_Issued via AgroVet Pro Livestock Management System_`;
   return text;
 };
 

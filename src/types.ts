@@ -23,6 +23,7 @@ export enum ReproEventType {
 
 export enum HealthEventType {
   ILLNESS = 'Illness',
+  VACCINATION = 'Vaccination',
   TREATMENT = 'Treatment',
   RECOVERY = 'Recovery',
   CHECKUP = 'Checkup',
@@ -67,6 +68,31 @@ export interface StatusColors {
   observation: string;
 }
 
+export type PenCategory = 
+  | 'fresh'
+  | 'highLactating'
+  | 'mediumLactating'
+  | 'lowLactating'
+  | 'dryLactating'
+  | 'pregnantHeifers'
+  | 'breedableHeifers'
+  | 'growingHeifers'
+  | 'postWeanedHeifers'
+  | 'sucklingCalves';
+
+export interface PenMapping {
+  fresh?: string;
+  highLactating?: string;
+  mediumLactating?: string;
+  lowLactating?: string;
+  dryLactating?: string;
+  pregnantHeifers?: string;
+  breedableHeifers?: string;
+  growingHeifers?: string;
+  postWeanedHeifers?: string;
+  sucklingCalves?: string;
+}
+
 export interface FarmSettings {
   gestationDays: number;
   closeupDays: number;
@@ -81,6 +107,8 @@ export interface FarmSettings {
   semenCatalog?: string[];
   autoBackupEnabled?: boolean;
   lastBackupDate?: string;
+  penMapping?: PenMapping;
+  autoMoveHeiferOnPD?: boolean;
 }
 
 export interface Animal {
@@ -140,6 +168,10 @@ export interface HealthEvent {
   cureDate?: string; // Date cure status was evaluated
   attachments?: string[];
   technician?: string;
+  isBatch?: boolean; // True if logged for whole herd or group of animals (e.g. batch vaccination)
+  batchAnimalCount?: number; // Total number of animals treated in this batch
+  batchHerdName?: string; // Name of the herd or group (e.g. "All Herd" or "Main Herd")
+  batchAnimalIds?: string[]; // IDs of the animals in the batch
 }
 
 export interface Alert {

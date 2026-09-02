@@ -196,27 +196,183 @@ export function refundMedicineStock(
   };
 }
 
+export interface MedicineDeltaItem {
+  medicineName: string;
+  previousDose: number;
+  newDose: number;
+  delta: number; // positive = deducted more, negative = refunded
+  action: 'deducted' | 'refunded' | 'unchanged';
+  unit: string;
+  patientCount: number;
+  totalDelta: number;
+}
+
+export interface MedicineEditAdjustmentResult extends MedicineDeductionResult {
+  deltaReport: MedicineDeltaItem[];
+  deltaSummary: string;
+}
+
+/**
+ * Get Medicine Pack Capacity and Inventory Stock Details
+ */
+export function getMedicinePackInfo(
+  medicines: Medicine[],
+  medNameOrId?: string
+): {
+  matchedMedicine: Medicine | null;
+  loosePerPack: number;
+  unit: string;
+  packs: number;
+  loose: number;
+  totalUnits: number;
+  isLowStock: boolean;
+  isOutOfStock: boolean;
+} {
+  if (!medNameOrId || !medNameOrId.trim()) {
+    return {
+      matchedMedicine: null,
+      loosePerPack: 100,
+      unit: 'ml',
+      packs: 0,
+      loose: 0,
+      totalUnits: 0,
+      isLowStock: false,
+      isOutOfStock: true
+    };
+  }
+
+  const clean = medNameOrId.trim().toLowerCase();
+  const matched = medicines.find(
+    m => m.name.toLowerCase() === clean || m.id === medNameOrId
+  ) || medicines.find(
+    m => m.name.toLowerCase().includes(clean) || clean.includes(m.name.toLowerCase())
+  ) || null;
+
+  if (!matched) {
+    return {
+      matchedMedicine: null,
+      loosePerPack: 100,
+      unit: 'ml',
+      packs: 0,
+      loose: 0,
+      totalUnits: 0,
+      isLowStock: false,
+      isOutOfStock: true
+    };
+  }
+
+  const loosePerPack = Math.max(1, matched.loosePerPack || 100);
+  const packs = Math.max(0, matched.packs || 0);
+  const loose = Math.max(0, matched.loose || 0);
+  const totalUnits = Math.round(((packs * loosePerPack) + loose) * 100) / 100;
+  const isOutOfStock = totalUnits <= 0;
+  const isLowStock = totalUnits > 0 && totalUnits < (matched.minStockLevel || 0);
+
+  return {
+    matchedMedicine: matched,
+    loosePerPack,
+    unit: matched.unit || 'ml',
+    packs,
+    loose,
+    totalUnits,
+    isLowStock,
+    isOutOfStock
+  };
+}
+
 /**
  * Handle medicine stock adjustment when editing a health event:
  * - First refunds the previous treatments recorded on the event.
  * - Then deducts the new treatments from the restored stock baseline.
- * - Returns the final updated medicines list, delta deductions, and any alerts.
+ * - Accurately computes the delta per medicine for full transparency.
+ * - Returns the final updated medicines list, delta deductions, detailed delta report, and alerts.
  */
 export function adjustMedicineStockForEdit(
   medicines: Medicine[],
   previousTreatments: Array<{ name: string; dose?: string | number }>,
   newTreatments: Array<{ name: string; dose?: string | number }>,
   patientCount: number = 1
-): MedicineDeductionResult {
+): MedicineEditAdjustmentResult {
+  const validPatientCount = Math.max(1, patientCount);
+
+  // Collect all unique medicine names across previous and new treatments
+  const medicineNamesMap = new Map<string, { prevDose: number; newDose: number }>();
+
+  previousTreatments.forEach(t => {
+    if (!t.name || !t.name.trim()) return;
+    const nameKey = t.name.trim().toLowerCase();
+    const dose = parseDosageNumber(t.dose);
+    const existing = medicineNamesMap.get(nameKey) || { prevDose: 0, newDose: 0 };
+    medicineNamesMap.set(nameKey, { ...existing, prevDose: existing.prevDose + dose });
+  });
+
+  newTreatments.forEach(t => {
+    if (!t.name || !t.name.trim()) return;
+    const nameKey = t.name.trim().toLowerCase();
+    const dose = parseDosageNumber(t.dose);
+    const existing = medicineNamesMap.get(nameKey) || { prevDose: 0, newDose: 0 };
+    medicineNamesMap.set(nameKey, { ...existing, newDose: existing.newDose + dose });
+  });
+
   // Step 1: Refund previously deducted stock
   const { updatedMedicines: refundedMedicines } = refundMedicineStock(
     medicines,
     previousTreatments,
-    patientCount
+    validPatientCount
   );
 
   // Step 2: Deduct new treatments from the restored baseline
-  return deductMedicineStock(refundedMedicines, newTreatments, patientCount);
+  const deductionResult = deductMedicineStock(refundedMedicines, newTreatments, validPatientCount);
+
+  // Step 3: Compute delta report per medicine
+  const deltaReport: MedicineDeltaItem[] = [];
+  const deltaSummaries: string[] = [];
+
+  medicineNamesMap.forEach(({ prevDose, newDose }, nameKey) => {
+    const med = deductionResult.updatedMedicines.find(m => m.name.toLowerCase() === nameKey)
+      || medicines.find(m => m.name.toLowerCase() === nameKey);
+    const medDisplayName = med?.name || nameKey;
+    const unit = med?.unit || 'ml';
+
+    const deltaSingle = Math.round((newDose - prevDose) * 100) / 100;
+    const totalDelta = Math.round(deltaSingle * validPatientCount * 100) / 100;
+
+    let action: 'deducted' | 'refunded' | 'unchanged' = 'unchanged';
+    if (totalDelta > 0) {
+      action = 'deducted';
+      deltaSummaries.push(
+        `Deducted additional ${totalDelta} ${unit} of ${medDisplayName} (Changed from ${prevDose} ${unit} to ${newDose} ${unit}${validPatientCount > 1 ? ` for ${validPatientCount} animals` : ''})`
+      );
+    } else if (totalDelta < 0) {
+      action = 'refunded';
+      deltaSummaries.push(
+        `Restored ${Math.abs(totalDelta)} ${unit} of ${medDisplayName} back to stock (Changed from ${prevDose} ${unit} to ${newDose} ${unit}${validPatientCount > 1 ? ` for ${validPatientCount} animals` : ''})`
+      );
+    } else {
+      action = 'unchanged';
+    }
+
+    deltaReport.push({
+      medicineName: medDisplayName,
+      previousDose: prevDose,
+      newDose,
+      delta: deltaSingle,
+      totalDelta,
+      action,
+      unit,
+      patientCount: validPatientCount
+    });
+  });
+
+  const deltaSummary = deltaSummaries.length > 0
+    ? deltaSummaries.join('. ')
+    : 'No net change in medicine dosage.';
+
+  return {
+    ...deductionResult,
+    deltaReport,
+    deltaSummary
+  };
 }
 
 /**

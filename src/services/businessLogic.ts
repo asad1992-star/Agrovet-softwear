@@ -10,7 +10,9 @@ import {
   FarmSettings,
   ProtocolEnrollment,
   ProtocolTemplate,
-  PenMovement
+  PenMovement,
+  PenCategory,
+  PenMapping
 } from '../types';
 
 export const dateUtils = {
@@ -55,8 +57,15 @@ export const dateUtils = {
 };
 
 /**
- * Smart Group / Pen Matching Helpers
+ * Smart Group / Pen Matching & Category Mapping Helpers
  */
+export const getMappedPen = (settings: FarmSettings | undefined, category: PenCategory, fallbackDefault: string): string => {
+  if (settings?.penMapping && settings.penMapping[category] && settings.penMapping[category]!.trim()) {
+    return settings.penMapping[category]!.trim();
+  }
+  return fallbackDefault;
+};
+
 export const findFreshPen = (customGroups?: string[]): string => {
   const groups = customGroups || ['Fresh', 'Main Herd'];
   const match = groups.find(g => g.toLowerCase().includes('fresh'));
@@ -77,8 +86,66 @@ export const findCloseupPen = (customGroups?: string[]): string => {
 
 export const findBreedingPen = (customGroups?: string[]): string => {
   const groups = customGroups || ['Breeding Heifers', 'Breeding Pen', 'Main Herd'];
-  const match = groups.find(g => g.toLowerCase().includes('breeding heifer') || g.toLowerCase().includes('breeding'));
+  const match = groups.find(g => g.toLowerCase().includes('breeding heifer') || g.toLowerCase().includes('breeding') || g.toLowerCase().includes('breedable'));
   return match || 'Breeding Heifers';
+};
+
+export const getFreshPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'fresh', findFreshPen(settings?.customGroups));
+};
+
+export const getSucklingCalfPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'sucklingCalves', 'Suckling Calves');
+};
+
+export const getDryPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'dryLactating', 'Dry Lactating');
+};
+
+export const getPregnantHeiferPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'pregnantHeifers', findPregnantPen(settings?.customGroups));
+};
+
+export const getBreedableHeiferPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'breedableHeifers', findBreedingPen(settings?.customGroups));
+};
+
+export const getHighLactatingPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'highLactating', 'High Lactating');
+};
+
+export const getMediumLactatingPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'mediumLactating', 'Medium Lactating');
+};
+
+export const getLowLactatingPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'lowLactating', 'Low Lactating');
+};
+
+export const getGrowingHeiferPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'growingHeifers', 'Growing Heifers');
+};
+
+export const getPostWeanedPenName = (settings?: FarmSettings): string => {
+  return getMappedPen(settings, 'postWeanedHeifers', 'Post Weaned Heifers');
+};
+
+export const getAllAvailablePens = (settings?: FarmSettings, animals: Animal[] = []): string[] => {
+  const set = new Set<string>();
+  if (settings?.penMapping) {
+    Object.values(settings.penMapping).forEach(val => {
+      if (val && val.trim()) set.add(val.trim());
+    });
+  }
+  if (settings?.customGroups) {
+    settings.customGroups.forEach(g => {
+      if (g && g.trim()) set.add(g.trim());
+    });
+  }
+  animals.forEach(a => {
+    if (a.herd && a.herd.trim()) set.add(a.herd.trim());
+  });
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
 };
 
 export const isBreedingPen = (herdName?: string): boolean => {
@@ -87,14 +154,155 @@ export const isBreedingPen = (herdName?: string): boolean => {
   return h.includes('breed'); // 'breeding', 'breeding heifers', 'breeding pen', etc.
 };
 
-export const isBreedingHeiferPen = (herdName?: string): boolean => {
+export const isBreedingHeiferPen = (herdName?: string, settings?: FarmSettings): boolean => {
   if (!herdName) return false;
   const h = herdName.toLowerCase().trim();
+  const configuredBreedable = settings?.penMapping?.breedableHeifers?.toLowerCase().trim();
+  if (configuredBreedable && h === configuredBreedable) return true;
   return (
     h.includes('breeding') ||
     h === 'breeding pen' ||
-    h === 'breeding heifers'
+    h === 'breeding heifers' ||
+    h === 'breedable heifers' ||
+    h === 'breedable heifer'
   );
+};
+
+export interface HerdSyncResult {
+  updatedAnimals: Animal[];
+  movementsCount: number;
+  newMovements: PenMovement[];
+  summary: string[];
+}
+
+/**
+ * Evaluates and synchronizes pens and lifecycle statuses across the existing herd:
+ * - Respects previous manual pen movements.
+ * - Auto-aligns recent calvers (<30d) to Fresh pen.
+ * - Auto-aligns newborn/suckling calves to Suckling Calves pen.
+ * - Auto-aligns dry cows to Dry Lactating pen.
+ * - Auto-aligns confirmed pregnant heifers from breedable pens to Pregnant Heifers pen.
+ */
+export const syncHerdPens = (
+  animals: Animal[],
+  reproEvents: ReproductionEvent[],
+  settings: FarmSettings,
+  existingMovements: PenMovement[] = []
+): HerdSyncResult => {
+  const today = dateUtils.today();
+  const freshPen = getFreshPenName(settings);
+  const sucklingPen = getSucklingCalfPenName(settings);
+  const dryPen = getDryPenName(settings);
+  const pregnantHeiferPen = getPregnantHeiferPenName(settings);
+
+  // Manual movements set: animal IDs that had explicit manual moves
+  const manualMovedAnimalIds = new Set(
+    existingMovements.filter(m => !m.isAutomatic).map(m => m.animalId)
+  );
+
+  const updatedAnimals: Animal[] = [];
+  const newMovements: PenMovement[] = [];
+  const summary: string[] = [];
+  let count = 0;
+
+  animals.forEach(animal => {
+    let newHerd = animal.herd;
+    let newStatus = animal.status;
+    let moveReason = '';
+
+    // If animal had a manual movement previously, we keep its manual pen assignment
+    const hadManualMove = manualMovedAnimalIds.has(animal.id);
+
+    // Get animal's repro history sorted desc by date
+    const animalRepro = reproEvents
+      .filter(e => e.animalId === animal.id)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const latestCalving = animalRepro.find(e => e.type === ReproEventType.CALVING);
+    const latestDryOff = animalRepro.find(e => e.type === ReproEventType.DRY_OFF);
+    const latestPd = animalRepro.find(e => e.type === ReproEventType.PREGNANCY_CHECK);
+    const totalCalvings = animalRepro.filter(e => e.type === ReproEventType.CALVING).length;
+
+    // 1. Calves / Suckling Calves:
+    // If animal is marked isCalf or has motherId or is under 90 days old without manual move
+    const ageDays = animal.dob ? dateUtils.diffDays(today, animal.dob) : 999;
+    if (animal.isCalf || (animal.motherId && totalCalvings === 0 && ageDays < 90)) {
+      if (!hadManualMove && animal.herd !== sucklingPen) {
+        newHerd = sucklingPen;
+        newStatus = AnimalStatus.YOUNG_STOCK;
+        moveReason = 'Auto-Assigned: Suckling Calf Stage';
+      }
+    }
+    // 2. Recent Calver / Fresh Cow:
+    else if (latestCalving) {
+      const daysSinceCalving = dateUtils.diffDays(today, latestCalving.date);
+      // If calving was within 30 days and no subsequent dry-off
+      const isStillFresh = daysSinceCalving >= 0 && daysSinceCalving <= 30;
+      const hadSubsequentDry = latestDryOff && latestDryOff.date > latestCalving.date;
+
+      if (isStillFresh && !hadSubsequentDry) {
+        if (!hadManualMove && animal.herd !== freshPen) {
+          newHerd = freshPen;
+          newStatus = AnimalStatus.ACTIVE;
+          moveReason = `Recent Calving (${daysSinceCalving}d in milk)`;
+        } else if (animal.status !== AnimalStatus.ACTIVE && !animal.status?.includes('Sick')) {
+          newStatus = AnimalStatus.ACTIVE;
+        }
+      }
+    }
+
+    // 3. Dry Cows:
+    if (latestDryOff && (!latestCalving || latestDryOff.date > latestCalving.date)) {
+      if (!hadManualMove && animal.herd !== dryPen) {
+        newHerd = dryPen;
+        newStatus = AnimalStatus.DRY;
+        moveReason = 'Dry-Off Record';
+      } else if (animal.status !== AnimalStatus.DRY) {
+        newStatus = AnimalStatus.DRY;
+      }
+    }
+
+    // 4. Breedable Heifers confirmed Pregnant (if toggle is enabled):
+    if (settings.autoMoveHeiferOnPD && totalCalvings === 0) {
+      // Must have been in Breedable Heifers
+      const isCurrentlyInBreedable = isBreedingHeiferPen(animal.herd, settings);
+      if (isCurrentlyInBreedable && latestPd && latestPd.success) {
+        // Check if there was no subsequent calving/abortion
+        const subsequentEvent = animalRepro.find(e => (e.type === ReproEventType.CALVING || e.type === ReproEventType.ABORTION) && e.date > latestPd.date);
+        if (!subsequentEvent && animal.herd !== pregnantHeiferPen) {
+          newHerd = pregnantHeiferPen;
+          newStatus = AnimalStatus.PREGNANT;
+          moveReason = 'Confirmed Pregnant Heifer (PD +ve)';
+        }
+      }
+    }
+
+    if (newHerd !== animal.herd || newStatus !== animal.status) {
+      count++;
+      if (newHerd !== animal.herd) {
+        newMovements.push({
+          id: 'mov_sync_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+          animalId: animal.id,
+          animalTag: animal.tag,
+          fromPen: animal.herd,
+          toPen: newHerd,
+          date: today,
+          reason: moveReason || 'Herd Pen Sync Alignment',
+          isAutomatic: true
+        });
+        summary.push(`Animal #${animal.tag}: Moved from "${animal.herd}" -> "${newHerd}" (${moveReason || 'Status Update'})`);
+      }
+      updatedAnimals.push({ ...animal, herd: newHerd, status: newStatus });
+    } else {
+      updatedAnimals.push(animal);
+    }
+  });
+
+  return {
+    updatedAnimals,
+    movementsCount: count,
+    newMovements,
+    summary
+  };
 };
 
 /**

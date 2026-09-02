@@ -4,7 +4,8 @@ import autoTable from 'jspdf-autotable';
 import { 
   Animal, 
   ReproductionEvent, 
-  HealthEvent, 
+  HealthEvent,
+  HealthEventType,
   FarmSettings, 
   ProtocolEnrollment, 
   ProtocolTemplate, 
@@ -689,4 +690,248 @@ export const generateMedicineHistoryReport = (
   }
 
   doc.save(`${medicine.name.replace(/\s+/g, '_')}_History_${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+export const generateVeterinaryMedicalCardPDF = (
+  animal: Animal,
+  reproEvents: ReproductionEvent[],
+  healthEvents: HealthEvent[],
+  settings?: FarmSettings
+) => {
+  const doc = new jsPDF();
+  const colors = getThemeColors(settings?.pdfTemplate || 'Professional');
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // 1. Official Header
+  addHeader(doc, `Official Veterinary Medical Card • Cow #${animal.tag}`, settings);
+
+  // Calculate age string
+  let ageStr = '-';
+  if (animal.dob) {
+    try {
+      const birth = new Date(animal.dob);
+      const now = new Date();
+      const diffMonths = (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth());
+      if (diffMonths >= 12) {
+        const years = Math.floor(diffMonths / 12);
+        const months = diffMonths % 12;
+        ageStr = `${years}y ${months}m (${animal.dob})`;
+      } else {
+        ageStr = `${diffMonths} months (${animal.dob})`;
+      }
+    } catch {
+      ageStr = animal.dob;
+    }
+  }
+
+  // Calculate lifetime counters
+  const sortedHealths = [...healthEvents]
+    .filter(h => h.animalId === animal.id)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const sortedRepros = [...reproEvents]
+    .filter(r => r.animalId === animal.id)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const totalInsems = sortedRepros.filter(r => r.type === ReproEventType.INSEMINATION).length;
+  const totalCalvings = sortedRepros.filter(r => r.type === ReproEventType.CALVING).length;
+  const totalIllnesses = sortedHealths.filter(h => h.type === HealthEventType.ILLNESS).length;
+  const curedCases = sortedHealths.filter(h => h.cureStatus === 'Cured' || h.isCured === true).length;
+  const cureRate = totalIllnesses > 0 ? Math.round((curedCases / totalIllnesses) * 100) : 100;
+
+  const currentPregnancy = animal.status === AnimalStatus.PREGNANT || animal.status === AnimalStatus.CLOSEUP || animal.pregnancyDays
+    ? `Confirmed Pregnant (P-${animal.pregnancyDays || 0}d)${animal.expectedCalving ? ` • Due: ${animal.expectedCalving}` : ''}`
+    : animal.status || 'Active (Open)';
+
+  // 2. Animal Passport & Vital Identity Card
+  const profileTableData = [
+    [
+      { content: `Ear Tag: #${animal.tag}`, styles: { fontStyle: 'bold' as const, fontSize: 11, textColor: [15, 23, 42] as [number, number, number] } },
+      { content: `Animal Name / ID: ${animal.name || animal.id.slice(-6).toUpperCase()}` },
+      { content: `Breed: ${animal.breed || 'Cross'}` },
+      { content: `Sex: ${animal.sex || 'Female'}` }
+    ],
+    [
+      { content: `Date of Birth / Age:\n${ageStr}` },
+      { content: `Housing / Pen:\n${animal.herd || 'General Barn'}` },
+      { content: `Current Status:\n${animal.status || 'Active'}` },
+      { content: `Reproduction State:\n${currentPregnancy}` }
+    ],
+    [
+      { content: `Mother (Dam): ${animal.motherId || 'Unrecorded'}` },
+      { content: `Father (Sire / Straw): ${animal.fatherId || 'Unrecorded'}` },
+      { content: `Lifetime Services: ${totalInsems} AI(s)` },
+      { content: `Calvings: ${totalCalvings} Parity` }
+    ]
+  ];
+
+  autoTable(doc, {
+    startY: 38,
+    head: [[{ content: 'ANIMAL IDENTIFICATION & BIOMETRIC PASSPORT', colSpan: 4, styles: { fillColor: [15, 23, 42] as [number, number, number], halign: 'left' as const, fontStyle: 'bold' as const, fontSize: 9 } }]],
+    body: profileTableData,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 3, textColor: [51, 65, 85] as [number, number, number] }
+  });
+
+  // KPI Mini Banner below passport
+  let currentY = (doc as any).lastAutoTable.finalY + 6;
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Clinical Summary: ${sortedHealths.length} Health Event(s) Recorded • ${totalIllnesses} Illness Episodes • ${curedCases} Confirmed Cured (${cureRate}% Cure Rate)`, 14, currentY);
+  currentY += 4;
+
+  // 3. Clinical & Medical Treatment Timeline Table
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      { content: 'CLINICAL ILLNESS & MEDICAL PHARMACOTHERAPY HISTORY', colSpan: 6, styles: { fillColor: [225, 29, 72], fontStyle: 'bold', fontSize: 8.5 } }
+    ], [
+      'Date',
+      'Clinical Case / Symptoms',
+      'Prescribed Medication & Dosage',
+      'Treatment Days / Doses',
+      'Attending Vet / Tech',
+      'Cure Status'
+    ]],
+    body: sortedHealths.length > 0 ? sortedHealths.map(h => {
+      const medList = [
+        h.medication ? `${h.medication} (${h.dosage || 'Std'})` : null,
+        ...(h.treatments?.map(t => `${t.name} (${t.dose})`) || [])
+      ].filter(Boolean).join(', ') || 'No medication';
+
+      const dosesAdmin = h.dosesAdministered?.length || (h.date ? 1 : 0);
+      const durationStr = h.treatmentDays
+        ? `${h.treatmentDays}d (${dosesAdmin}/${h.treatmentDays} doses)`
+        : (h.numberOfDoses ? `${dosesAdmin}/${h.numberOfDoses} doses` : 'Single Dose');
+
+      const outcome = h.cureStatus === 'Cured' || h.isCured === true
+        ? 'Cured (Resolved)'
+        : h.cureStatus === 'Not Cured'
+        ? 'Not Cured (Sick)'
+        : 'Under Care';
+
+      return [
+        h.date,
+        `${h.type}${h.details ? `: ${h.details}` : ''}`,
+        medList,
+        durationStr,
+        h.technician || '-',
+        outcome
+      ];
+    }) : [['No clinical disease or illness records logged for this animal.', '-', '-', '-', '-', '-']],
+    theme: 'grid',
+    headStyles: { fillColor: [225, 29, 72] },
+    styles: { fontSize: 7.5, cellPadding: 2.5 },
+    columnStyles: {
+      0: { cellWidth: 20 },
+      1: { cellWidth: 45 },
+      2: { cellWidth: 50 },
+      3: { cellWidth: 28 },
+      4: { cellWidth: 24 },
+      5: { cellWidth: 23 }
+    }
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 8;
+
+  // Check for page break if space is tight before Reproduction section
+  if (currentY > 210) {
+    doc.addPage();
+    addHeader(doc, `Official Veterinary Medical Card • Cow #${animal.tag} (Page 2)`, settings);
+    currentY = 38;
+  }
+
+  // 4. Complete Reproduction & Breeding Timeline
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      { content: 'REPRODUCTIVE & ARTIFICIAL INSEMINATION (AI) TIMELINE', colSpan: 6, styles: { fillColor: [2, 132, 199], fontStyle: 'bold', fontSize: 8.5 } }
+    ], [
+      'Date',
+      'Event Type',
+      'Semen / Bull ID',
+      'AI Technician',
+      'Diagnosis / Outcome',
+      'Notes & Observations'
+    ]],
+    body: sortedRepros.length > 0 ? sortedRepros.map(r => {
+      let result = '-';
+      if (r.type === ReproEventType.PREGNANCY_CHECK) {
+        result = r.pregnancyResult || (r.success ? 'Pregnant (+ve)' : 'Open (-ve)');
+      } else if (r.type === ReproEventType.INSEMINATION) {
+        const subsequentPD = sortedRepros.find(ev => ev.type === ReproEventType.PREGNANCY_CHECK && ev.date >= r.date);
+        result = subsequentPD
+          ? (subsequentPD.pregnancyResult || (subsequentPD.success ? 'Pregnant (+ve)' : 'Open (-ve)'))
+          : 'PD Pending';
+      } else if (r.type === ReproEventType.CALVING) {
+        result = `Calved (${r.calfStatus || 'Alive'}${r.calfTag ? ` Tag: ${r.calfTag}` : ''})`;
+      } else {
+        result = r.success !== undefined ? (r.success ? 'Done' : 'Failed') : 'Recorded';
+      }
+
+      return [
+        r.date,
+        r.type,
+        r.semenName || r.bullId || '-',
+        r.technician || '-',
+        result,
+        r.details || '-'
+      ];
+    }) : [['No reproduction or insemination events logged for this animal.', '-', '-', '-', '-', '-']],
+    theme: 'grid',
+    headStyles: { fillColor: [2, 132, 199] },
+    styles: { fontSize: 7.5, cellPadding: 2.5 },
+    columnStyles: {
+      0: { cellWidth: 20 },
+      1: { cellWidth: 32 },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 26 },
+      4: { cellWidth: 35 },
+      5: { cellWidth: 45 }
+    }
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 10;
+
+  // Check if we need room for Veterinary Attestation & Stamp block
+  if (currentY > 235) {
+    doc.addPage();
+    addHeader(doc, `Official Veterinary Medical Card • Cow #${animal.tag} (Attestation)`, settings);
+    currentY = 38;
+  }
+
+  // 5. Official Veterinary Attestation & Signature Block
+  doc.setDrawColor(203, 213, 225);
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, currentY, pageWidth - 28, 42, 3, 3, 'FD');
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.text('OFFICIAL VETERINARY ATTESTATION & CLINICAL REMARKS', 18, currentY + 7);
+
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.setFont('helvetica', 'normal');
+  doc.text('I hereby certify that the above clinical treatments, vaccinations, and reproductive history accurately reflect the health dossier for this animal.', 18, currentY + 13);
+
+  // Doctor Remarks Lines
+  doc.setDrawColor(226, 232, 240);
+  doc.line(18, currentY + 20, pageWidth - 18, currentY + 20);
+  doc.line(18, currentY + 26, pageWidth - 18, currentY + 26);
+
+  // Signature Blocks
+  doc.setFontSize(7.5);
+  doc.setTextColor(51, 65, 85);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Attending Veterinarian / Farm Doctor:', 18, currentY + 34);
+  doc.text('Official Stamp & Seal:', pageWidth - 80, currentY + 34);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text('Sign: ___________________________', 18, currentY + 39);
+  doc.text('Date: ____________________', pageWidth - 80, currentY + 39);
+
+  // Save the PDF
+  doc.save(`Veterinary_Medical_Card_${animal.tag}_${new Date().toISOString().split('T')[0]}.pdf`);
 };

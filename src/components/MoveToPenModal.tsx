@@ -17,6 +17,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { Animal, AnimalStatus, FarmSettings } from '../types';
+import { getAllAvailablePens } from '../services/businessLogic';
 
 interface MoveToPenModalProps {
   isOpen: boolean;
@@ -71,12 +72,9 @@ export const MoveToPenModal: React.FC<MoveToPenModalProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('All');
 
   const groupsList = useMemo(() => {
-    const list = settings.customGroups && settings.customGroups.length > 0
-      ? settings.customGroups
-      : DEFAULT_GROUPS;
-    // ensure unique
-    return Array.from(new Set(list));
-  }, [settings.customGroups]);
+    const list = getAllAvailablePens(settings, animals);
+    return list.length > 0 ? list : DEFAULT_GROUPS;
+  }, [settings, animals]);
 
   // Pen headcounts
   const penCounts = useMemo(() => {

@@ -101,6 +101,7 @@ import {
   MedicinePurchase
 } from './types';
 import { PregnancyCheckModal } from './components/PregnancyCheckModal';
+import { QuickActionModal } from './components/QuickActionModal';
 import { DoseAdministrationModal } from './components/DoseAdministrationModal';
 import { CureEvaluationModal } from './components/CureEvaluationModal';
 import { MoveToPenModal } from './components/MoveToPenModal';
@@ -108,6 +109,7 @@ import { MedicineHistoryModal } from './components/MedicineHistoryModal';
 import { QuickRestockModal } from './components/QuickRestockModal';
 import { QuickDispenseModal } from './components/QuickDispenseModal';
 import { BackupSettingsSection } from './components/BackupSettingsSection';
+import { PenSettingsSection } from './components/PenSettingsSection';
 import { DailyActionSheetModal } from './components/DailyActionSheetModal';
 import { generateDailyActionSheet } from './services/dailyActionSheetService';
 import { FertilityAnalyticsModal } from './components/FertilityAnalyticsModal';
@@ -120,7 +122,9 @@ import {
   restockMedicineStock,
   dispenseMedicineStock,
   getMedicineStockStatus,
-  calculateMedicineTotals
+  calculateMedicineTotals,
+  getMedicinePackInfo,
+  parseDosageNumber
 } from './services/medicineInventory';
 import { 
   validations, 
@@ -132,7 +136,20 @@ import {
   isBreedingEligibleAnimal,
   findFreshPen,
   findPregnantPen,
+  findCloseupPen,
+  findBreedingPen,
   isBreedingHeiferPen,
+  getFreshPenName,
+  getSucklingCalfPenName,
+  getDryPenName,
+  getPregnantHeiferPenName,
+  getBreedableHeiferPenName,
+  getHighLactatingPenName,
+  getMediumLactatingPenName,
+  getLowLactatingPenName,
+  getGrowingHeiferPenName,
+  getPostWeanedPenName,
+  getAllAvailablePens,
   normalizeTechnicianName,
   normalizeSemenName,
   getMedicineDoseSuggestions
@@ -149,7 +166,8 @@ import {
   generateTreatmentAnalysisReport,
   generateMedicineInventoryReport,
   generateLowStockReport,
-  generateDemandForecastReport
+  generateDemandForecastReport,
+  generateVeterinaryMedicalCardPDF
 } from './utils/pdfUtils';
 import {
   shareToWhatsApp,
@@ -161,7 +179,8 @@ import {
   generateLowStockAlertShareText,
   generateHealthReportShareText,
   generateDemandForecastShareText,
-  generatePdCheckShareText
+  generatePdCheckShareText,
+  generateVeterinaryMedicalCardShareText
 } from './utils/shareUtils';
 import { auth } from './services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
@@ -230,7 +249,7 @@ const getStatusColor = (status?: AnimalStatus) => {
 
 type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'reports' | 'settings' | 'pd-check';
 type HerdViewMode = 'list' | 'small' | 'medium' | 'large';
-type ReportType = 'summary' | 'repro' | 'health' | 'individual' | 'pd-check' | 'treatment-analysis' | 'medicine-inventory' | 'low-stock' | 'demand-forecast';
+type ReportType = 'summary' | 'repro' | 'health' | 'individual' | 'pd-check' | 'treatment-analysis' | 'medicine-inventory' | 'low-stock' | 'demand-forecast' | 'vet-medical-card';
 type HerdTab = 'adults' | 'youngstock' | 'calves';
 
 const formatDateReadable = (dateStr: string) => {
@@ -278,6 +297,8 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     addAnimal,
     updateAnimal,
     updateAnimalsHerd,
+    saveAnimalsDirectly,
+    savePenMovementsDirectly,
     deleteAnimal,
     addReproEvent,
     updateReproEvent,
@@ -349,6 +370,8 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [penFilter, setPenFilter] = useState<string>('All');
+  const availablePensList = useMemo(() => getAllAvailablePens(settings, animals), [settings, animals]);
   const [protocolAnimalSearch, setProtocolAnimalSearch] = useState('');
   const [healthPatientSearch, setHealthPatientSearch] = useState('');
 
@@ -751,14 +774,15 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
         (a.herd.toLowerCase().includes(term)) ||
         (a.status?.toLowerCase().includes(term));
       const matchesStatus = statusFilter === 'All' || a.status === statusFilter;
+      const matchesPen = penFilter === 'All' || a.herd === penFilter;
       
       // Breed filter from dashboard
       const matchesDashboardBreed = dashboardFilter.breed === 'All' || a.breed === dashboardFilter.breed;
       const matchesDashboardCategory = dashboardFilter.category === 'All' || (dashboardFilter.category === 'Calf' ? a.isCalf : !a.isCalf);
 
-      return matchesSearch && matchesStatus && matchesDashboardBreed && matchesDashboardCategory;
+      return matchesSearch && matchesStatus && matchesPen && matchesDashboardBreed && matchesDashboardCategory;
     }).sort((a, b) => (a.dob || '').localeCompare(b.dob || ''));
-  }, [animals, searchTerm, statusFilter, reproEvents, dashboardFilter, healthEvents, alerts]);
+  }, [animals, searchTerm, statusFilter, penFilter, reproEvents, dashboardFilter, healthEvents, alerts]);
 
   const protocolEligibleAnimals = useMemo(() => {
     return animals
@@ -1284,12 +1308,12 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
       : selectedMultipleAnimals;
 
     if (activeAnimals.length === 0) {
-      setToastMessage(' Please select at least one animal patient.');
+      setToastMessage('‚ö†Ô∏è Please select at least one animal patient.');
       return;
     }
 
     if (!newHealth.type) {
-      setToastMessage(' Please select a health category.');
+      setToastMessage('‚ö†Ô∏è Please select a health category.');
       return;
     }
 
@@ -1311,6 +1335,9 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
         return { name: cleanName, dose: dose || `1 ${unit}` };
       });
 
+    const eventDate = newHealth.date || new Date().toISOString().split('T')[0];
+    let editFeedbackMessage = '';
+
     if (editingHealthId) {
       // Find original event before this edit to compute exact delta and prevent multiple deductions
       const existingEvent = healthEvents.find(h => h.id === editingHealthId);
@@ -1318,12 +1345,17 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
         ? existingEvent.treatments
         : (existingEvent?.medication ? [{ name: existingEvent.medication, dose: existingEvent.dosage || '' }] : []);
 
+      // Calculate patient count (1 for individual animal, or batch count if batch vaccination)
+      const patientCount = existingEvent?.isBatch
+        ? (existingEvent.batchAnimalCount || existingEvent.batchAnimalIds?.length || activeAnimals.length || 1)
+        : 1;
+
       // Adjust medicine stock: accurately restores previous deduction, then applies new treatment
       const adjustmentResult = adjustMedicineStockForEdit(
         medicines,
         previousTreatments,
         finalTreatments,
-        1
+        patientCount
       );
       saveMedicinesDirectly(adjustmentResult.updatedMedicines);
 
@@ -1333,8 +1365,66 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
           ...adjustmentResult.alerts.map(msg => ({ id: Math.random().toString(), msg }))
         ]);
       }
+
+      editFeedbackMessage = adjustmentResult.deltaSummary || 'Updated clinical record. Inventory synchronized.';
+
+      // Update the event directly
+      const updatedRecord: HealthEvent = {
+        ...existingEvent,
+        ...newHealth,
+        id: editingHealthId,
+        treatments: finalTreatments,
+        technician: newHealth.technician ? normalizeTechnicianName(newHealth.technician, settings.technicians) : '',
+        medication: finalTreatments[0]?.name || '',
+        dosage: finalTreatments[0]?.dose || '',
+        dosesAdministered: newHealth.dosesAdministered && newHealth.dosesAdministered.length > 0
+          ? newHealth.dosesAdministered
+          : (existingEvent?.dosesAdministered || [eventDate]),
+        completedDoses: newHealth.completedDoses || existingEvent?.completedDoses || 1,
+        cureStatus: newHealth.cureStatus || existingEvent?.cureStatus || 'Pending',
+        isCured: newHealth.cureStatus === 'Cured' ? true : (newHealth.cureStatus === 'Not Cured' ? false : existingEvent?.isCured)
+      };
+      updateHealthEvent(updatedRecord);
+    } else if (newHealth.type === HealthEventType.VACCINATION && (treatmentAnimalType === 'batch' || selectedMultipleAnimals.length > 1)) {
+      // BATCH VACCINATION RECORD (for All Herd or selected group)
+      const patientCount = activeAnimals.length;
+      const deductionResult = deductMedicineStock(medicines, finalTreatments, patientCount);
+      saveMedicinesDirectly(deductionResult.updatedMedicines);
+
+      if (deductionResult.alerts.length > 0) {
+        setLowStockAlerts(prev => [
+          ...prev,
+          ...deductionResult.alerts.map(msg => ({ id: Math.random().toString(), msg }))
+        ]);
+      }
+
+      const isAllHerd = selectedMultipleAnimals.length === animals.length;
+      const batchHerdName = isAllHerd ? 'All Herd' : 'Herd Batch';
+
+      const batchEvent: HealthEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        animalId: 'ALL_HERD',
+        isBatch: true,
+        batchAnimalCount: patientCount,
+        batchHerdName,
+        batchAnimalIds: activeAnimals,
+        type: HealthEventType.VACCINATION,
+        date: eventDate,
+        treatments: finalTreatments,
+        medication: finalTreatments[0]?.name || '',
+        dosage: finalTreatments[0]?.dose || '',
+        details: newHealth.details || `Administered batch vaccination to ${isAllHerd ? 'All Herd' : `${patientCount} animals`}`,
+        technician: newHealth.technician ? normalizeTechnicianName(newHealth.technician, settings.technicians) : '',
+        dosesAdministered: [eventDate],
+        completedDoses: 1,
+        cureStatus: 'Cured',
+        isCured: true
+      };
+
+      addHealthEvent(batchEvent);
     } else {
-      // Perform high-precision deduction for new administrations across all selected animals
+      // Standard Single Animal Clinical Log / Illness Treatment
+      // Deduct medicine stock for selected animals (1 by 1 or individual)
       const deductionResult = deductMedicineStock(medicines, finalTreatments, activeAnimals.length);
       saveMedicinesDirectly(deductionResult.updatedMedicines);
 
@@ -1344,30 +1434,25 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
           ...deductionResult.alerts.map(msg => ({ id: Math.random().toString(), msg }))
         ]);
       }
-    }
 
-    const eventDate = newHealth.date || new Date().toISOString().split('T')[0];
-    let mergedCount = 0;
+      let mergedCount = 0;
 
-    activeAnimals.forEach(animalId => {
-      const normalizedHealth = {
-        ...newHealth,
-        animalId,
-        treatments: finalTreatments,
-        technician: newHealth.technician ? normalizeTechnicianName(newHealth.technician, settings.technicians) : '',
-        medication: finalTreatments[0]?.name || '',
-        dosage: finalTreatments[0]?.dose || '',
-        dosesAdministered: newHealth.dosesAdministered && newHealth.dosesAdministered.length > 0
-          ? newHealth.dosesAdministered
-          : [eventDate],
-        completedDoses: newHealth.completedDoses || 1,
-        cureStatus: newHealth.cureStatus || 'Pending',
-        isCured: newHealth.cureStatus === 'Cured' ? true : (newHealth.cureStatus === 'Not Cured' ? false : undefined)
-      };
+      activeAnimals.forEach(animalId => {
+        const normalizedHealth = {
+          ...newHealth,
+          animalId,
+          treatments: finalTreatments,
+          technician: newHealth.technician ? normalizeTechnicianName(newHealth.technician, settings.technicians) : '',
+          medication: finalTreatments[0]?.name || '',
+          dosage: finalTreatments[0]?.dose || '',
+          dosesAdministered: newHealth.dosesAdministered && newHealth.dosesAdministered.length > 0
+            ? newHealth.dosesAdministered
+            : [eventDate],
+          completedDoses: newHealth.completedDoses || 1,
+          cureStatus: newHealth.cureStatus || 'Pending',
+          isCured: newHealth.cureStatus === 'Cured' ? true : (newHealth.cureStatus === 'Not Cured' ? false : undefined)
+        };
 
-      if (editingHealthId) {
-        updateHealthEvent(normalizedHealth as HealthEvent);
-      } else {
         // Check if this animal has an active ongoing treatment episode in progress (not yet cured)
         const existingOngoing = (newHealth.type === HealthEventType.ILLNESS)
           ? healthEvents.find(h => 
@@ -1434,9 +1519,10 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
             date: eventDate,
           } as HealthEvent);
         }
-      }
-    });
+      });
+    }
 
+    const wasEditing = !!editingHealthId;
     setEditingHealthId(null);
     setIsHealthFormOpen(false);
     setSelectedAnimal(null);
@@ -1445,12 +1531,12 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     setSelectedMultipleAnimals([]);
     setTreatmentAnimalType('single');
     
-    if (editingHealthId) {
-      setToastMessage('Updated clinical record. Inventory synchronized.');
-    } else if (mergedCount > 0) {
-      setToastMessage(`Added medication & clinical log to existing active treatment for ${mergedCount} animal(s). Stock updated.`);
+    if (wasEditing) {
+      setToastMessage(editFeedbackMessage || 'Updated clinical record. Inventory synchronized.');
+    } else if (newHealth.type === HealthEventType.VACCINATION && (treatmentAnimalType === 'batch' || selectedMultipleAnimals.length > 1)) {
+      setToastMessage(`Logged batch vaccination for ${selectedMultipleAnimals.length === animals.length ? 'All Herd' : `${activeAnimals.length} animals`}. Stock updated.`);
     } else {
-      setToastMessage(`Logged new clinical record for ${activeAnimals.length} animal(s). Stock updated.`);
+      setToastMessage(`Logged clinical record for ${activeAnimals.length} animal(s). Stock updated.`);
     }
   };
 
@@ -1644,10 +1730,14 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
       pregnancyResult: pregnancyCheckResult,
     } as ReproductionEvent);
 
-    if (isPregnant && isBreedingHeiferPen(pregnancyCheckTarget.herd)) {
-      const pregnantPen = findPregnantPen(settings.customGroups);
-      updateAnimal({ ...pregnancyCheckTarget, herd: pregnantPen });
-      setToastMessage(` Breeding heifer ${pregnancyCheckTarget.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+    if (isPregnant && isBreedingHeiferPen(pregnancyCheckTarget.herd, settings) && settings.autoMoveHeiferOnPD !== false) {
+      const pregnantPen = getPregnantHeiferPenName(settings);
+      const fromPen = pregnancyCheckTarget.herd;
+      updateAnimal({ ...pregnancyCheckTarget, herd: pregnantPen, status: AnimalStatus.PREGNANT });
+      if (fromPen !== pregnantPen) {
+        recordPenMovement(pregnancyCheckTarget.id, pregnancyCheckTarget.tag, fromPen, pregnantPen, 'Confirmed Pregnant Heifer (PD +ve)', true);
+      }
+      setToastMessage(` Breeding heifer ${pregnancyCheckTarget.tag} confirmed Pregnant (+ve) & automatically moved to "${pregnantPen}" pen!`);
     } else if (isPregnant) {
       setToastMessage(` Saved pregnancy check: Cow ${pregnancyCheckTarget.tag} confirmed Pregnant (+ve).`);
     } else {
@@ -1701,23 +1791,45 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
           // Pregnancy check auto-move for breeding heifers
           if (newRepro.type === ReproEventType.PREGNANCY_CHECK) {
             if (newRepro.success) {
-              if (animal && isBreedingHeiferPen(animal.herd)) {
-                const pregnantPen = findPregnantPen(settings.customGroups);
-                updateAnimal({ ...animal, herd: pregnantPen });
-                setToastMessage(` Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+              if (animal && isBreedingHeiferPen(animal.herd, settings) && settings.autoMoveHeiferOnPD !== false) {
+                const pregnantPen = getPregnantHeiferPenName(settings);
+                const fromPen = animal.herd;
+                updateAnimal({ ...animal, herd: pregnantPen, status: AnimalStatus.PREGNANT });
+                if (fromPen !== pregnantPen) {
+                  recordPenMovement(animal.id, animal.tag, fromPen, pregnantPen, 'Confirmed Pregnant Heifer (PD +ve)', true);
+                }
+                setToastMessage(` Breeding heifer ${animal.tag} confirmed Pregnant (+ve) & moved to "${pregnantPen}" pen!`);
               } else {
                 setToastMessage(` Pregnancy check saved: ${animal?.tag || ''} confirmed Pregnant (+ve).`);
               }
             } else {
-              setToastMessage(` Pregnancy check saved: ${animal?.tag || ''} is Open (-ve). Remains in ${animal?.herd || 'current group'}.`);
+              setToastMessage(` Pregnancy check saved: ${animal?.tag || ''} is Open (-ve). Remains in ${animal?.herd || 'current pen'}.`);
+            }
+          }
+
+          // Dry-off auto-move to Dry Lactating pen
+          if (newRepro.type === ReproEventType.DRY_OFF) {
+            const dryPen = getDryPenName(settings);
+            if (animal) {
+              const fromPen = animal.herd;
+              updateAnimal({ ...animal, herd: dryPen, status: AnimalStatus.DRY });
+              if (fromPen !== dryPen) {
+                recordPenMovement(animal.id, animal.tag, fromPen, dryPen, 'Dry-Off Transition', true);
+              }
+              setToastMessage(` Cow ${animal.tag} transitioned to Dry Off & moved to "${dryPen}" pen!`);
             }
           }
 
           // Auto-add calf and auto-move mother to Fresh group if calving event
           if (newRepro.type === ReproEventType.CALVING) {
-            const freshPen = findFreshPen(settings.customGroups);
+            const freshPen = getFreshPenName(settings);
+            const sucklingPen = getSucklingCalfPenName(settings);
             if (animal) {
-              updateAnimal({ ...animal, herd: freshPen });
+              const fromPen = animal.herd;
+              updateAnimal({ ...animal, herd: freshPen, status: AnimalStatus.ACTIVE });
+              if (fromPen !== freshPen) {
+                recordPenMovement(animal.id, animal.tag, fromPen, freshPen, 'Post-Calving Fresh Transition', true);
+              }
             }
 
             if (!isCalfExpired) {
@@ -1730,14 +1842,16 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                 breed: animal?.breed || 'Unknown',
                 sex: (newRepro.offspringGender as 'Male' | 'Female') || 'Female',
                 dob: newRepro.date || new Date().toISOString().split('T')[0],
-                herd: animal?.herd || 'Main Herd',
+                herd: sucklingPen,
                 motherId: newRepro.animalId,
                 fatherId: newRepro.bullId,
                 isCalf: true,
+                status: AnimalStatus.YOUNG_STOCK
               } as Animal);
-              setToastMessage(` Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group! New calf (${calfTag}) registered.`);
+              recordPenMovement(calfId, calfTag, 'Birth', sucklingPen, `Newborn Calf Placement (Mother #${animal?.tag})`, true);
+              setToastMessage(` Cow ${animal?.tag || ''} calved & moved to "${freshPen}" (Status: Active). New calf #${calfTag} moved to "${sucklingPen}"!`);
             } else {
-              setToastMessage(` Cow ${animal?.tag || ''} calved and was automatically moved to ${freshPen} group (Calf Expired/Stillborn).`);
+              setToastMessage(` Cow ${animal?.tag || ''} calved & moved to "${freshPen}" (Status: Active) [Calf Expired].`);
             }
           }
         }
@@ -1793,10 +1907,14 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
 
     addReproEvent(newEvent);
 
-    if (isPregnant && isBreedingHeiferPen(animal.herd)) {
-      const pregnantPen = findPregnantPen(settings.customGroups);
-      updateAnimal({ ...animal, herd: pregnantPen });
-      setToastMessage(` Breeding heifer ${animal.tag} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+    if (isPregnant && isBreedingHeiferPen(animal.herd, settings) && settings.autoMoveHeiferOnPD !== false) {
+      const pregnantPen = getPregnantHeiferPenName(settings);
+      const fromPen = animal.herd;
+      updateAnimal({ ...animal, herd: pregnantPen, status: AnimalStatus.PREGNANT });
+      if (fromPen !== pregnantPen) {
+        recordPenMovement(animal.id, animal.tag, fromPen, pregnantPen, 'Confirmed Pregnant Heifer (PD +ve)', true);
+      }
+      setToastMessage(` Breeding heifer ${animal.tag} confirmed Pregnant (+ve) & moved to "${pregnantPen}" pen!`);
     } else if (isPregnant) {
       setToastMessage(` Saved check: Cow ${pdAnimalId} confirmed Pregnant (+ve).`);
     } else {
@@ -1861,10 +1979,14 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     
     // Format the date for the success message e.g., "June 30, 2026"
     const formattedDate = formatDateReadable(oldPdDate);
-    if (isPregnant && isBreedingHeiferPen(animal.herd)) {
-      const pregnantPen = findPregnantPen(settings.customGroups);
-      updateAnimal({ ...animal, herd: pregnantPen });
-      setToastMessage(` Breeding heifer ${animal.tag} checked on ${formattedDate} confirmed Pregnant and automatically moved to ${pregnantPen} group!`);
+    if (isPregnant && isBreedingHeiferPen(animal.herd, settings) && settings.autoMoveHeiferOnPD !== false) {
+      const pregnantPen = getPregnantHeiferPenName(settings);
+      const fromPen = animal.herd;
+      updateAnimal({ ...animal, herd: pregnantPen, status: AnimalStatus.PREGNANT });
+      if (fromPen !== pregnantPen) {
+        recordPenMovement(animal.id, animal.tag, fromPen, pregnantPen, `Confirmed Pregnant Heifer (PD +ve on ${formattedDate})`, true);
+      }
+      setToastMessage(` Breeding heifer ${animal.tag} checked on ${formattedDate} confirmed Pregnant (+ve) & moved to "${pregnantPen}" pen!`);
     } else if (isPregnant) {
       setToastMessage(` Added check for ${formattedDate} (Pregnant +ve)!`);
     } else {
@@ -2007,17 +2129,21 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
 
   const handleDeleteHealth = (event: HealthEvent, e: React.MouseEvent) => {
     e.stopPropagation();
-    const animal = animals.find(a => a.id === event.animalId);
+    const isBatch = event.isBatch || event.animalId === 'ALL_HERD';
+    const animal = !isBatch ? animals.find(a => a.id === event.animalId) : null;
+    const targetLabel = isBatch ? (event.batchHerdName || 'All Herd') : (animal?.tag ? `Cow #${animal.tag}` : 'animal');
+    const patientCount = isBatch ? (event.batchAnimalCount || 1) : 1;
+
     setConfirmDialog({
       isOpen: true,
-      message: `Delete ${event.type} record for ${animal?.tag || 'animal'} on ${event.date}? Any medicine administered in this record will be restored to inventory.`,
+      message: `Delete ${event.type} record for ${targetLabel} on ${event.date}? Any medicine administered in this record will be restored to inventory (${patientCount > 1 ? `${patientCount} animals` : 'single dose'}).`,
       onConfirm: () => {
         const previousTreatments = event.treatments && event.treatments.length > 0
           ? event.treatments
           : (event.medication ? [{ name: event.medication, dose: event.dosage || '' }] : []);
 
         if (previousTreatments.length > 0) {
-          const refundResult = refundMedicineStock(medicines, previousTreatments, 1);
+          const refundResult = refundMedicineStock(medicines, previousTreatments, patientCount);
           saveMedicinesDirectly(refundResult.updatedMedicines);
         }
         deleteHealthEvent(event.id);
@@ -2287,6 +2413,15 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
         generateIndividualAnimalReport(animal, filteredRepros, filteredHealths, rangeLabel, settings);
         break;
       }
+      case 'vet-medical-card': {
+        const animal = animals.find(a => a.id === reportAnimalId);
+        if (!animal) {
+          alert('Please select an animal for the Veterinary Medical Card first.');
+          return;
+        }
+        generateVeterinaryMedicalCardPDF(animal, reproEvents, healthEvents, settings);
+        break;
+      }
     }
   };
 
@@ -2406,6 +2541,16 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
           (!reportEndDate || e.date <= reportEndDate)
         );
         const text = generateAnimalShareText(animal, filteredRepros, filteredHealths);
+        shareToWhatsApp(text);
+        break;
+      }
+      case 'vet-medical-card': {
+        const animal = animals.find(a => a.id === reportAnimalId);
+        if (!animal) {
+          alert('Please select an animal for the Veterinary Medical Card first.');
+          return;
+        }
+        const text = generateVeterinaryMedicalCardShareText(animal, reproEvents, healthEvents, settings?.farmName);
         shareToWhatsApp(text);
         break;
       }
@@ -2627,6 +2772,16 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                   title="Search animals"
                 >
                   <Search className="w-5 h-5 stroke-[2.2]" />
+                </button>
+
+                {/* Quick Add Action Button */}
+                <button
+                  onClick={() => setIsMobileQuickActionOpen(true)}
+                  className="min-w-[44px] min-h-[44px] px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white rounded-2xl flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-600/20 group"
+                  title="Quick Actions & Operations (+)"
+                >
+                  <Plus className="w-5 h-5 stroke-[2.5] group-hover:scale-110 transition-transform" />
+                  <span className="hidden sm:inline text-xs font-black tracking-tight">Quick Add</span>
                 </button>
 
                 {/* Daily Action Sheet Button */}
@@ -3409,12 +3564,21 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                       />
                     </div>
                     <select
-                      className="w-full sm:w-auto bg-slate-50 border-none rounded-2xl text-sm font-black py-3.5 px-6 outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+                      className="w-full sm:w-auto bg-slate-50 border-none rounded-2xl text-sm font-black py-3.5 px-6 outline-none focus:ring-2 focus:ring-blue-500 shadow-inner cursor-pointer"
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
                     >
                       <option value="All">All Status</option>
                       {Object.values(AnimalStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+
+                    <select
+                      className="w-full sm:w-auto bg-slate-50 border-none rounded-2xl text-sm font-black py-3.5 px-6 outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner cursor-pointer"
+                      value={penFilter}
+                      onChange={(e) => setPenFilter(e.target.value)}
+                    >
+                      <option value="All">All Pens / Housing</option>
+                      {availablePensList.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
 
@@ -4544,31 +4708,54 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {filteredHealthEvents.map((event, index) => {
-                            const animal = animals.find(a => a.id === event.animalId);
+                            const isBatchEvent = event.isBatch || event.animalId === 'ALL_HERD' || (event.batchHerdName !== undefined);
+                            const animal = !isBatchEvent ? animals.find(a => a.id === event.animalId) : null;
+                            const batchCount = event.batchAnimalCount || event.batchAnimalIds?.length || animals.length;
+
                             return (
                               <tr key={event.id} className="hover:bg-slate-50 transition-colors group">
                                 <td className="px-8 py-6 text-xs font-black text-slate-400 text-center">{index + 1}</td>
-                                <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedAnimalHealthHistory(animal || null)}>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-black text-slate-800 group-hover:text-rose-600 transition-colors">{animal?.tag || 'Unknown Tag'}</span>
-                                    <span className="text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                                      <HeartPulse className="w-2.5 h-2.5" /> History
+                                
+                                {/* Animal Column */}
+                                {isBatchEvent ? (
+                                  <td className="px-8 py-6">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-black text-slate-900 text-sm">{event.batchHerdName || 'All Herd'}</span>
+                                      <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                        <Users className="w-2.5 h-2.5" /> {batchCount} Head
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] font-black uppercase text-emerald-600 tracking-wider flex items-center gap-1 mt-0.5">
+                                      <span>‚óè</span> All Herd Vaccination
                                     </span>
-                                  </div>
-                                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">
-                                    {animal?.status || 'Active'} {animal?.group ? `‚Ä¢ ${animal.group}` : ''}
-                                  </span>
-                                </td>
+                                  </td>
+                                ) : (
+                                  <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedAnimalHealthHistory(animal || null)}>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-black text-slate-800 group-hover:text-rose-600 transition-colors">{animal?.tag ? `Cow #${animal.tag}` : 'Unknown Tag'}</span>
+                                      <span className="text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                                        <HeartPulse className="w-2.5 h-2.5" /> History
+                                      </span>
+                                    </div>
+                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                                      {animal?.status || 'Active'} {animal?.group ? `‚Ä¢ ${animal.group}` : ''}
+                                    </span>
+                                  </td>
+                                )}
+
+                                {/* Date / Type Column */}
                                 <td className="px-8 py-6">
                                   <div className="flex flex-col gap-1">
-                                    <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tighter shadow-sm border inline-block w-fit ${event.type === HealthEventType.ILLNESS ? 'bg-rose-50 text-rose-600 border-rose-100' :
-                                        'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                      }`}>
+                                    <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tighter shadow-2xs border inline-block w-fit ${
+                                      event.type === HealthEventType.VACCINATION ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                      event.type === HealthEventType.ILLNESS ? 'bg-rose-50 text-rose-600 border-rose-100' :
+                                      'bg-blue-50 text-blue-600 border-blue-100'
+                                    }`}>
                                       {event.type}
                                     </span>
                                     <div className="text-[9px] font-bold text-slate-500 space-y-0.5 mt-0.5">
-                                      <div>Start: <strong className="text-slate-700">{event.date}</strong></div>
-                                      {event.dosesAdministered && event.dosesAdministered.length > 0 && (
+                                      <div>Date: <strong className="text-slate-700">{event.date}</strong></div>
+                                      {event.dosesAdministered && event.dosesAdministered.length > 0 && !isBatchEvent && (
                                         <div className="text-rose-600 font-black flex items-center gap-1">
                                           <span>Last Dose:</span>
                                           <span className="bg-rose-50 px-1 py-0.5 rounded border border-rose-100">{event.dosesAdministered[event.dosesAdministered.length - 1]}</span>
@@ -4577,14 +4764,22 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                     </div>
                                   </div>
                                 </td>
+
+                                {/* Prescription Column */}
                                 <td className="px-8 py-6">
                                   {(event.treatments && event.treatments.length > 0 && event.treatments[0].name) ? (
                                     <div className="space-y-1.5">
                                       {event.treatments.map((t, idx) => {
                                         const match = medicines.find(m => m.name.toLowerCase() === (t.name || '').toLowerCase());
+                                        const doseNum = parseDosageNumber(t.dose);
+                                        const unit = match?.unit || 'ml';
+                                        const totalBatchDose = isBatchEvent && batchCount > 1
+                                          ? Math.round(doseNum * batchCount * 100) / 100
+                                          : null;
+
                                         return (
-                                          <div key={idx} className="flex items-center gap-1.5">
-                                            <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                          <div key={idx} className="flex items-center gap-1.5 flex-wrap">
+                                            <Syringe className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                                             <button
                                               type="button"
                                               onClick={() => {
@@ -4604,50 +4799,55 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                                 }
                                               }}
                                               className="text-xs font-black text-slate-800 hover:text-blue-600 underline decoration-dotted decoration-slate-300 hover:decoration-blue-500 cursor-pointer text-left transition-colors"
-                                              title={`Click to view full history for ${t.name}`}
+                                              title={`Click to view stock & history for ${t.name}`}
                                             >
                                               {t.name || 'Unnamed'}
                                             </button>
-                                            <span className="text-[9px] font-black text-slate-400 uppercase ml-0.5">({t.dose || 'N/A'})</span>
+                                            <span className="text-[10px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                                              {t.dose || 'N/A'}{isBatchEvent ? '/head' : ''}
+                                            </span>
+                                            {totalBatchDose !== null && (
+                                              <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                                {totalBatchDose} {unit} total
+                                              </span>
+                                            )}
                                           </div>
                                         );
                                       })}
                                     </div>
                                   ) : event.medication ? (
-                                    (() => {
-                                      const match = medicines.find(m => m.name.toLowerCase() === (event.medication || '').toLowerCase());
-                                      return (
-                                        <div className="flex items-center gap-1.5">
-                                          <Syringe className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              if (match) {
-                                                setSelectedMedicineForHistory(match);
-                                              } else {
-                                                setSelectedMedicineForHistory({
-                                                  id: event.medication!,
-                                                  name: event.medication!,
-                                                  category: 'Injection',
-                                                  unit: 'ml',
-                                                  packs: 0,
-                                                  loose: 0,
-                                                  loosePerPack: 100,
-                                                  minStockLevel: 10
-                                                });
-                                              }
-                                            }}
-                                            className="text-xs font-black text-slate-800 hover:text-blue-600 underline decoration-dotted decoration-slate-300 hover:decoration-blue-500 cursor-pointer text-left transition-colors"
-                                            title={`Click to view full history for ${event.medication}`}
-                                          >
-                                            {event.medication}
-                                          </button>
-                                          <span className="text-[9px] font-black text-slate-400 uppercase ml-0.5">({event.dosage || 'N/A'})</span>
-                                        </div>
-                                      );
-                                    })()
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <Syringe className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const match = medicines.find(m => m.name.toLowerCase() === (event.medication || '').toLowerCase());
+                                          if (match) {
+                                            setSelectedMedicineForHistory(match);
+                                          } else {
+                                            setSelectedMedicineForHistory({
+                                              id: event.medication || '',
+                                              name: event.medication || '',
+                                              category: 'Injection',
+                                              unit: 'ml',
+                                              packs: 0,
+                                              loose: 0,
+                                              loosePerPack: 100,
+                                              minStockLevel: 10
+                                            });
+                                          }
+                                        }}
+                                        className="text-xs font-black text-slate-800 hover:text-blue-600 underline decoration-dotted decoration-slate-300 hover:decoration-blue-500 cursor-pointer text-left transition-colors"
+                                        title={`Click to view stock & history for ${event.medication}`}
+                                      >
+                                        {event.medication}
+                                      </button>
+                                      <span className="text-[10px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                                        {event.dosage || 'N/A'}{isBatchEvent ? '/head' : ''}
+                                      </span>
+                                    </div>
                                   ) : (
-                                    <span className="text-xs text-slate-400 italic">No medication</span>
+                                    <span className="text-xs text-slate-400 font-bold">--</span>
                                   )}
                                 </td>
                                 <td className="px-8 py-6 max-w-[200px]">
@@ -4712,7 +4912,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                   <div className="flex items-center justify-end gap-2">
                                     <button
                                       onClick={() => {
-                                        const text = generateHealthEventShareText(event, animal?.tag || 'Unknown');
+                                        const text = generateHealthEventShareText(event, isBatchEvent ? (event.batchHerdName || 'All Herd') : (animal?.tag || 'Unknown'));
                                         shareToWhatsApp(text);
                                       }}
                                       className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-colors"
@@ -4724,7 +4924,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                       onClick={() => {
                                         setEditingHealthId(event.id);
                                         const toEdit = { ...event };
-                                        if (!toEdit.treatments) {
+                                        if (!toEdit.treatments || toEdit.treatments.length === 0) {
                                           if (toEdit.medication || toEdit.dosage) {
                                             toEdit.treatments = [{ name: toEdit.medication || '', dose: toEdit.dosage || '' }];
                                           } else {
@@ -4732,9 +4932,14 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                           }
                                         }
                                         setNewHealth(toEdit);
-                                        setTreatmentAnimalType('single');
-                                        const anim = animals.find((x: any) => x.id === event.animalId);
-                                        if (anim) setHealthAnimalSearch(anim.tag);
+                                        if (event.isBatch || event.animalId === 'ALL_HERD') {
+                                          setTreatmentAnimalType('batch');
+                                          setSelectedMultipleAnimals(event.batchAnimalIds || animals.map(a => a.id));
+                                        } else {
+                                          setTreatmentAnimalType('single');
+                                          const anim = animals.find((x: any) => x.id === event.animalId);
+                                          if (anim) setHealthAnimalSearch(anim.tag);
+                                        }
                                         setIsHealthFormOpen(true);
                                       }}
                                       className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
@@ -5222,9 +5427,37 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                 <button
                                   onClick={() => setSelectedMedicineForHistory(m)}
                                   className="p-1.5 hover:bg-blue-50 text-slate-400 hover:text-blue-600 rounded-lg"
-                                  title="History"
+                                  title="Audit History"
                                 >
                                   <Clock className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingMedicineId(m.id);
+                                    setNewMedicine(m);
+                                    setIsMedicineFormOpen(true);
+                                  }}
+                                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-lg"
+                                  title="Edit"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setConfirmDialog({
+                                      isOpen: true,
+                                      message: `Are you sure you want to delete "${m.name}" from your active pharmacy inventory? This cannot be undone.`,
+                                      onConfirm: () => {
+                                        deleteMedicine(m.id);
+                                        setConfirmDialog(d => ({ ...d, isOpen: false }));
+                                        setToastMessage(`Removed "${m.name}" from inventory.`);
+                                      }
+                                    });
+                                  }}
+                                  className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3 h-3" />
                                 </button>
                               </div>
                             </div>
@@ -6285,6 +6518,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                           { id: 'medicine-inventory', label: 'Medicine Inventory Report', icon: Package },
                           { id: 'low-stock', label: 'Low Stock Warnings Report', icon: AlertCircle },
                           { id: 'demand-forecast', label: '30D Demand & Forecast Report', icon: TrendingUp },
+                          { id: 'vet-medical-card', label: 'Veterinary Medical Card (Animal Passport)', icon: Stethoscope },
                           { id: 'individual', label: 'Individual Focus Analysis', icon: Target }
                         ].map(type => (
                           <button
@@ -6406,7 +6640,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                       </div>
                     )}
 
-                    {selectedReportType === 'individual' && (
+                    {(selectedReportType === 'individual' || selectedReportType === 'vet-medical-card') && (
                       <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
                         <label className="text-[10px] font-black text-rose-600 uppercase tracking-widest px-2">Patient Selection</label>
                         <div className="relative">
@@ -6595,6 +6829,20 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                     <Save className="w-5 h-5" /> Sync Data
                   </button>
                 </div>
+                {/* Pen / Housing Category Mapping & Herd Alignment */}
+                <PenSettingsSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                  animals={animals}
+                  reproEvents={reproEvents}
+                  penMovements={penMovements}
+                  onAnimalsUpdated={(updatedAnimals, newMovements) => {
+                    saveAnimalsDirectly(updatedAnimals);
+                    savePenMovementsDirectly([...newMovements, ...penMovements].slice(0, 200));
+                  }}
+                  onShowToast={(msg) => setToastMessage(msg)}
+                />
+
                 {/* Group Management */}
                 <div className="mt-8 pt-8 border-t border-slate-100">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-4">Herd Group Management</h4>
@@ -7472,6 +7720,15 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                 </button>
                 <button
                   onClick={() => {
+                    generateVeterinaryMedicalCardPDF(selectedAnimal, reproEvents, healthEvents, settings);
+                  }}
+                  className="p-2.5 sm:p-4 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-xl sm:rounded-[1.5rem] transition-all"
+                  title="Download Official Veterinary Medical Card (PDF)"
+                >
+                  <Stethoscope className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+                <button
+                  onClick={() => {
                     const repros = reproEvents.filter(e => e.animalId === selectedAnimal.id)
                       .filter(e => (!animalReportStart || e.date >= animalReportStart) && (!animalReportEnd || e.date <= animalReportEnd));
                     const healths = healthEvents.filter(e => e.animalId === selectedAnimal.id)
@@ -8082,6 +8339,8 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                     <option value={ReproEventType.INSEMINATION}>Insemination</option>
                     <option value={ReproEventType.PREGNANCY_CHECK}>Pregnancy Check</option>
                     <option value={ReproEventType.CALVING}>Calving</option>
+                    <option value={ReproEventType.DRY_OFF}>Dry Off</option>
+                    <option value={ReproEventType.ESTRUS}>Estrus / Heat</option>
                     <option value={ReproEventType.ABORTION}>Abortion</option>
                   </select>
                 </div>
@@ -8541,274 +8800,849 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                         setSelectedMultipleAnimals(prev => [...prev, a.id]);
                         setMedicineSearchQuery('');
                         setActiveMedicineDropdownIdx(null);
+
                       }}
-                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 text-left"
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left"
                     >
                       <div>
                         <p className="text-sm font-black text-slate-800">{a.tag}</p>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status}  {a.breed}</p>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">{a.status} ‚Ä¢ {a.breed}</p>
                       </div>
-                      <Plus className="w-4 h-4 text-emerald-600" />
+                      <Plus className="w-4 h-4 text-slate-400" />
                     </button>
                   ))}
+                  {animals.filter(a => !selectedMultipleAnimals.includes(a.id) && (a.tag.toLowerCase().includes(medicineSearchQuery.toLowerCase()) || (a.name && a.name.toLowerCase().includes(medicineSearchQuery.toLowerCase())))).length === 0 && (
+                    <p className="text-center py-4 text-xs text-slate-400 font-bold">No matching animals found</p>
+                  )}
                 </div>
               )}
 
-              {/* Selected Pills */}
-              <div className="flex flex-wrap gap-2 mt-2">
-                {selectedMultipleAnimals.map(id => {
-                  const anim = animals.find(a => a.id === id);
-                  return (
-                    <div key={id} className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 px-3 py-1.5 rounded-xl text-xs font-black text-rose-700">
-                      <span>{anim?.tag || 'Unk'}</span>
+              {/* Selected multiple animals badges */}
+              {selectedMultipleAnimals.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      Selected Patients ({selectedMultipleAnimals.length})
+                    </span>
+                    <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setSelectedMultipleAnimals(prev => prev.filter(x => x !== id))}
-                        className="hover:text-rose-950"
+                        onClick={() => setSelectedMultipleAnimals(animals.map(a => a.id))}
+                        className="text-[10px] font-black text-rose-600 hover:underline uppercase"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMultipleAnimals([])}
+                        className="text-[10px] font-black text-slate-400 hover:text-slate-600 uppercase"
+                      >
+                        Clear All
                       </button>
                     </div>
-                  );
-                })}
-                {selectedMultipleAnimals.length === 0 && (
-                  <p className="text-[10px] font-bold text-slate-400 italic py-1">No animals added to temporary flock yet. Type above to add.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
+                    {selectedMultipleAnimals.map(id => {
+                      const an = animals.find(a => a.id === id);
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-800 rounded-xl text-xs font-black shadow-xs"
+                        >
+                          <span>{an?.tag || id}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMultipleAnimals(prev => prev.filter(item => item !== id))}
+                            className="text-slate-400 hover:text-rose-600"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Health Category / Event Type & Date */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Health Category *</label>
+              <select
+                required
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newHealth.type || HealthEventType.ILLNESS}
+                onChange={e => setNewHealth({ ...newHealth, type: e.target.value as HealthEventType })}
+              >
+                {Object.values(HealthEventType).map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Event Date *</label>
+              <input
+                type="date"
+                required
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newHealth.date || new Date().toISOString().split('T')[0]}
+                onChange={e => setNewHealth({ ...newHealth, date: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Multiple Medicines / Treatment Prescriptions */}
+          <div className="space-y-3 p-4 bg-slate-50/50 border border-slate-100 rounded-[1.5rem]">
+            <div className="flex items-center justify-between px-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Medications & Prescriptions</label>
+              <button
+                type="button"
+                onClick={() => {
+                  const currentTreatments = newHealth.treatments || [{ name: '', dose: '' }];
+                  setNewHealth({
+                    ...newHealth,
+                    treatments: [...currentTreatments, { name: '', dose: '' }]
+                  });
+                }}
+                className="inline-flex items-center gap-1 text-[11px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-wider"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Medication
+              </button>
+            </div>
+
+            {(newHealth.treatments || [{ name: '', dose: '' }]).map((treatment, idx) => (
+              <div key={idx} className="flex items-center gap-2 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                <div className="flex-1">
+                  <input
+                    list="all-medicines"
+                    placeholder="Select or type medicine name..."
+                    className="w-full px-3 py-2 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                    value={treatment.name}
+                    onChange={e => {
+                      const updated = [...(newHealth.treatments || [{ name: '', dose: '' }])];
+                      const matched = medicines.find(m => m.name.toLowerCase() === e.target.value.toLowerCase());
+                      const unit = matched?.unit || 'ml';
+                      updated[idx] = { ...updated[idx], name: e.target.value, dose: updated[idx].dose || `1 ${unit}` };
+                      setNewHealth({ ...newHealth, treatments: updated });
+                    }}
+                  />
+                </div>
+                <div className="w-32">
+                  <input
+                    placeholder="Dosage (e.g. 10 ml)"
+                    className="w-full px-3 py-2 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                    value={treatment.dose}
+                    onChange={e => {
+                      const updated = [...(newHealth.treatments || [{ name: '', dose: '' }])];
+                      updated[idx] = { ...updated[idx], dose: e.target.value };
+                      setNewHealth({ ...newHealth, treatments: updated });
+                    }}
+                  />
+                </div>
+                {(newHealth.treatments && newHealth.treatments.length > 1) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = (newHealth.treatments || []).filter((_, tIdx) => tIdx !== idx);
+                      setNewHealth({ ...newHealth, treatments: updated });
+                    }}
+                    className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 )}
               </div>
-              
-              {/* Quick Select Buttons */}
-              <div className="flex gap-2 pt-2 border-t border-slate-100/50">
-                <button
-                  type="button"
-                  onClick={() => setSelectedMultipleAnimals(animals.map(a => a.id))}
-                  className="text-[9px] font-black text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-lg uppercase tracking-wider hover:bg-blue-100 transition-all"
-                >
-                  Select All Herd ({animals.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedMultipleAnimals(animals.filter(a => a.status === AnimalStatus.SICK).map(a => a.id))}
-                  className="text-[9px] font-black text-rose-600 bg-rose-50 px-2.5 py-1.5 rounded-lg uppercase tracking-wider hover:bg-rose-100 transition-all"
-                >
-                  Select All Sick ({animals.filter(a => a.status === AnimalStatus.SICK).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedMultipleAnimals([])}
-                  className="text-[9px] font-black text-slate-500 bg-slate-100 px-2.5 py-1.5 rounded-lg uppercase tracking-wider hover:bg-slate-200 transition-all ml-auto"
-                >
-                  Clear Selection
-                </button>
+            ))}
+          </div>
+
+          {/* Treatment Course & Protocol Schedule */}
+          {newHealth.type === HealthEventType.ILLNESS && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Total Treatment Days / Doses</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="30"
+                  className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                  value={newHealth.treatmentDays || newHealth.numberOfDoses || 1}
+                  onChange={e => setNewHealth({ ...newHealth, treatmentDays: parseInt(e.target.value) || 1, numberOfDoses: parseInt(e.target.value) || 1 })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Days Gap Between Doses</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="14"
+                  className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                  value={newHealth.daysGap || 0}
+                  onChange={e => setNewHealth({ ...newHealth, daysGap: parseInt(e.target.value) || 0 })}
+                />
               </div>
             </div>
           )}
 
+          {/* Inseminator / Doctor / Technician & Cost */}
           <div className="grid grid-cols-2 gap-4">
-            <select className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newHealth.type || HealthEventType.ILLNESS} onChange={e => setNewHealth({ ...newHealth, type: e.target.value as any })}>
-              {Object.values(HealthEventType).map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input type="date" className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" value={newHealth.date || ''} onChange={e => setNewHealth({ ...newHealth, date: e.target.value })} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Veterinarian / Technician</label>
+              <input
+                list="all-technicians"
+                placeholder="Select or enter doctor name..."
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newHealth.technician || ''}
+                onChange={e => setNewHealth({ ...newHealth, technician: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Treatment Cost (Optional)</label>
+              <input
+                type="number"
+                placeholder="0.00"
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newHealth.cost || ''}
+                onChange={e => setNewHealth({ ...newHealth, cost: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
           </div>
+
+          {/* Clinical Details / Observations */}
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
-              <span>Technician / Veterinarian</span>
-              <span className="text-[9px] text-blue-600 font-bold">Quick Select</span>
-            </label>
-            <input
-              list="all-technicians"
-              className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-600/20"
-              placeholder="Technician / Veterinarian (e.g. Asad, Faisal Sb)"
-              value={newHealth.technician || ''}
-              onChange={e => setNewHealth({ ...newHealth, technician: e.target.value })}
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Clinical Diagnosis & Observations</label>
+            <textarea
+              rows={3}
+              placeholder="Clinical symptoms, diagnosis, notes..."
+              className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+              value={newHealth.details || ''}
+              onChange={e => setNewHealth({ ...newHealth, details: e.target.value })}
             />
-            {(settings.technicians && settings.technicians.length > 0) && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {settings.technicians.map(t => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setNewHealth({ ...newHealth, technician: t })}
-                    className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
-                      newHealth.technician?.toLowerCase() === t.toLowerCase()
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-          
-          {/* Treatments & Injections with search autocomplete */}
-          <div className="space-y-3 p-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm relative">
-            <div className="flex items-center justify-between pl-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Treatments & Medicine Inventory Usage</label>
-              <button
-                type="button"
-                onClick={() => {
-                  const currentTreatments = newHealth.treatments || [];
-                  setNewHealth({ ...newHealth, treatments: [...currentTreatments, { name: '', dose: '' }] });
-                }}
-                className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl uppercase tracking-widest hover:bg-blue-100 transition-colors"
+
+          {/* Cure Status if editing */}
+          {editingHealthId && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Cure Status</label>
+              <select
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newHealth.cureStatus || 'Pending'}
+                onChange={e => setNewHealth({ ...newHealth, cureStatus: e.target.value as 'Pending' | 'Cured' | 'Not Cured' })}
               >
-                + Add Medicine
-              </button>
+                <option value="Pending">Pending / In Progress</option>
+                <option value="Cured">Cured (Resolved)</option>
+                <option value="Not Cured">Not Cured (Active Follow-up)</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => { setIsHealthFormOpen(false); setHealthAnimalSearch(''); setSelectedMultipleAnimals([]); }}
+              className="flex-1 py-4 bg-slate-100 text-slate-500 font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-4 bg-rose-600 text-white font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-rose-700 transition-colors shadow-lg shadow-rose-600/30"
+            >
+              {editingHealthId ? "Update Clinical Record" : "Save Clinical Record"}
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* Medicine Add / Edit Modal */}
+      <FormModal
+        title={editingMedicineId ? "Edit Medicine Record" : "Add Medicine to Inventory"}
+        isOpen={isMedicineFormOpen}
+        onClose={() => { setIsMedicineFormOpen(false); setEditingMedicineId(null); setNewMedicine({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 }); }}
+      >
+        <form onSubmit={handleAddMedicineSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Medicine Name *</label>
+            <input
+              required
+              placeholder="e.g. Oxytetracycline 20%, Enrofloxacin, Amoxicillin"
+              className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+              value={newMedicine.name || ''}
+              onChange={e => setNewMedicine({ ...newMedicine, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Category *</label>
+              <select
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newMedicine.category || 'Injection'}
+                onChange={e => setNewMedicine({ ...newMedicine, category: e.target.value as any })}
+              >
+                <option value="Injection">Injection</option>
+                <option value="Oral">Oral (Syrup / Solution)</option>
+                <option value="Topical">Topical / Spray / Ointment</option>
+                <option value="Vaccine">Vaccine</option>
+                <option value="Bolus">Bolus / Tablet</option>
+                <option value="Feed Additive">Feed Additive / Mineral</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
 
-            {(!newHealth.treatments || newHealth.treatments.length === 0) && (
-              <div className="grid grid-cols-2 gap-4">
-                <input className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner" placeholder="Medication (Optional)" value={newHealth.medication || ''} onChange={e => setNewHealth({ ...newHealth, medication: e.target.value })} />
-                <input className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner" placeholder="Dosage" value={newHealth.dosage || ''} onChange={e => setNewHealth({ ...newHealth, dosage: e.target.value })} />
-              </div>
-            )}
-
-            {newHealth.treatments?.map((treatment: any, idx: number) => {
-              const matchedMedicine = medicines.find(m => m.name.toLowerCase() === treatment.name.toLowerCase());
-              const unitLabel = matchedMedicine?.unit || 'ml';
-              const filteredMedicines = medicines.filter(m => m.name.toLowerCase().includes(treatment.name.toLowerCase()));
-
-              return (
-                <div key={idx} className="space-y-2 relative group p-3 bg-slate-50/50 rounded-xl border border-slate-100">
-                  <div className="flex gap-2 items-center">
-                    {/* Medicine Autocomplete Selector */}
-                    <div className="flex-1 relative">
-                      <input
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner focus:ring-2 focus:ring-blue-500/20 outline-none"
-                        placeholder="Search Medicine Inventory..."
-                        value={treatment.name}
-                        onChange={e => {
-                          const t = [...(newHealth.treatments || [])];
-                          t[idx].name = e.target.value;
-                          setNewHealth({ ...newHealth, treatments: t });
-                          setActiveMedicineDropdownIdx(idx);
-                        }}
-                        onFocus={() => setActiveMedicineDropdownIdx(idx)}
-                      />
-                      {activeMedicineDropdownIdx === idx && treatment.name && (
-                        <div className="absolute z-30 top-full left-0 w-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl max-h-40 overflow-y-auto">
-                          {filteredMedicines.map(m => (
-                            <button
-                              key={m.id}
-                              type="button"
-                              onClick={() => {
-                                const t = [...(newHealth.treatments || [])];
-                                t[idx].name = m.name;
-                                // Auto suggested default dose if not set
-                                if (!t[idx].dose) t[idx].dose = `5${m.unit}`;
-                                setNewHealth({ ...newHealth, treatments: t });
-                                setActiveMedicineDropdownIdx(null);
-                              }}
-                              className="w-full px-4 py-2 hover:bg-slate-50 transition-colors text-left text-xs font-black flex items-center justify-between"
-                            >
-                              <span>{m.name}</span>
-                              <span className="text-[9px] text-slate-400 uppercase font-bold">
-                                {m.packs} packs + {m.loose}{m.unit}
-                              </span>
-                            </button>
-                          ))}
-                          {filteredMedicines.length === 0 && (
-                            <p className="p-3 text-center text-[10px] text-slate-400 font-bold">No registered medicines found</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <input
-                      className="w-1/3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold shadow-inner focus:ring-2 focus:ring-blue-500/20 outline-none"
-                      placeholder={`Dosage (e.g. 5${unitLabel})`}
-                      value={treatment.dose}
-                      onChange={e => {
-                        const t = [...(newHealth.treatments || [])];
-                        t[idx].dose = e.target.value;
-                        setNewHealth({ ...newHealth, treatments: t });
-                      }}
-                    />
-
-                    {(newHealth.treatments && newHealth.treatments.length > 1) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const t = [...(newHealth.treatments || [])];
-                          t.splice(idx, 1);
-                          setNewHealth({ ...newHealth, treatments: t });
-                        }}
-                        className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-all flex items-center justify-center"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Smart Suggested Dose Chips from Historical Usage */}
-                  {(() => {
-                    const doseInfo = getMedicineDoseSuggestions(treatment.name, healthEvents, medicines);
-                    return (
-                      <div className="flex flex-wrap gap-1.5 items-center pl-1 pt-1">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-blue-600 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-blue-500" /> Suggestion:
-                        </span>
-                        {doseInfo.suggestions.map((sug, sIdx) => (
-                          <button
-                            type="button"
-                            key={sug}
-                            onClick={() => {
-                              const t = [...(newHealth.treatments || [])];
-                              t[idx].dose = sug;
-                              setNewHealth({ ...newHealth, treatments: t });
-                            }}
-                            className={`text-[9px] font-black px-2.5 py-1 rounded-lg transition-all border ${
-                              treatment.dose === sug
-                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                                : "bg-white border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300"
-                            }`}
-                            title={`Click to fill ${sug} into dosage`}
-                          >
-                            {sIdx === 0 && <span className="mr-1 text-[8px] opacity-75"></span>}
-                            {sug}
-                          </button>
-                        ))}
-                        {doseInfo.suggestions.length === 0 && (
-                          <span className="text-[9px] text-slate-400 font-bold italic">Type medicine name to view common dose suggestions</span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            })}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Dispense Unit *</label>
+              <input
+                required
+                placeholder="ml, tablet, dose, vial"
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newMedicine.unit || 'ml'}
+                onChange={e => setNewMedicine({ ...newMedicine, unit: e.target.value })}
+              />
+            </div>
           </div>
-          <textarea className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" rows={3} placeholder="Clinical symptoms..." value={newHealth.details || ''} onChange={e => setNewHealth({ ...newHealth, details: e.target.value })} />
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Packs / Bottles</label>
+              <input
+                type="number"
+                min="0"
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newMedicine.packs ?? 0}
+                onChange={e => setNewMedicine({ ...newMedicine, packs: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Loose Units</label>
+              <input
+                type="number"
+                min="0"
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newMedicine.loose ?? 0}
+                onChange={e => setNewMedicine({ ...newMedicine, loose: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Units Per Pack</label>
+              <input
+                type="number"
+                min="1"
+                className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+                value={newMedicine.loosePerPack ?? 100}
+                onChange={e => setNewMedicine({ ...newMedicine, loosePerPack: parseInt(e.target.value) || 1 })}
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Treatment Duration (Days)</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Min Stock Alert Level ({newMedicine.unit || 'units'})</label>
             <input
               type="number"
-              min="1"
-              placeholder="e.g. 5 (for 5-day treatment reminders)"
-              className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner"
-              value={newHealth.treatmentDays || ''}
-              onChange={e => setNewHealth({ ...newHealth, treatmentDays: e.target.value ? parseInt(e.target.value) : undefined })}
+              min="0"
+              className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
+              value={newMedicine.minStockLevel ?? 50}
+              onChange={e => setNewMedicine({ ...newMedicine, minStockLevel: parseInt(e.target.value) || 0 })}
             />
-            <p className="text-[10px] text-slate-400 font-bold px-1">Daily alerts will fire for each treatment day, followed by Cure Evaluation alert on the final day</p>
           </div>
 
-          {/* Optional Direct Cure Status Override (for editing/logging completed treatments) */}
-          <div className="space-y-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex itemxú‰=Ÿr€8∂Ô˘
-¥f*ñ∫≠≈vÏN/Â∂”Weª#œº§R’¥Kº°H]≤≠´®Í~À|⁄|…=‡Ä I9 tfÜ≤€¡Ÿöu«4‚4!ˇΩ`<∏]vo(øß4jù>!⁄uÃÊ^tz±H(yuÁÖèqD⁄ÔÁ¯◊;«}ÒÄ≠ácÔº=iq˙¿ª_Ã>Òı&\–Ó—`@n„~≈°ﬂ:}ø‡„xFm#˜CÔÜÜF£‹©sLí¿'¯—«!Îêâ7ÔÓóv¥˙h4@	¸!Ÿ˘@#?à&;ªDÃ-‰*"íxíP∆†∆çhæôtΩŸM∫áπ˘ÎgÿœMú¯U6Ï;dΩÎö°Í´≥e <tF/ÙÛô≤ﬂ \Y”AılÔbNJ3™ç ¨IÃh>•¯°Ã'~À…åπ>ıfﬁºœ999%´“B∆qƒ8	ÿàÜtÃ©ONH;¢˜Ø©ÚioÀqè/˘Ú•8å999!0f/_ñÜL(_$Äè•Ä7Œ„»ráêœty≤ícö{ê_Œ£‰-Îqt„œ'´vwÀ(óm•Ω"÷.ÑÙzΩ|√ªÆá
-@”}è/ZñèV^Gò?ç Këãúû,(—Ôß˜oΩê·ã»ß∑AD}Î,ÎéP˝≠~ü/ª˚d˛ í‹˜HÔí¬Co¸ô$1N‚w¬ó`q^ƒ‰%]/…üÀHìm1C«vÚ˚ü≈ô
-<^6ı¸¯æÀf$<ÇEâ?ÇÒ˝˝¡ÔŒ°$‹ON3§g°«)¥‹õ¸âlﬂ—dèÀ¶=†; ∑–dNÚ€4jÎs‹óxYÓ€1	ƒ<µ„>Lµ_π¡`™ÛÓ!QŸ]znõÉ=ÁGªg¸{LªÀÓ3É˜œÀ"°Ñ#?]ÃÁ4{Ä°Ä*„œxÑ˜ÅOoùí∑ãê›K`G»§yØI¶˘FÚb_»sÕÂnŸÓˆJO¬≥‚–öÓRbÃ≥Í]æ[ ,H|Kp£Ã*	≈‘A4_p∫HVâal¨lD'≠=€ù9,ïNA6”‰§E{ì9∞=¶Ïˆæ{ª 2å 78 &EqDU6 ·0SAì“mEˆı¢‹¶rkÔo|ÑÏÿ±ë0Ï©M†+µ0lù3kC	Ìq/ôPﬁsßô{	£WoÎw:*µ≤Ã~	ªLç, ]zKF~ë
-·˜Äu˚ﬂ#÷˘ §ﬂº˘v-Ïüçi∂&è.‘v…óΩ}¥dúŒ»} g0N( Òë''ÖÖ“ÑÉ≥‡ÒÏá1H˙•¡ùÀrH ∏èÿ‚fñÌ–óR@	•Ù(œÚÙ≥ˇ∏◊;Ñ≈î©·Åπ… √îgÚõòdùAÑ+ÍÉM‰Y^˘ph≠ëwGâ<~÷Ç£J¬ ¬›ìø–1 fk≠¿Í«˝€8ôeøè˚ø¬Ø∑±Ô¶m´˛è‰-Ã>$ ˘mÚc?¯∏h‰ÂZ≥^rµØ†±hÇÙ≥XÙ_Ë$`h$‚Ê˜[kP∆ﬁœit≤
-X÷àÛ`€Z®≈ ßL-^!ﬁ_ïûk•≥ÛÔæ2ó‘é‡`·ﬁz≠ aÉè"ú¨ ¥~Hœ}?Î&o¨m\Û®U•‡dOôÜ‚÷˘*Ú'`‡9úqPÚ£›≤˝#Á∂qÙÑ˛œ"HJ wôUøXräì/«!NÙÊ‹d¶Væ}àt¸å‰ZtÆhÍ¨{?„›@∏9™d›€Œˆﬁã`nì]Zyu÷#Á÷YË0FâYõ\∏oapàÿHmÆ|+∫Ä'q≤t®«Lÿie€€«^“ñ≥ßã-ã«MO<©tÍ“4∑à`ã≤€$]hÎ<‚¡MÉ@lùﬂè˚Ú©⁄ÓØÅ#îZßÈó∆ˇÊç#?Mø4Óàãú/
-´$}Únt~u)Wn46p»“ç8t}KIºÙ	Kk„!/È=Ä¡iˆm£Ì1:óπéÁ(™Â˛Ã÷∆CæÁS\ä¯„Ít‹ó$cUÕæ3‚ˇköò¢o©«â8£	>∞Äu=¿Q∂Hˇ3¿ÆYH⁄oAqBPX÷iåYw"'~6Ó¬ΩõêÇy'ˇ6Ó@^∞÷©¯”|Æ≈0¸l‹mÜ÷)~6Ó¬ºÒw$ˇn∞# 0n	ˇ>ä.Kı.¥µ˚á∫∑L˜®Â^ƒ˛ÛÅ€ë6}∂UÉ_®¸‰"énÉ…"!û„˛ÙŸ#¬-ﬂ∆}ˆ‚Q;Kê_≈`mÄÖ¸⁄øïcïÓâ“—ó\6uóÕ™›9Ôõ„÷…Ÿ4ˆRT@1⁄–Ìñ¯ÚÖ˛`œ◊£±Â¬ÉŸæAè¯Ú«:Ω@B|◊®∆¿≠?–°Öl«‘aST˚5å=+≤Ì˝À"€"IP≈}â˜ü»ôƒ9oç3â—Í–ÂÒºÈÇˇ6§R*í9/qk|∫*lÑúøŒ∑ÊvÀ‡≤ª{ÜJæWuZÇ°9X5µ^ãÎ7Á¬ã∆44«≠ÇpÍQnÖ,…B˘™…äﬂ˘—PH	(údﬂîY˚3ZÓçypGá,R⁄}qX5´ÎwÁØs˝ıY„ÜæÖØ:o1»e@î—ÃoΩ◊#ó8Öáy ÁQ0Û¬¬?~çQ· x0'K"ùÿmÈc'øxÀé’Õù/"uw∑Ú!üñÇ∆{O˛‘"?ë6K≥‰J‰4Ècg¿E&»;Z-Öud>~®ËZ<n∏≈Å4GÓníH≥ŒdWSëßOI;Â Ÿ»îO¬˜ÑT≤‘k*oº∫ò1Ë<èÀüRÙnÉ¨◊∂‡”¥'gªíπ&ÚG/;z'º›ˆv…çX3pÈ7Ä
-åø.&πÑÜˆMƒ"¯E<÷N€Œ'ΩNGÀPæZ≥Ñ\“ˇ®ú1¯ä®2ZÃfÄfF·X †k»‘Úõ$û¿2ª<Óﬁ$‰6âgyÜXÖ”ÓëL‚Z31ãE°ï(ƒùkö‘'WjÀ=±ä0mlîgñEok⁄ÆﬁÆ!Ω¿`ö ¬Uä'@jk{Ja’π"& uÊ ˘ˆ^°Œ(jK÷cNGY‡œ•hüÇÈío
-,√¿øàoÔ˙Á÷x∞(loc9z≈NkŒädªs!I6^∂U´7 QdÿäÿC5ÑLfºª◊;t,¯ç˙ø¡∂ÊC O‚hR[9¨lsÏ!ˆˆd†⁄ƒﬂA‰cúí/‰P·Ïÿh‰0ÎïfÊ†›£{súNpO!{^Õ˚òH‚ö&ã^√,◊ÌÖ4öi1ºıÊ˙∂üå;'≤.·—‘=≠GUhúY0<’7]O+d≈uâ¬ÎØ°°wıÊÕªW£ë+!uö!ÎÄ…–ÈÒ¯jÙ~ƒ1~±yˆŒıNÁ„‡ìkåLäÊzîgöú«U‹ŸŸi¯ç¨?YªÆ›êë;ñrzDΩd<m,“›Ìä…éπ1ÄŸüÓ«kï[œíÌÄó*ıRsrøßgf‰jsŒ¨,π%√Rp>ómë}(üÄôd|~ÊkÈG"Ûs#E/+›}Å{j÷ÙÃ;≈œòî`ŸODÊDÆxZ®‘û…i˛H5‰W¥◊ØÉ—ı¯÷¢3≥äIÓX&3Ô°;Ì~<‹M?<†€`µÏb≤ô'V_àïGëS0Æœ¨ôÿ˙„ò"ﬁ¶¯}ó˛C;ëj(≈~	Íg3r∂£z60fë‹vBƒz9ÂäVt'UıGrfø¶D˘ ¢È‹ü¡!`¶åT>¶˜`±ïÎÒî~ÄˇÜ-ÊH·Z5@¿P+©Ã•/wzRÏπj@éy~^mKÀ!]≤˜	7YÏÒ•â®Ú™HÕ«K†§»√ó#˛⁄¢:ÎÃ¡.Ÿ™~1P2æ¸Nôé¢5∑ÖÓnpiJï˙0®O	7UmG§j»*Øc√•(¨ôÆp]‹'ﬁºfƒ≤÷πBÊçC-3{8q%Ù;˘≤0™SÅ-LAá«4ß>+Ú–OK˛Ä‚z≥ºnüË˛»c◊r†T®È SñúûR™(êœ+Ïà“} Ω dëÕ§£#ò®–éåT±tËÌÍéÃ`ûsr•
-G/#q—±2ãΩËÀó‘Íò¥2'ù¿≥Hµ¢¥0s ö·¶p`;¥Ä áU_LÈ¯≥¯0Ñ9är!»QË.e¡L=!¶Ô⁄·≠ïÊlÊE!WQ·eq+|;Püc"ux—$§.hÁÿ"¨∑H•‹Ø¶4¶
-ñç`ˆ>öƒ¿V	Ùÿl{UíÚÎ˛*ÚkôÆﬂŸË™ã”¸WŸ»P'ø€¡Hv>#T
-∞ØâC°P°ˇ¡?˛ÔÔD:8≈YUπl‰@Pï9e‹L “Ò Atˇ„d£º≠X˙â¿pÙ¬‡Èu˛ N”6{Ô¢˘àñ>S“öΩBºÕ_±ÕÏ÷ìz°%Ö./®øçÕÑp0Tï2’bDis4S∆§*∆¶`©|Ó÷© ∏™KY8ÅÂHıiDpä∫¿Ø8e’´É±~Pmå‘©’≤ÍU_´^çºF˙hÖ@·@aœÈ“/%8Å>õÃ¶pπlÙk_è≠„µ7…{ro“¨k°‘Mcîùı¿í=ôÍN-pßŸ4`;K?Â–b˛DˆöçíòaÒµ·¸)'J;æ·täCÕÑMÉ\n5˝ﬁ≤’Íúe⁄¯u˙∂Èì^˚Øqám`z944%±©˜KøÍµõg,WÔdÌìdteeQ≤ﬁöq’?´Ë.µ‹Vº÷"ñØù DÀ_oë≤›:&€ågn¬17ÊóÄƒ∏âÕ∏ÂW Gr Ø`vÕWe∞·z2n@ÍÇI‰nŒ$jYÑõA4Õ∑˘Ÿíéµ6Qïâc^µ>íß|≥q<∑ô{Ü∂-ÿC˙í*¯lY£	÷≥Ç+•N[D>Ò!°lú7†JΩÕìëß»≈º	µy‹ï	JI==!¸˘¿ÚfåRX⁄U®hÃ6=‹jj∏}Î«˝È·&>NÅlπ[“ÒbÓmìQ†k∂)¡áNáI©ªF]¬≥HDOAÓ∏∆NÎz+ •k)ÿUbW¸´Ø∂%…R˜*fR}ˇÅ5s¡|U⁄÷†ï:M@9íÙÿdH·IXqYXŸÃ±ê˜€W[ßÌïª-øÏ¨o°≤ÃYÔ± Õ°⁄}R¯ÓçºıöYåﬂÆlSR<1A◊cè/y®xıÊX” gö∏ù	>/¿º¬ä–w1p|:nÉ±¢>1∆ì	ıõ,Ω“{∑©xÈ·R*ÚyD˙(ÛI√<˙ÂÃˇI˚mYÆi1€b'ˇ…¶UÖ¸…l‰]‚7CÖÚõ!C—ls1cÄe˛í=›,∆Un—G‹å≥D¸ìÄá∞"áÕãtëÆ¸í◊t¨°∆áæπ£Æ±1éª6NQ‘ÚŸÜ≠ä›ŒíÙ%€cƒ_œÚ6æiœë*Î.!a®Ätzîxzì´ôÚ}¶N+πéS…2Œ≤ÜrU8Û{≥‘˚»à.ÒRrnœ∂;pJá—§™FÅÊ∫”ŒápïÏ˜»-‡%Z¨Dñ∞˜ÎpÚ9≤:ÅÃ+ïµ8¿W˝—gΩ‹€‡,
-tø¢≥`esB*Â;∫#‹,›Q
-¥ö\§i¢{ŸP}V)6^¸W[˚ª’LıçÛ/
-ëèÅ0äk,éxÌJù®Ê˛\-¡y‡Tp“–aˆûŸaÍ’Wî˚Ò◊òıg‹,€ #]˝¨ÑªAÍpŸçQì_o&mÛèñxÜoË4Å#´‡∑Wq:πJ%vªjÎ7UQø’´6,‡≤Ò8‘W,pz\9)Ü¢7,’]Y’ØÌ®"œ¶/‡3∞;KZºoñ⁄¨“‘à@b≠©6ÒÆ◊™y^Æ˙R£’§jÕÛÂ∫ß¶ﬂZ’G[∑)èÙ=>Œ2Ø≤Œ¨|Ræ•‚|¡„Ó%ıi¸ Ò«Ö©(\Ÿ0”y2π±Œp+∂z{ÕÃ)≠tÏTï(Œ9·˚(º∏;µÆ˚¡ÊÃ‚h[ß™SnèHKıU*µUèw	&[≥˝Ω«ï!Ø÷>¿jÌ2¶ª¢}’Ò={Õˆ#5æ‚≤*l@˙f€∂¿ê•hª¢˛a†Œ^ô)}Z]ïÔiÅ–]Ss⁄X∂X∞∂ÍúöelØò</ÄŸ∞í‹zú¯Æ†dFû™Ò¸Fß[˜
-ÚZìÔ†'„ˆÈøãPˇ-≈_)Œ®|c5§ﬁÃ‡”bƒuüPV»_èÂW|⁄
-∑g9ÀïÌ% œöi™G√≠Iò´πÔÓÌÉ% Z2,0]@>t˙[ò\Naö˛ú=»“&M›¥g‰⁄eùÿmãëz„±2UWï	‰®™Ω?qV±_5ÑPÏ◊“*ÀÊÏ¶≈∫ﬁCWŸ§†¥¨¯µ˝ß 8X⁄8unÜK·Y∫wƒ)âÕ¸6—?€8é¸@Í,ªˆÏ«î¡1gÔ•%∞Vä(R¯≥ŒJ7ˇ@ï†Èÿû∏ ŒÅŒÜLa%“P*NJŒäõøÙ‚íÙ)≈Ó[˛£LŸäÈ-'äMl YymHî¬-P/[ å‡9–‹s-™øêEóu@,Ø+!!W∑∑ß…CÒ_ab∑u\Òç6˜Z8¸æ9€®xYÇRä≤…∞ö-Vä‹"}K¿“Ù∞%»ˆ¬;ú¶'î≈·–[å«î1‰»Àû√-ìIˇÔÅZ§åmB.ôªSW Ñí˝+§ÔñJlØ≈ˇÊ$RQÊÛÕ®DlTêH^?ÙıíW!*‘êÇ„cÀŸ<˝oP1Då‹Q·_∆◊ƒ$¥[‰î÷â’∫⁄∑6Q©£óı5¸õò®è3b¥;/ü¨ü<°Û8·ƒß∑ﬁ"‰‰|>˘‰ˇ  ˇˇ 6◊ë
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => { setIsMedicineFormOpen(false); setEditingMedicineId(null); }}
+              className="flex-1 py-4 bg-slate-100 text-slate-500 font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-4 bg-emerald-600 text-white font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/30"
+            >
+              {editingMedicineId ? "Update Medicine" : "Add to Inventory"}
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* Quick Pregnancy Check (Today) Modal */}
+      <FormModal
+        title="Quick Pregnancy Check (Today)"
+        isOpen={isNewPdFormOpen}
+        onClose={() => { setIsNewPdFormOpen(false); setPdAnimalId(''); setPdResult(''); setPdNotes(''); }}
+      >
+        <form onSubmit={handleSaveNewPdCheck} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Cow Tag / Animal ID *</label>
+            <input
+              list="all-cow-tags"
+              required
+              placeholder="Type or select cow tag..."
+              className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+              value={pdAnimalId}
+              onChange={e => setPdAnimalId(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Pregnancy Diagnosis Result *</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPdResult('Pregnant')}
+                className={`py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border ${
+                  pdResult === 'Pregnant'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg shadow-emerald-600/30'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Pregnant (+ve)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPdResult('Open')}
+                className={`py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border ${
+                  pdResult === 'Open'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-lg shadow-rose-600/30'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Open / Non-Pregnant (-ve)
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Diagnosis Notes & Details</label>
+            <textarea
+              rows={3}
+              placeholder="e.g. 45 days, right horn pregnant, CL present..."
+              className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+              value={pdNotes}
+              onChange={e => setPdNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => { setIsNewPdFormOpen(false); setPdAnimalId(''); setPdResult(''); setPdNotes(''); }}
+              className="flex-1 py-4 bg-slate-100 text-slate-500 font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-4 bg-blue-600 text-white font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30"
+            >
+              Save PD Check
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* Past Date Pregnancy Check Modal */}
+      <FormModal
+        title="Past Date Pregnancy Check"
+        isOpen={isOldPdFormOpen}
+        onClose={() => { setIsOldPdFormOpen(false); setOldPdAnimalId(''); setOldPdResult(''); setOldPdNotes(''); }}
+      >
+        <form onSubmit={handleSaveOldPdCheck} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Check Date *</label>
+            <input
+              type="date"
+              required
+              className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+              value={oldPdDate}
+              onChange={e => setOldPdDate(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Cow Tag / Animal ID *</label>
+            <input
+              list="all-cow-tags"
+              required
+              placeholder="Type or select cow tag..."
+              className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+              value={oldPdAnimalId}
+              onChange={e => setOldPdAnimalId(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Pregnancy Diagnosis Result *</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setOldPdResult('Pregnant')}
+                className={`py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border ${
+                  oldPdResult === 'Pregnant'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg shadow-emerald-600/30'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Pregnant (+ve)
+              </button>
+              <button
+                type="button"
+                onClick={() => setOldPdResult('Open')}
+                className={`py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border ${
+                  oldPdResult === 'Open'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-lg shadow-rose-600/30'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Open / Non-Pregnant (-ve)
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Diagnosis Notes & Details</label>
+            <textarea
+              rows={3}
+              placeholder="Notes..."
+              className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+              value={oldPdNotes}
+              onChange={e => setOldPdNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => { setIsOldPdFormOpen(false); setOldPdAnimalId(''); setOldPdResult(''); setOldPdNotes(''); }}
+              className="flex-1 py-4 bg-slate-100 text-slate-500 font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-4 bg-blue-600 text-white font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30"
+            >
+              Save Past PD Check
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* Bulk Pregnancy Checks Entry Modal */}
+      <FormModal
+        title="Bulk Pregnancy Checks Entry"
+        isOpen={isMultiPdFormOpen}
+        onClose={() => { setIsMultiPdFormOpen(false); setMultiPdText(''); }}
+      >
+        <form onSubmit={handleSaveMultiPdCheck} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Check Date *</label>
+            <input
+              type="date"
+              required
+              className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+              value={multiPdDate || dateUtils.today()}
+              onChange={e => setMultiPdDate(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+              Paste or Type Checks (One per line) *
+            </label>
+            <textarea
+              rows={8}
+              required
+              placeholder="101 Pregnant
+102 Open
+103 Preg
+104 P
+105 O"
+              className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm font-mono font-black shadow-inner outline-none focus:ring-2 focus:ring-blue-500/20"
+              value={multiPdText}
+              onChange={e => setMultiPdText(e.target.value)}
+            />
+            <p className="text-[11px] text-slate-400 px-1">
+              Format: <code>TAG RESULT</code> (e.g. &quot;101 Pregnant&quot;, &quot;102 Open&quot;, &quot;103 P&quot;, &quot;104 O&quot;)
+            </p>
+          </div>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => { setIsMultiPdFormOpen(false); setMultiPdText(''); }}
+              className="flex-1 py-4 bg-slate-100 text-slate-500 font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-4 bg-blue-600 text-white font-black text-xs rounded-2xl uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30"
+            >
+              Save All Checks
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      {/* Daily Action Sheet Modal */}
+      <DailyActionSheetModal
+        isOpen={isActionSheetModalOpen}
+        onClose={() => setIsActionSheetModalOpen(false)}
+        actionSheet={dailyActionSheet}
+        currentDate={actionSheetDate}
+        onDateChange={(d) => setActionSheetDate(d)}
+        onAdministerDose={(task) => {
+          setDoseModalData({
+            healthEventId: task.healthEventId,
+            animalId: task.animalId,
+            animalTag: task.animalTag,
+            medication: task.medication,
+            dayNumber: task.dayNumber,
+            totalDays: task.totalDays,
+            doseDate: actionSheetDate,
+            treatments: task.treatments
+          });
+          setIsDoseModalOpen(true);
+        }}
+        onOpenPdCheck={(animalId) => {
+          const animal = animals.find(a => a.id === animalId);
+          if (animal) {
+            setPregnancyCheckTarget(animal);
+            setPregnancyCheckResult('');
+            setIsPregnancyCheckModalOpen(true);
+          }
+        }}
+        onOpenAnimalProfile={(animalId) => {
+          const animal = animals.find(a => a.id === animalId);
+          if (animal) setSelectedAnimal(animal);
+        }}
+        onOpenMovePen={(animalId) => {
+          setMoveToPenAnimalId(animalId);
+          setIsMoveToPenModalOpen(true);
+        }}
+      />
+
+      {/* Fertility Analytics Modal */}
+      <FertilityAnalyticsModal
+        isOpen={isFertilityAnalyticsModalOpen}
+        onClose={() => setIsFertilityAnalyticsModalOpen(false)}
+        analytics={fertilityAnalytics}
+        onOpenAnimalProfile={(animalId) => {
+          const animal = animals.find(a => a.id === animalId);
+          if (animal) setSelectedAnimal(animal);
+        }}
+        onOpenReproFormForAnimal={(animalId) => {
+          const animal = animals.find(a => a.id === animalId);
+          if (animal) {
+            setEditingReproId(null);
+            setNewRepro({ type: ReproEventType.INSEMINATION, date: dateUtils.today(), animalId: animal.id });
+            setReproAnimalSearch(animal.tag);
+            setIsReproFormOpen(true);
+          }
+        }}
+      />
+
+      {/* Pregnancy Check Modal */}
+      <PregnancyCheckModal
+        isOpen={isPregnancyCheckModalOpen}
+        onClose={() => setIsPregnancyCheckModalOpen(false)}
+        targetAnimal={pregnancyCheckTarget}
+        result={pregnancyCheckResult}
+        onSelectResult={(res) => setPregnancyCheckResult(res)}
+        onSave={() => {
+          handlePregnancyCheck();
+          setIsPregnancyCheckModalOpen(false);
+        }}
+      />
+
+      {/* Dose Administration Modal */}
+      <DoseAdministrationModal
+        isOpen={isDoseModalOpen}
+        onClose={() => { setIsDoseModalOpen(false); setDoseModalData(null); }}
+        data={doseModalData}
+        onConfirm={handleAdministerDose}
+      />
+
+      {/* Cure Evaluation Modal */}
+      <CureEvaluationModal
+        isOpen={isCureModalOpen}
+        onClose={() => { setIsCureModalOpen(false); setCureModalData(null); }}
+        data={cureModalData}
+        onEvaluate={handleEvaluateCure}
+      />
+
+      {/* Move To Pen Modal */}
+      <MoveToPenModal
+        isOpen={isMoveToPenModalOpen}
+        onClose={() => { setIsMoveToPenModalOpen(false); setMoveToPenAnimalId(null); }}
+        animals={animals}
+        settings={settings}
+        initialSelectedAnimalId={moveToPenAnimalId}
+        onConfirmMove={handleConfirmMoveToPen}
+      />
+
+      {/* Quick Restock Modal */}
+      {selectedMedicineForRestock && (
+        <QuickRestockModal
+          isOpen={isRestockModalOpen && !!selectedMedicineForRestock}
+          onClose={() => { setIsRestockModalOpen(false); setSelectedMedicineForRestock(null); }}
+          medicine={selectedMedicineForRestock}
+          onRestock={handleQuickRestock}
+        />
+      )}
+
+      {/* Quick Dispense Modal */}
+      {selectedMedicineForDispense && (
+        <QuickDispenseModal
+          isOpen={isDispenseModalOpen && !!selectedMedicineForDispense}
+          onClose={() => { setIsDispenseModalOpen(false); setSelectedMedicineForDispense(null); }}
+          medicine={selectedMedicineForDispense}
+          onDispense={handleQuickDispense}
+        />
+      )}
+
+      {/* Medicine History Modal */}
+      {selectedMedicineForHistory && (
+        <MedicineHistoryModal
+          isOpen={!!selectedMedicineForHistory}
+          onClose={() => setSelectedMedicineForHistory(null)}
+          medicine={selectedMedicineForHistory}
+          allMedicines={medicines}
+          purchases={purchases}
+          healthEvents={healthEvents}
+          animals={animals}
+          settings={settings}
+          onAddPurchase={(purchase, autoUpdateStock) => {
+            addPurchase(purchase);
+            if (autoUpdateStock) {
+              const res = restockMedicineStock(medicines, purchase.medicineId, purchase.packs, purchase.loose);
+              if (res.updatedMed) {
+                updateMedicine(res.updatedMed);
+              }
+            }
+          }}
+          onDeletePurchase={(purchaseId) => deletePurchase(purchaseId)}
+          onOpenTreatmentWithMedicine={(medicineName) => {
+            setEditingHealthId(null);
+            setNewHealth({ type: HealthEventType.ILLNESS, date: dateUtils.today(), treatments: [{ name: medicineName, dose: '' }] });
+            setTreatmentAnimalType('single');
+            setIsHealthFormOpen(true);
+          }}
+          onEditMedicineStock={(med) => {
+            setEditingMedicineId(med.id);
+            setNewMedicine(med);
+            setIsMedicineFormOpen(true);
+          }}
+          onSelectAnimal={(animal) => setSelectedAnimal(animal)}
+        />
+      )}
+
+      {/* Mobile Quick Actions Modal */}
+      <QuickActionModal
+        isOpen={isMobileQuickActionsOpen}
+        onClose={() => setIsMobileQuickActionsOpen(false)}
+        onAddAnimal={() => {
+          setEditingAnimalId(null);
+          setNewAnimal({ tag: '', breed: 'Holstein', sex: 'Female', herd: 'Main Herd', dob: dateUtils.today() });
+          setIsAnimalFormOpen(true);
+        }}
+        onAddCalf={() => {
+          setEditingAnimalId(null);
+          setNewAnimal({ tag: '', breed: 'Holstein', sex: 'Female', herd: getSucklingCalfPenName(settings), isCalf: true, dob: dateUtils.today() });
+          setIsAnimalFormOpen(true);
+        }}
+        onLogInsemination={() => {
+          setEditingReproId(null);
+          setNewRepro({ type: ReproEventType.INSEMINATION, date: dateUtils.today() });
+          setIsReproFormOpen(true);
+        }}
+        onLogPregnancyCheck={() => {
+          setIsNewPdFormOpen(true);
+        }}
+        onLogCalving={() => {
+          setEditingReproId(null);
+          setNewRepro({ type: ReproEventType.CALVING, date: dateUtils.today(), calfStatus: 'Alive' });
+          setIsReproFormOpen(true);
+        }}
+        onLogHeat={() => {
+          setEditingReproId(null);
+          setNewRepro({ type: ReproEventType.ESTRUS, date: dateUtils.today() });
+          setIsReproFormOpen(true);
+        }}
+        onLogHealthEvent={() => {
+          setEditingHealthId(null);
+          setNewHealth({ type: HealthEventType.ILLNESS, date: dateUtils.today(), treatments: [{ name: '', dose: '' }] });
+          setTreatmentAnimalType('single');
+          setIsHealthFormOpen(true);
+        }}
+        onAddMedicine={() => {
+          setEditingMedicineId(null);
+          setNewMedicine({ name: '', category: 'Injection', unit: 'ml', packs: 0, loose: 0, loosePerPack: 100, minStockLevel: 50 });
+          setIsMedicineFormOpen(true);
+        }}
+        onOpenActionSheet={() => setIsActionSheetModalOpen(true)}
+        onOpenMovePen={() => {
+          setMoveToPenAnimalId(null);
+          setIsMoveToPenModalOpen(true);
+        }}
+        onOpenFertilityAnalytics={() => setIsFertilityAnalyticsModalOpen(true)}
+        onOpenProtocolEnrollment={() => {
+          setNewEnrollment({ startDate: dateUtils.today(), animalIds: [] });
+          setIsEnrollmentFormOpen(true);
+        }}
+      />
+
+      {/* Confirmation Dialog */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-6">
+            <div className="flex items-center gap-3 text-amber-600">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-black text-slate-800">Confirm Action</h3>
+            </div>
+            <p className="text-sm font-semibold text-slate-600 leading-relaxed">{confirmDialog.message}</p>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(d => ({ ...d, isOpen: false }))}
+                className="flex-1 py-3 bg-slate-100 text-slate-700 text-xs font-black rounded-xl uppercase tracking-wider hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="flex-1 py-3 bg-rose-600 text-white text-xs font-black rounded-xl uppercase tracking-wider hover:bg-rose-700 transition-colors shadow-lg shadow-rose-600/30"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Datalist for all medicines */}
+      <datalist id="all-medicines">
+        {medicines.map(m => (
+          <option key={m.id} value={m.name}>{m.name} ({m.category})</option>
+        ))}
+      </datalist>
+
+      {/* Global Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-[250] bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-800 animate-in fade-in slide-in-from-bottom-5">
+          <span className="text-xs font-bold">{toastMessage}</span>
+          <button type="button" onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;

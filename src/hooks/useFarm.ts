@@ -389,9 +389,13 @@ export const useFarm = (currentUserEmail?: string) => {
   const deleteEnrollment = (id: string) => setEnrollments(prev => prev.filter(e => e.id !== id));
 
   const addCustomProtocol = (p: ProtocolTemplate) => setCustomProtocols(prev => [p, ...prev]);
+  const updateCustomProtocol = (updated: ProtocolTemplate) => setCustomProtocols(prev => prev.map(p => p.id === updated.id ? updated : p));
   const deleteProtocolTemplate = (id: string) => setCustomProtocols(prev => prev.filter(p => p.id !== id));
 
   const updateSettings = (s: FarmSettings) => setSettings(s);
+
+  const saveAnimalsDirectly = (a: Animal[]) => setAnimals(a);
+  const savePenMovementsDirectly = (m: PenMovement[]) => setPenMovements(m);
 
   // Alert Dismissal Actions
   const dismissAlert = (alertId: string) => {
@@ -426,6 +430,8 @@ export const useFarm = (currentUserEmail?: string) => {
     addAnimal,
     updateAnimal,
     updateAnimalsHerd,
+    saveAnimalsDirectly,
+    savePenMovementsDirectly,
     deleteAnimal,
     addReproEvent,
     updateReproEvent,
@@ -444,6 +450,7 @@ export const useFarm = (currentUserEmail?: string) => {
     updateEnrollment,
     deleteEnrollment,
     addCustomProtocol,
+    updateCustomProtocol,
     deleteProtocolTemplate,
     updateSettings,
     recordPenMovement,

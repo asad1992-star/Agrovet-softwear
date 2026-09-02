@@ -1,9 +1,22 @@
-import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, Medicine, MedicinePurchase, PenMovement } from '../types';
+import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, Medicine, MedicinePurchase, PenMovement, PenMapping } from '../types';
 import { MOCK_ANIMALS, MOCK_REPRO_EVENTS, MOCK_HEALTH_EVENTS, PREDEFINED_PROTOCOLS, MOCK_MEDICINES, MOCK_MEDICINE_PURCHASES } from '../data';
 import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { localDb } from './localDatabase';
 import { authService, AuthUser } from './authService';
+
+export const DEFAULT_PEN_MAPPING: PenMapping = {
+  fresh: 'Fresh',
+  highLactating: 'High Lactating',
+  mediumLactating: 'Medium Lactating',
+  lowLactating: 'Low Lactating',
+  dryLactating: 'Dry Lactating',
+  pregnantHeifers: 'Pregnant Heifers',
+  breedableHeifers: 'Breedable Heifers',
+  growingHeifers: 'Growing Heifers',
+  postWeanedHeifers: 'Post Weaned Heifers',
+  sucklingCalves: 'Suckling Calves'
+};
 
 export const DEFAULT_SETTINGS: FarmSettings = {
   gestationDays: 283,
@@ -27,7 +40,9 @@ export const DEFAULT_SETTINGS: FarmSettings = {
   customGroups: ['Main Herd', 'Growing Heifers', 'Post Weaning', 'Suckling', 'Elite', 'High Group', 'Medium Group', 'Breeding Heifers', 'Breeding Pen', 'Dry Cows', 'Fresh', 'Closeup', 'Pregnant'],
   technicians: ['Asad Mehmood', 'Faisal Sb'],
   semenCatalog: [],
-  autoBackupEnabled: true
+  autoBackupEnabled: true,
+  penMapping: DEFAULT_PEN_MAPPING,
+  autoMoveHeiferOnPD: true
 };
 
 export type SyncState = 'synced' | 'pending' | 'syncing' | 'offline' | 'error';
