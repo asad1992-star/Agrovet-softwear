@@ -41,6 +41,7 @@ import {
   Square,
   RotateCcw,
   Edit2,
+  Edit3,
   Filter,
   ListFilter,
   Sparkles,
@@ -316,7 +317,10 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     addEnrollment,
     updateEnrollment,
     deleteEnrollment,
+    addProtocolTemplate,
+    updateProtocolTemplate,
     addCustomProtocol,
+    updateCustomProtocol,
     deleteProtocolTemplate,
     updateSettings,
     dismissedAlerts,
@@ -345,7 +349,6 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
   const [herdViewMode, setHerdViewMode] = useState<HerdViewMode>('medium');
   const [herdTab, setHerdTab] = useState<HerdTab>('adults');
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
-  const [selectedAnimalHealthHistory, setSelectedAnimalHealthHistory] = useState<Animal | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isAlertPanelOpen, setIsAlertPanelOpen] = useState(false);
@@ -363,9 +366,6 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
   const [isEnrollmentFormOpen, setIsEnrollmentFormOpen] = useState(false);
   const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
   const [selectedEnrollmentDetail, setSelectedEnrollmentDetail] = useState<ProtocolEnrollment | null>(null);
-  const [isPregnancyCheckOpen, setIsPregnancyCheckOpen] = useState(false);
-  const [pregnancyCheckAnimal, setPregnancyCheckAnimal] = useState<Animal | null>(null);
-  const [calfFormAnimal, setCalfFormAnimal] = useState<Animal | null>(null);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -449,8 +449,10 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
   const [pdEndDate, setPdEndDate] = useState('');
   const [selectedBadgeDate, setSelectedBadgeDate] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+  };
   const [dashboardChartType, setDashboardChartType] = useState<'repro' | 'health' | 'conception'>('repro');
-  const [isMobileQuickActionsOpen, setIsMobileQuickActionsOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
 
   // Medicine Inventory & Usage states
@@ -613,8 +615,11 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
 
   // Protocol cow-tag search (within protocol tab)
   const [protocolTagSearch, setProtocolTagSearch] = useState('');
-  // Protocol view mode: 'active' | 'history'
-  const [protocolView, setProtocolView] = useState<'active' | 'history'>('active');
+  // Protocol view mode: 'active' | 'templates' | 'history'
+  const [protocolView, setProtocolView] = useState<'active' | 'templates' | 'history'>('active');
+  const [editingBatch, setEditingBatch] = useState<ProtocolEnrollment | null>(null);
+  const [isEditBatchOpen, setIsEditBatchOpen] = useState(false);
+  const [editBatchAnimalSearch, setEditBatchAnimalSearch] = useState('');
 
   const [dashboardFilter, setDashboardFilter] = useState<{
     dateRange: string;
@@ -706,11 +711,28 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
   const [newHealth, setNewHealth] = useState<Partial<HealthEvent>>({ type: HealthEventType.ILLNESS, date: new Date().toISOString().split('T')[0] });
   const [newEnrollment, setNewEnrollment] = useState<Partial<ProtocolEnrollment> & { animalIds?: string[] }>({ startDate: new Date().toISOString().split('T')[0], animalIds: [] });
   const [newTemplate, setNewTemplate] = useState<Partial<ProtocolTemplate>>({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false });
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   // Protocol Grouping & AI Workflow State
   const [protocolDateStart, setProtocolDateStart] = useState<string>('');
   const [protocolDateEnd, setProtocolDateEnd] = useState<string>('');
-  const [aiWorkflow, setAiWorkflow] = useState<{ groupId: string; currentAnimalIndex: number } | null>(null);
+  const [aiWorkflow, setAiWorkflow] = useState<{
+    groupId: string;
+    currentAnimalIndex: number;
+    inseminatedCount: number;
+    skippedCount: number;
+    technician: string;
+    semenName: string;
+    date: string;
+    details: string;
+  } | null>(null);
+  const [aiSummaryModal, setAiSummaryModal] = useState<{
+    isOpen: boolean;
+    templateName: string;
+    inseminatedCount: number;
+    skippedCount: number;
+    totalCount: number;
+  } | null>(null);
 
   // Handle outside click for search results
   useEffect(() => {
@@ -2228,7 +2250,62 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
       setIsEnrollmentFormOpen(false);
       setNewEnrollment({ startDate: new Date().toISOString().split('T')[0], animalIds: [] });
       setProtocolAnimalSearch('');
+      showToast(newEnrollment.id ? 'Cows added to existing group.' : 'New batch authorized and enrolled.');
     }
+  };
+
+  const handleOpenEditBatch = (batch: ProtocolEnrollment) => {
+    setEditingBatch({
+      ...batch,
+      animalIds: [...(batch.animalIds || [])],
+      completedStepIndices: [...(batch.completedStepIndices || [])]
+    });
+    setEditBatchAnimalSearch('');
+    setIsEditBatchOpen(true);
+  };
+
+  const handleSaveEditBatch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBatch) return;
+
+    if (!editingBatch.animalIds || editingBatch.animalIds.length === 0) {
+      showToast('Please select at least one cow for this batch.');
+      return;
+    }
+
+    const template = protocols.find(t => t.id === editingBatch.templateId);
+    const isCompleted = !!template && editingBatch.completedStepIndices.length === template.steps.length;
+    const finalStatus = isCompleted ? 'Completed' : editingBatch.status;
+
+    const updatedBatch: ProtocolEnrollment = {
+      ...editingBatch,
+      status: finalStatus
+    };
+
+    updateEnrollment(updatedBatch);
+
+    if (selectedEnrollmentDetail && selectedEnrollmentDetail.id === editingBatch.id) {
+      setSelectedEnrollmentDetail(updatedBatch);
+    }
+
+    setIsEditBatchOpen(false);
+    setEditingBatch(null);
+    showToast('Batch updated successfully.');
+  };
+
+  const handleDeleteBatch = (batch: ProtocolEnrollment) => {
+    setConfirmDialog({
+      isOpen: true,
+      message: `Delete this batch of ${(batch.animalIds || []).length} animals?`,
+      onConfirm: () => {
+        deleteEnrollment(batch.id);
+        if (selectedEnrollmentDetail?.id === batch.id) {
+          setSelectedEnrollmentDetail(null);
+        }
+        setConfirmDialog(d => ({ ...d, isOpen: false }));
+        showToast('Batch deleted.');
+      }
+    });
   };
 
   const handleGroupStepDone = (enrollment: ProtocolEnrollment) => {
@@ -2241,80 +2318,193 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     const nextStep = template.steps[nextStepIndex];
 
     if (nextStep.isAI) {
-      // Start AI Sequential Workflow
-      setAiWorkflow({ groupId: enrollment.id, currentAnimalIndex: 0 });
+      // Start AI Sequential Workflow with initial technician / semen pre-filled
+      const defaultTech = settings.technicians?.[0] || 'Asad Mehmood';
+      const defaultSemen = settings.semenCatalog?.[0] || '';
+      setAiWorkflow({
+        groupId: enrollment.id,
+        currentAnimalIndex: 0,
+        inseminatedCount: 0,
+        skippedCount: 0,
+        technician: defaultTech,
+        semenName: defaultSemen,
+        date: dateUtils.today(),
+        details: `AI Step in ${template.name}`
+      });
     } else {
       // Just mark step done for group
+      const updatedCompleted = [...enrollment.completedStepIndices, nextStepIndex];
+      const isCompleted = updatedCompleted.length === template.steps.length;
       const updated = {
         ...enrollment,
-        completedStepIndices: [...enrollment.completedStepIndices, nextStepIndex]
+        completedStepIndices: updatedCompleted,
+        status: isCompleted ? 'Completed' : enrollment.status
       };
-      // If all steps done, mark completed
-      if (updated.completedStepIndices.length === template.steps.length) {
-        updated.status = 'Completed';
-      }
       updateEnrollment(updated as ProtocolEnrollment);
     }
   };
 
-  const handleAIStepSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAIStepSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!aiWorkflow) return;
 
     const enrollment = enrollments.find(en => en.id === aiWorkflow.groupId);
     if (!enrollment) return;
 
+    const template = protocols.find(t => t.id === enrollment.templateId);
     const animalId = enrollment.animalIds[aiWorkflow.currentAnimalIndex];
 
-    // 1. Add Repro Event
+    // 1. Add Insemination Repro Event to standard repro ledger
+    const tech = normalizeTechnicianName(aiWorkflow.technician, settings.technicians);
+    const semen = normalizeSemenName(aiWorkflow.semenName, settings.semenCatalog);
+    
     addReproEvent({
-      id: Math.random().toString(36).substr(2, 9),
+      id: 'rep_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       animalId,
       type: ReproEventType.INSEMINATION,
-      date: newRepro.date || new Date().toISOString().split('T')[0],
-      details: newRepro.details || 'AI Step in Protocol',
-      technician: newRepro.technician ? normalizeTechnicianName(newRepro.technician, settings.technicians) : '',
-      semenName: newRepro.semenName ? normalizeSemenName(newRepro.semenName, settings.semenCatalog) : '',
+      date: aiWorkflow.date || dateUtils.today(),
+      details: aiWorkflow.details || (template ? `AI Step in ${template.name}` : 'AI Step in Protocol'),
+      technician: tech,
+      semenName: semen,
       success: true,
       protocolId: enrollment.id
     } as ReproductionEvent);
 
-    // 2. Advance or Finish
-    if (aiWorkflow.currentAnimalIndex < enrollment.animalIds.length - 1) {
-      setAiWorkflow({ ...aiWorkflow, currentAnimalIndex: aiWorkflow.currentAnimalIndex + 1 });
-      // Reset form fields for next animal but keep technician/semen if desired? 
-      // User said: "I enter Tech name, Semen details -> Click Save -> Next cow opens automatically"
-      // Usually keep the same tech/semen for the batch but let user edit if needed.
-    } else {
-      // All animals done! Mark step as completed for the group
-      const template = protocols.find(t => t.id === enrollment.templateId);
-      const nextStepIndex = template?.steps.findIndex((_, idx) => !enrollment.completedStepIndices.includes(idx)) ?? -1;
+    const isLast = aiWorkflow.currentAnimalIndex >= (enrollment.animalIds.length - 1);
+    const newInseminatedCount = aiWorkflow.inseminatedCount + 1;
 
-      const updated = {
+    if (!isLast) {
+      // Advance to next cow, auto-filling technician & semen details for fast sequential entry
+      setAiWorkflow({
+        ...aiWorkflow,
+        currentAnimalIndex: aiWorkflow.currentAnimalIndex + 1,
+        inseminatedCount: newInseminatedCount
+      });
+    } else {
+      // Batch AI step completed for all cows
+      const nextStepIndex = template?.steps.findIndex((_, idx) => !enrollment.completedStepIndices.includes(idx)) ?? -1;
+      const updatedCompleted = nextStepIndex !== -1 ? [...enrollment.completedStepIndices, nextStepIndex] : enrollment.completedStepIndices;
+      const isCompleted = !!template && updatedCompleted.length === template.steps.length;
+
+      updateEnrollment({
         ...enrollment,
-        completedStepIndices: [...enrollment.completedStepIndices, nextStepIndex]
-      };
-      if (template && updated.completedStepIndices.length === template.steps.length) {
-        updated.status = 'Completed';
-      }
-      updateEnrollment(updated as ProtocolEnrollment);
+        completedStepIndices: updatedCompleted,
+        status: isCompleted ? 'Completed' : enrollment.status
+      });
+
+      setAiSummaryModal({
+        isOpen: true,
+        templateName: template?.name || 'Protocol Batch',
+        inseminatedCount: newInseminatedCount,
+        skippedCount: aiWorkflow.skippedCount,
+        totalCount: enrollment.animalIds.length
+      });
       setAiWorkflow(null);
-      setNewRepro({ type: ReproEventType.INSEMINATION, date: new Date().toISOString().split('T')[0] });
     }
   };
 
-  const handleAddTemplate = (e: React.FormEvent) => {
+  const handleAIStepSkip = () => {
+    if (!aiWorkflow) return;
+
+    const enrollment = enrollments.find(en => en.id === aiWorkflow.groupId);
+    if (!enrollment) return;
+
+    const template = protocols.find(t => t.id === enrollment.templateId);
+    const isLast = aiWorkflow.currentAnimalIndex >= (enrollment.animalIds.length - 1);
+    const newSkippedCount = aiWorkflow.skippedCount + 1;
+
+    // 1-Click skip: simply record NOTHING in repro events
+    if (!isLast) {
+      // Advance directly to next cow, keeping technician and semen pre-filled for subsequent cows
+      setAiWorkflow({
+        ...aiWorkflow,
+        currentAnimalIndex: aiWorkflow.currentAnimalIndex + 1,
+        skippedCount: newSkippedCount
+      });
+    } else {
+      // All cows in batch evaluated! Mark step as completed for the group
+      const nextStepIndex = template?.steps.findIndex((_, idx) => !enrollment.completedStepIndices.includes(idx)) ?? -1;
+      const updatedCompleted = nextStepIndex !== -1 ? [...enrollment.completedStepIndices, nextStepIndex] : enrollment.completedStepIndices;
+      const isCompleted = !!template && updatedCompleted.length === template.steps.length;
+
+      updateEnrollment({
+        ...enrollment,
+        completedStepIndices: updatedCompleted,
+        status: isCompleted ? 'Completed' : enrollment.status
+      });
+
+      setAiSummaryModal({
+        isOpen: true,
+        templateName: template?.name || 'Protocol Batch',
+        inseminatedCount: aiWorkflow.inseminatedCount,
+        skippedCount: newSkippedCount,
+        totalCount: enrollment.animalIds.length
+      });
+      setAiWorkflow(null);
+    }
+  };
+
+  const handleSaveTemplate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newTemplate.name && newTemplate.steps && newTemplate.steps.length > 0) {
-      addCustomProtocol({
+    if (!newTemplate.name || !newTemplate.name.trim()) {
+      showToast('Please provide a protocol name.');
+      return;
+    }
+    if (!newTemplate.steps || newTemplate.steps.length === 0) {
+      showToast('Please add at least one workflow step to the protocol.');
+      return;
+    }
+
+    if (editingTemplateId) {
+      updateProtocolTemplate({
         ...newTemplate,
-        id: Math.random().toString(36).substr(2, 9),
+        id: editingTemplateId,
+        name: newTemplate.name.trim(),
+        description: newTemplate.description || '',
+        steps: newTemplate.steps,
+        isPredefined: !!newTemplate.isPredefined
+      } as ProtocolTemplate);
+      showToast(`Protocol template "${newTemplate.name.trim()}" updated successfully.`);
+    } else {
+      addProtocolTemplate({
+        ...newTemplate,
+        id: 'proto_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        name: newTemplate.name.trim(),
+        description: newTemplate.description || '',
+        steps: newTemplate.steps,
         isPredefined: false
       } as ProtocolTemplate);
-      setIsTemplateFormOpen(false);
-      setNewTemplate({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false });
+      showToast(`Protocol template "${newTemplate.name.trim()}" created successfully.`);
     }
+    setIsTemplateFormOpen(false);
+    setEditingTemplateId(null);
+    setNewTemplate({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false });
   };
+
+  const handleOpenEditTemplate = (p: ProtocolTemplate) => {
+    setEditingTemplateId(p.id);
+    setNewTemplate({
+      name: p.name,
+      description: p.description || '',
+      steps: p.steps.map(s => ({ ...s })),
+      isPredefined: p.isPredefined
+    });
+    setIsTemplateFormOpen(true);
+  };
+
+  const handleDeleteTemplate = (p: ProtocolTemplate) => {
+    setConfirmDialog({
+      isOpen: true,
+      message: `Delete protocol template "${p.name}"? Active batches using it will maintain their logs.`,
+      onConfirm: () => {
+        deleteProtocolTemplate(p.id);
+        setConfirmDialog(d => ({ ...d, isOpen: false }));
+        showToast(`Protocol template "${p.name}" deleted.`);
+      }
+    });
+  };
+
+  const handleAddTemplate = handleSaveTemplate;
 
   const executeReportExport = () => {
     const rangeLabel = (reportStartDate || reportEndDate)
@@ -4730,7 +4920,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                     </span>
                                   </td>
                                 ) : (
-                                  <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedAnimalHealthHistory(animal || null)}>
+                                  <td className="px-8 py-6 cursor-pointer" onClick={() => { if (animal) setSelectedAnimal(animal); }}>
                                     <div className="flex items-center gap-2">
                                       <span className="font-black text-slate-800 group-hover:text-rose-600 transition-colors">{animal?.tag ? `Cow #${animal.tag}` : 'Unknown Tag'}</span>
                                       <span className="text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
@@ -6106,12 +6296,44 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                         Reset
                       </button>
                     )}
-                    <div className="flex p-1 bg-slate-100 rounded-2xl shadow-inner">
-                      <button onClick={() => setProtocolView('active')} className={`px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${protocolView === 'active' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                        Active
+                    <div className="flex p-1.5 bg-slate-100 rounded-2xl shadow-inner gap-1">
+                      <button
+                        onClick={() => setProtocolView('active')}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all ${
+                          protocolView === 'active' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <Activity className="w-4 h-4" />
+                        <span>Active Batches</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-600 border border-amber-200/50">
+                          {enrollments.filter(e => e.status === 'Active').length}
+                        </span>
                       </button>
-                      <button onClick={() => setProtocolView('history')} className={`px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${protocolView === 'history' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                        History
+
+                      <button
+                        onClick={() => setProtocolView('templates')}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all ${
+                          protocolView === 'templates' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <ClipboardList className="w-4 h-4" />
+                        <span>Templates</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-50 text-blue-600 border border-blue-200/50">
+                          {protocols.length}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => setProtocolView('history')}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all ${
+                          protocolView === 'history' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <History className="w-4 h-4" />
+                        <span>History</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-700">
+                          {enrollments.filter(e => e.status !== 'Active').length}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -6132,13 +6354,21 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                   </div>
                   <div className="flex gap-3">
                     <button
-                      onClick={() => { setIsTemplateFormOpen(true); }}
+                      onClick={() => {
+                        setEditingTemplateId(null);
+                        setNewTemplate({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false });
+                        setIsTemplateFormOpen(true);
+                      }}
                       className="flex items-center gap-3 bg-white border border-blue-200 text-blue-600 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-50 transition-all shadow-sm"
                     >
-                      <Layers className="w-5 h-5" /> Add Template
+                      <Layers className="w-5 h-5" /> + Create Template
                     </button>
                     <button
-                      onClick={() => { setNewEnrollment({ startDate: new Date().toISOString().split('T')[0], animalIds: [] }); setIsEnrollmentFormOpen(true); }}
+                      onClick={() => {
+                        setNewEnrollment({ startDate: new Date().toISOString().split('T')[0], animalIds: [] });
+                        setProtocolAnimalSearch('');
+                        setIsEnrollmentFormOpen(true);
+                      }}
                       className="flex items-center gap-3 bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200"
                     >
                       <Plus className="w-5 h-5" /> Enroll Batch
@@ -6148,15 +6378,16 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
               </div>
 
               {/* SECTION 2: Protocol Groups (Batches) */}
+              {protocolView === 'active' && (
               <div className="space-y-8">
                 <div className="flex items-center gap-4 px-2">
                   <div className="p-2 bg-amber-50 rounded-xl"><Activity className="w-5 h-5 text-amber-600" /></div>
-                  <h4 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em]">{protocolView === 'active' ? 'Active Batches' : 'Historical Batches'}</h4>
+                  <h4 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em]">Active Batches</h4>
                 </div>
 
                 {(() => {
                   const filteredBatches = enrollments.filter(e => {
-                    const isStatusMatch = protocolView === 'active' ? e.status === 'Active' : e.status !== 'Active';
+                    const isStatusMatch = e.status === 'Active';
                     const isDateMatch = (!protocolDateStart || e.startDate >= protocolDateStart) && (!protocolDateEnd || e.startDate <= protocolDateEnd);
                     const isTagMatch = !protocolTagSearch || (e.animalIds || []).some(id => animals.find(a => a.id === id)?.tag.toLowerCase().includes(protocolTagSearch.toLowerCase()));
                     return isStatusMatch && isDateMatch && isTagMatch;
@@ -6166,8 +6397,8 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                     return (
                       <div className="bg-white p-20 rounded-[4rem] text-center border border-slate-100">
                         <FlaskConical className="w-20 h-20 text-slate-100 mx-auto mb-6" />
-                        <p className="text-lg font-black text-slate-400 uppercase tracking-widest">No batches found</p>
-                        <p className="text-sm text-slate-300 font-bold mt-2">Adjust filters or enroll a new batch</p>
+                        <p className="text-lg font-black text-slate-400 uppercase tracking-widest">No active batches found</p>
+                        <p className="text-sm text-slate-300 font-bold mt-2">Enroll a group of animals to begin a protocol</p>
                       </div>
                     );
                   }
@@ -6192,18 +6423,47 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                   <h5 className="font-black text-slate-800 text-2xl group-hover:text-amber-600 transition-colors tracking-tighter">{template?.name || 'Protocol Batch'}</h5>
                                   <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{(batch.animalIds || []).length} Cows</span>
-                                    <span className="text-[10px] text-slate-300"></span>
+                                    <span className="text-[10px] text-slate-300">•</span>
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Started {batch.startDate}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex gap-2">
-                                <button onClick={(e) => {
-                                  e.stopPropagation();
-                                  // Generic report for entire batch
-                                  generateProtocolListReport([batch], protocols, animals, settings);
-                                }} className="p-3 bg-slate-50 hover:bg-slate-100 text-slate-400 rounded-2xl transition-all"><Printer className="w-5 h-5" /></button>
-                                <button onClick={(e) => { e.stopPropagation(); setConfirmDialog({ isOpen: true, message: `Delete this batch of ${(batch.animalIds || []).length} animals?`, onConfirm: () => { deleteEnrollment(batch.id); setConfirmDialog(d => ({ ...d, isOpen: false })); } }); }} className="p-3 bg-rose-50 hover:bg-rose-100 text-rose-400 rounded-2xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditBatch(batch);
+                                  }}
+                                  title="Edit Batch"
+                                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-black transition-all border border-blue-100 shadow-xs"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteBatch(batch);
+                                  }}
+                                  title="Delete Batch"
+                                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-black transition-all border border-rose-100 shadow-xs"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Delete</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    generateProtocolListReport([batch], protocols, animals, settings);
+                                  }}
+                                  title="Print Batch Report"
+                                  className="p-2.5 bg-slate-50 hover:bg-slate-200 text-slate-500 rounded-xl transition-all border border-slate-100"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
                               </div>
                             </div>
 
@@ -6273,6 +6533,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                   );
                 })()}
               </div>
+              )}
 
 
               {/* SECTION 2b: Protocol History */}
@@ -6396,9 +6657,35 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Started: {enrollment.startDate}</p>
                                       </div>
                                     </div>
-                                    <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full ${enrollment.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
-                                      {enrollment.status}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full ${enrollment.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                                        {enrollment.status}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenEditBatch(enrollment);
+                                        }}
+                                        title="Edit Batch"
+                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-black transition-all border border-blue-200 cursor-pointer shadow-xs"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">Edit</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteBatch(enrollment);
+                                        }}
+                                        title="Delete Batch"
+                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-black transition-all border border-rose-200 cursor-pointer shadow-xs"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">Delete</span>
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="space-y-3 mb-4">
                                     <div className="flex items-center justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -6420,62 +6707,127 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                 </div>
               )}
 
-              {/* SECTION 3: Template Library (at the bottom) */}
+              {/* SECTION 3: Template Library */}
+              {(protocolView === 'active' || protocolView === 'templates') && (
               <div className="space-y-8">
-                <div className="flex items-center gap-4 px-2">
-                  <div className="p-2 bg-slate-100 rounded-xl">
-                    <ClipboardList className="w-5 h-5 text-slate-500" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl border border-blue-100">
+                      <ClipboardList className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-lg font-black text-slate-800 tracking-tight">Protocol Template Library</h4>
+                        <span className="px-3 py-0.5 bg-blue-100 text-blue-800 rounded-full text-[10px] font-black uppercase tracking-wider">
+                          {protocols.length} Templates
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 font-bold">Standard synchronization regimens & custom hormone injection schedules</p>
+                    </div>
                   </div>
-                  <h4 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em]">Template Library</h4>
-                  <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-tighter">
-                    {protocols.length} Templates
-                  </span>
+                  <button
+                    onClick={() => {
+                      setEditingTemplateId(null);
+                      setNewTemplate({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false });
+                      setIsTemplateFormOpen(true);
+                    }}
+                    className="px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                  >
+                    <Plus className="w-4 h-4" /> + Create Protocol Template
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {protocols.map(p => (
-                    <div key={p.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 group hover:shadow-xl transition-all relative overflow-hidden">
-                      {!p.isPredefined && (
-                        <button
-                          onClick={() => deleteProtocolTemplate(p.id)}
-                          className="absolute top-6 right-6 p-2 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className={`p-3 rounded-2xl ${p.isPredefined ? 'bg-slate-50 text-slate-400' : 'bg-blue-50 text-blue-600'}`}>
-                          <FlaskConical className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h5 className="font-black text-slate-800 text-lg group-hover:text-blue-600 transition-colors">{p.name}</h5>
-                          <span className={`text-[9px] font-black uppercase tracking-widest ${p.isPredefined ? 'text-slate-400' : 'text-blue-500'
-                            }`}>{p.isPredefined ? ' Standard / Predefined' : ' Custom / Manual'}</span>
-                        </div>
-                      </div>
-                      <p className="text-xs text-slate-500 font-semibold mb-6 line-clamp-2">{p.description || 'No description provided.'}</p>
-                      <div className="space-y-2 mb-6">
-                        {p.steps.map((step, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-[10px] text-slate-500 font-bold">
-                            <span className="w-8 h-5 bg-slate-100 rounded text-center leading-5 font-black text-slate-600 flex-shrink-0">D{step.dayOffset}</span>
-                            <span className="truncate">{step.action}</span>
-                            {step.time && <span className="text-slate-300 flex-shrink-0">@ {step.time}</span>}
+                    <div key={p.id} className="bg-white p-7 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between relative group">
+                      <div>
+                        {/* Header: Title, Type Badge & Always-Visible Action Buttons */}
+                        <div className="flex items-start justify-between gap-3 mb-5">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-3 rounded-2xl shrink-0 ${p.isPredefined ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'}`}>
+                              <FlaskConical className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h5 className="font-black text-slate-800 text-lg leading-snug group-hover:text-blue-600 transition-colors">{p.name}</h5>
+                              <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md inline-block mt-0.5 ${
+                                p.isPredefined ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-blue-50 text-blue-700 border border-blue-100'
+                              }`}>
+                                {p.isPredefined ? 'Standard Protocol' : 'Custom Protocol'}
+                              </span>
+                            </div>
                           </div>
-                        ))}
+
+                          {/* Always-Visible Edit and Delete Action Buttons */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditTemplate(p)}
+                              title="Edit Protocol Template"
+                              className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-black transition-all border border-blue-200 shadow-xs"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTemplate(p)}
+                              title="Delete Protocol Template"
+                              className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-black transition-all border border-rose-200 shadow-xs"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-500 font-semibold mb-5 line-clamp-2">
+                          {p.description || 'Standard reproductive synchronization protocol.'}
+                        </p>
+
+                        <div className="space-y-2 mb-6">
+                          {p.steps.map((step, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-[10px] text-slate-600 font-bold bg-slate-50 p-2 rounded-xl border border-slate-100">
+                              <span className="w-8 h-5 bg-white border border-slate-200 rounded text-center leading-5 font-black text-slate-700 flex-shrink-0">
+                                D{step.dayOffset}
+                              </span>
+                              <span className="truncate flex-1 font-black text-slate-700">{step.action}</span>
+                              {step.isAI && (
+                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300/70 rounded text-[8px] font-black uppercase">
+                                  AI Step
+                                </span>
+                              )}
+                              {step.time && <span className="text-slate-400 flex-shrink-0">@ {step.time}</span>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 pt-4 border-t border-slate-50">
-                        <span className="px-3 py-1 bg-slate-50 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tighter">{p.steps.length} Steps</span>
-                        <span className="px-3 py-1 bg-slate-50 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tighter">{p.steps[p.steps.length - 1]?.dayOffset || 0} Days Total</span>
+
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-auto">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tighter">
+                            {p.steps.length} Steps
+                          </span>
+                          <span className="px-2.5 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tighter">
+                            {p.steps[p.steps.length - 1]?.dayOffset || 0} Days
+                          </span>
+                        </div>
                         <button
-                          onClick={() => { setNewEnrollment({ startDate: new Date().toISOString().split('T')[0], animalIds: [], templateId: p.id }); setProtocolAnimalSearch(''); setIsEnrollmentFormOpen(true); }}
-                          className="ml-auto px-4 py-2 bg-amber-50 text-amber-700 rounded-xl font-black text-[9px] uppercase tracking-wider hover:bg-amber-600 hover:text-white transition-all border border-amber-100"
+                          type="button"
+                          onClick={() => {
+                            setNewEnrollment({ startDate: dateUtils.today(), animalIds: [], templateId: p.id });
+                            setProtocolAnimalSearch('');
+                            setIsEnrollmentFormOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-500/20"
                         >
-                          Enroll 
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>Enroll Cows</span>
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
+              )}
             </div>
           )}
 
@@ -8168,13 +8520,41 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                     <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Started {selectedEnrollmentDetail.startDate}</span>
                   </div>
                 </div>
-                <button 
-                  onClick={() => generateProtocolListReport([selectedEnrollmentDetail], protocols, animals, settings)}
-                  className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all shadow-sm"
-                  title="Print Detailed Status Report"
-                >
-                  <Printer className="w-5 h-5 text-blue-600" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const batch = selectedEnrollmentDetail;
+                      setSelectedEnrollmentDetail(null);
+                      handleOpenEditBatch(batch);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-2xl text-xs font-black transition-all border border-blue-200 shadow-xs"
+                    title="Edit Batch Settings"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    <span>Edit Batch</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const batch = selectedEnrollmentDetail;
+                      setSelectedEnrollmentDetail(null);
+                      handleDeleteBatch(batch);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-2xl text-xs font-black transition-all border border-rose-200 shadow-xs"
+                    title="Delete Batch"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Batch</span>
+                  </button>
+                  <button 
+                    onClick={() => generateProtocolListReport([selectedEnrollmentDetail], protocols, animals, settings)}
+                    className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all shadow-sm"
+                    title="Print Detailed Status Report"
+                  >
+                    <Printer className="w-5 h-5 text-blue-600" />
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -8189,33 +8569,65 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
               </div>
 
               <div>
-                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Timeline & Status</h5>
+                <div className="flex items-center justify-between mb-3 px-2">
+                  <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Timeline & Step Execution</h5>
+                  <span className="text-[9px] text-slate-400 font-bold">Click status to mark done/undone</span>
+                </div>
                 <div className="space-y-3">
                   {template?.steps.map((step, idx) => {
                     const isDone = selectedEnrollmentDetail.completedStepIndices.includes(idx);
                     const stepDate = dateUtils.addDays(selectedEnrollmentDetail.startDate, step.dayOffset);
                     return (
-                      <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${isDone ? 'bg-emerald-50/50 border-emerald-100 opacity-60' : 'bg-white border-slate-100'}`}>
+                      <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${isDone ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-slate-200'}`}>
                         <div className="flex items-center gap-4">
                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${isDone ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                             D{step.dayOffset}
                           </div>
                           <div>
-                            <p className="font-black text-slate-800 text-sm">{step.action}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-black text-slate-800 text-sm">{step.action}</p>
+                              {step.isAI && (
+                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded text-[8px] font-black uppercase">
+                                  AI
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{stepDate} {step.time ? `@ ${step.time}` : ''}</p>
                           </div>
                         </div>
-                        {isDone ? (
-                          <div className="flex items-center gap-2 text-emerald-600">
-                            <CheckCircle2 className="w-5 h-5" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Done</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 text-slate-300">
-                            <Clock className="w-5 h-5" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Planned</span>
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const current = selectedEnrollmentDetail.completedStepIndices || [];
+                            const next = isDone ? current.filter(i => i !== idx) : [...current, idx];
+                            const isFinished = template ? next.length === template.steps.length : false;
+                            const updated: ProtocolEnrollment = {
+                              ...selectedEnrollmentDetail,
+                              completedStepIndices: next,
+                              status: isFinished ? 'Completed' : 'Active'
+                            };
+                            updateEnrollment(updated);
+                            setSelectedEnrollmentDetail(updated);
+                            showToast(isDone ? `Step ${idx + 1} marked pending.` : `Step ${idx + 1} marked done.`);
+                          }}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
+                            isDone 
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200' 
+                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200'
+                          }`}
+                        >
+                          {isDone ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              <span>Done</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-4 h-4 text-slate-400" />
+                              <span>Mark Done</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     );
                   })}
@@ -8224,6 +8636,206 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
             </div>
           );
         })()}
+      </FormModal>
+
+      {/* Edit Protocol Batch Modal */}
+      <FormModal
+        title="Edit Protocol Batch"
+        isOpen={isEditBatchOpen && !!editingBatch}
+        onClose={() => {
+          setIsEditBatchOpen(false);
+          setEditingBatch(null);
+        }}
+      >
+        {editingBatch && (
+          <form onSubmit={handleSaveEditBatch} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Protocol Template</label>
+              <select
+                required
+                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black shadow-inner"
+                value={editingBatch.templateId}
+                onChange={e => setEditingBatch({ ...editingBatch, templateId: e.target.value })}
+              >
+                {protocols.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.steps.length} steps)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Start Date</label>
+                <input
+                  type="date"
+                  required
+                  className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black shadow-inner"
+                  value={editingBatch.startDate}
+                  onChange={e => setEditingBatch({ ...editingBatch, startDate: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Batch Status</label>
+                <select
+                  className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black shadow-inner"
+                  value={editingBatch.status}
+                  onChange={e => setEditingBatch({ ...editingBatch, status: e.target.value as any })}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Step Completion Overrides */}
+            {(() => {
+              const currentTemplate = protocols.find(p => p.id === editingBatch.templateId);
+              if (!currentTemplate) return null;
+              return (
+                <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      Step Progress ({editingBatch.completedStepIndices.length}/{currentTemplate.steps.length} completed)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allDone = editingBatch.completedStepIndices.length === currentTemplate.steps.length;
+                        setEditingBatch({
+                          ...editingBatch,
+                          completedStepIndices: allDone ? [] : currentTemplate.steps.map((_, i) => i)
+                        });
+                      }}
+                      className="text-[10px] font-black text-blue-600 hover:underline"
+                    >
+                      {editingBatch.completedStepIndices.length === currentTemplate.steps.length ? 'Clear All' : 'Mark All Done'}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {currentTemplate.steps.map((step, idx) => {
+                      const isChecked = editingBatch.completedStepIndices.includes(idx);
+                      return (
+                        <label key={idx} className="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer text-xs font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => {
+                              const newIndices = e.target.checked
+                                ? [...editingBatch.completedStepIndices, idx]
+                                : editingBatch.completedStepIndices.filter(i => i !== idx);
+                              setEditingBatch({
+                                ...editingBatch,
+                                completedStepIndices: newIndices
+                              });
+                            }}
+                            className="rounded text-blue-600 w-4 h-4"
+                          />
+                          <span className="font-black text-slate-500 w-8">D{step.dayOffset}</span>
+                          <span className="flex-1">{step.action}</span>
+                          {step.isAI && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded text-[9px] font-black">AI</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Manage Enrolled Cows */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Enrolled Animals ({editingBatch.animalIds.length})
+                </label>
+                <span className="text-[10px] text-slate-400 font-bold">Click tag to remove</span>
+              </div>
+
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
+                {editingBatch.animalIds.map(id => {
+                  const anim = animals.find(a => a.id === id);
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-700 shadow-xs"
+                    >
+                      <span>{anim?.tag || id}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBatch({
+                            ...editingBatch,
+                            animalIds: editingBatch.animalIds.filter(aId => aId !== id)
+                          });
+                        }}
+                        className="text-slate-400 hover:text-rose-600 p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Add Cows to Batch */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Add Cows to this Batch</label>
+                <input
+                  type="text"
+                  placeholder="Search cows by tag or breed to add..."
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black shadow-inner outline-none"
+                  value={editBatchAnimalSearch}
+                  onChange={e => setEditBatchAnimalSearch(e.target.value)}
+                />
+                <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-xl bg-white">
+                  {animals
+                    .filter(a => a.sex === 'Female' && !editingBatch.animalIds.includes(a.id))
+                    .filter(a => !editBatchAnimalSearch || a.tag.toLowerCase().includes(editBatchAnimalSearch.toLowerCase()) || (a.breed || '').toLowerCase().includes(editBatchAnimalSearch.toLowerCase()))
+                    .slice(0, 15)
+                    .map(a => (
+                      <div
+                        key={a.id}
+                        onClick={() => {
+                          setEditingBatch({
+                            ...editingBatch,
+                            animalIds: [...editingBatch.animalIds, a.id]
+                          });
+                        }}
+                        className="flex items-center justify-between px-3 py-2 hover:bg-blue-50 cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-xs text-slate-800">{a.tag}</span>
+                          <span className="text-[10px] text-slate-400">{a.breed || 'Unknown Breed'}</span>
+                        </div>
+                        <span className="text-[10px] font-black text-blue-600 uppercase">+ Add</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditBatchOpen(false);
+                  setEditingBatch(null);
+                }}
+                className="w-1/3 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="w-2/3 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-200"
+              >
+                Save Batch Changes
+              </button>
+            </div>
+          </form>
+        )}
       </FormModal>
 
       <FormModal title={editingReproId ? "Modify Repro Record" : "Log Repro Event"} isOpen={isReproFormOpen} onClose={() => { setIsReproFormOpen(false); setReproAnimalSearch(''); }}>
@@ -8650,57 +9262,358 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
         </form>
       </FormModal>
 
-      <FormModal title="Create Manual Protocol" isOpen={isTemplateFormOpen} onClose={() => setIsTemplateFormOpen(false)}>
-        <form onSubmit={handleAddTemplate} className="space-y-6">
+      <FormModal 
+        title={editingTemplateId ? "Edit Protocol Template" : "Create Protocol Template"} 
+        isOpen={isTemplateFormOpen} 
+        onClose={() => { 
+          setIsTemplateFormOpen(false); 
+          setEditingTemplateId(null); 
+          setNewTemplate({ name: '', description: '', steps: [{ dayOffset: 0, action: '', isAI: false, time: '08:00' }], isPredefined: false }); 
+        }}
+      >
+        <form onSubmit={handleSaveTemplate} className="space-y-6">
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Protocol Name *</label>
-            <input required className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="e.g. My Custom Heat Synch" value={newTemplate.name || ''} onChange={e => setNewTemplate({ ...newTemplate, name: e.target.value })} />
+            <input required className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="e.g. Ovsynch, Presynch, Custom Synch" value={newTemplate.name || ''} onChange={e => setNewTemplate({ ...newTemplate, name: e.target.value })} />
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Workflow Steps</label>
-            <button type="button" onClick={() => setNewTemplate({ ...newTemplate, steps: [...(newTemplate.steps || []), { dayOffset: 0, action: '', isAI: false, time: '08:00' }] })} className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:underline mb-2">
-              <Plus className="w-3 h-3" /> Add Step
-            </button>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description (Optional)</label>
+            <input className="w-full px-5 py-3.5 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner" placeholder="e.g. Standard synchronization protocol for lactating dairy cows" value={newTemplate.description || ''} onChange={e => setNewTemplate({ ...newTemplate, description: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Workflow Steps</label>
+              <button type="button" onClick={() => setNewTemplate({ ...newTemplate, steps: [...(newTemplate.steps || []), { dayOffset: 0, action: '', isAI: false, time: '08:00' }] })} className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:underline">
+                <Plus className="w-3.5 h-3.5" /> Add Step
+              </button>
+            </div>
             <div className="space-y-3">
               {newTemplate.steps?.map((step, idx) => (
-                <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3 relative group">
-                  <button type="button" onClick={() => setNewTemplate({ ...newTemplate, steps: newTemplate.steps?.filter((_, i) => i !== idx) })} className="absolute top-2 right-2 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3 relative">
+                  {(newTemplate.steps && newTemplate.steps.length > 1) && (
+                    <button
+                      type="button"
+                      onClick={() => setNewTemplate({ ...newTemplate, steps: newTemplate.steps?.filter((_, i) => i !== idx) })}
+                      className="absolute top-2 right-2 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all px-2 py-1 rounded-lg flex items-center gap-1 text-[10px] font-black shadow-2xs"
+                      title="Remove this step"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove</span>
+                    </button>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
-                    <input type="number" required placeholder="Day" className="px-3 py-2 bg-white rounded-lg text-xs font-bold border border-slate-100" value={step.dayOffset} onChange={e => {
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">Day Number</label>
+                      <input type="number" required placeholder="Day" className="w-full px-3 py-2 bg-white rounded-lg text-xs font-bold border border-slate-100" value={step.dayOffset} onChange={e => {
+                        const steps = [...(newTemplate.steps || [])];
+                        steps[idx].dayOffset = parseInt(e.target.value) || 0;
+                        setNewTemplate({ ...newTemplate, steps });
+                      }} />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">Time of Day</label>
+                      <input type="time" required className="w-full px-3 py-2 bg-white rounded-lg text-xs font-bold border border-slate-100" value={step.time || '08:00'} onChange={e => {
+                        const steps = [...(newTemplate.steps || [])];
+                        steps[idx].time = e.target.value;
+                        setNewTemplate({ ...newTemplate, steps });
+                      }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase">Action / Injection</label>
+                    <input required placeholder="e.g. GnRH Injection, PGF2a Injection, AI Insemination" className="w-full px-3 py-2 bg-white rounded-lg text-xs font-bold border border-slate-100" value={step.action} onChange={e => {
                       const steps = [...(newTemplate.steps || [])];
-                      steps[idx].dayOffset = parseInt(e.target.value) || 0;
-                      setNewTemplate({ ...newTemplate, steps });
-                    }} />
-                    <input type="time" required className="px-3 py-2 bg-white rounded-lg text-xs font-bold border border-slate-100" value={step.time || '08:00'} onChange={e => {
-                      const steps = [...(newTemplate.steps || [])];
-                      steps[idx].time = e.target.value;
+                      steps[idx].action = e.target.value;
                       setNewTemplate({ ...newTemplate, steps });
                     }} />
                   </div>
-                  <input required placeholder="Action (e.g. GnRH Injection)" className="w-full px-3 py-2 bg-white rounded-lg text-xs font-bold border border-slate-100" value={step.action} onChange={e => {
-                    const steps = [...(newTemplate.steps || [])];
-                    steps[idx].action = e.target.value;
-                    setNewTemplate({ ...newTemplate, steps });
-                  }} />
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex items-center gap-2 cursor-pointer bg-white p-2.5 rounded-xl border border-slate-100">
                     <input type="checkbox" checked={step.isAI} onChange={e => {
                       const steps = [...(newTemplate.steps || [])];
                       steps[idx].isAI = e.target.checked;
                       setNewTemplate({ ...newTemplate, steps });
-                    }} />
-                    <span className="text-[10px] font-black text-slate-500 uppercase">Triggers Insemination Log</span>
+                    }} className="rounded text-blue-600" />
+                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight">Triggers Sequential Insemination Workflow</span>
                   </label>
                 </div>
               ))}
             </div>
           </div>
-          <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-100">
-            Save Protocol Template
-          </button>
+          {editingTemplateId && (
+            <p className="text-[11px] text-blue-600 bg-blue-50 p-3 rounded-xl font-bold">
+              ℹ️ Updating this template will instantly propagate new steps to active enrolled batches.
+            </p>
+          )}
+          <div className="flex gap-3 pt-2">
+            {editingTemplateId && (
+              <button
+                type="button"
+                onClick={() => {
+                  const toDelete = protocols.find(p => p.id === editingTemplateId);
+                  if (toDelete) {
+                    setIsTemplateFormOpen(false);
+                    handleDeleteTemplate(toDelete);
+                  }
+                }}
+                className="w-1/3 py-5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest border border-rose-200 transition-all flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete</span>
+              </button>
+            )}
+            <button
+              type="submit"
+              className={`${editingTemplateId ? 'w-2/3' : 'w-full'} py-5 bg-blue-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-100 hover:bg-blue-700 transition-colors`}
+            >
+              {editingTemplateId ? "Save Changes" : "Create Protocol Template"}
+            </button>
+          </div>
         </form>
       </FormModal>
+
+      {/* Sequential Insemination Entry Workflow Modal */}
+      {aiWorkflow && (() => {
+        const currEnrollment = enrollments.find(e => e.id === aiWorkflow.groupId);
+        if (!currEnrollment) return null;
+        const currTemplate = protocols.find(t => t.id === currEnrollment.templateId);
+        const currAnimalId = currEnrollment.animalIds[aiWorkflow.currentAnimalIndex];
+        const currAnimal = animals.find(a => a.id === currAnimalId);
+        const totalAnimals = currEnrollment.animalIds.length;
+        const progressPercent = Math.round(((aiWorkflow.currentAnimalIndex) / totalAnimals) * 100);
+
+        return (
+          <div className="fixed inset-0 z-[220] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-white rounded-[2.5rem] p-8 max-w-xl w-full shadow-2xl border border-slate-100 space-y-6 relative overflow-hidden">
+              {/* Header & Step progress */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200/60 rounded-full text-[10px] font-black uppercase tracking-wider">
+                      Timed Insemination Step
+                    </span>
+                    <span className="text-xs font-black text-slate-400">
+                      {currTemplate?.name || 'Protocol'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmDialog({
+                        isOpen: true,
+                        message: "Abort the sequential insemination workflow? Any cows already saved remain recorded.",
+                        onConfirm: () => {
+                          setAiWorkflow(null);
+                          setConfirmDialog(d => ({ ...d, isOpen: false }));
+                        }
+                      });
+                    }}
+                    className="text-slate-400 hover:text-slate-600 p-1"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="flex items-end justify-between mb-2">
+                  <h3 className="text-2xl font-black text-slate-800">
+                    Cow {aiWorkflow.currentAnimalIndex + 1} of {totalAnimals}
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                    <span className="text-emerald-600 font-black">{aiWorkflow.inseminatedCount} Inseminated</span>
+                    <span>•</span>
+                    <span className="text-rose-500 font-black">{aiWorkflow.skippedCount} Skipped</span>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                  <div 
+                    className="h-full bg-amber-500 transition-all duration-300 rounded-full"
+                    style={{ width: `${Math.max(5, progressPercent)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Current Animal Profile Card */}
+              <div className="p-5 bg-gradient-to-br from-slate-50 to-amber-50/30 rounded-2xl border border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-xl shadow-lg shadow-amber-500/20">
+                    {(currAnimal?.tag || '??').slice(-2)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-black text-slate-800">Tag #{currAnimal?.tag || currAnimalId}</span>
+                      {currAnimal?.name && <span className="text-xs font-bold text-slate-500">({currAnimal.name})</span>}
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+                      <span>{currAnimal?.breed || 'Dairy'}</span>
+                      <span>•</span>
+                      <span>{currAnimal?.herd || 'Main Pen'}</span>
+                      <span>•</span>
+                      <span className="text-amber-600 font-black">{currAnimal?.status || 'Active'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Lactation</span>
+                  <span className="text-sm font-black text-slate-700">L{currAnimal?.lactationCount || 1}</span>
+                </div>
+              </div>
+
+              {/* Insemination Inputs Form */}
+              <form onSubmit={handleAIStepSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+                      Insemination Date *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm font-black shadow-inner"
+                      value={aiWorkflow.date || dateUtils.today()}
+                      onChange={e => setAiWorkflow({ ...aiWorkflow, date: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+                      Technician / Inseminator *
+                    </label>
+                    <input
+                      required
+                      list="all-technicians"
+                      placeholder="Doctor / Tech Name"
+                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm font-black shadow-inner"
+                      value={aiWorkflow.technician}
+                      onChange={e => setAiWorkflow({ ...aiWorkflow, technician: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+                      Semen Straw / Bull Name *
+                    </label>
+                    <input
+                      required
+                      list="all-semen"
+                      placeholder="e.g. AltaZazzle, Holstein Straw #102"
+                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm font-black shadow-inner"
+                      value={aiWorkflow.semenName}
+                      onChange={e => setAiWorkflow({ ...aiWorkflow, semenName: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+                      Notes (Optional)
+                    </label>
+                    <input
+                      placeholder="e.g. Good mucus, Left horn"
+                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm font-black shadow-inner"
+                      value={aiWorkflow.details}
+                      onChange={e => setAiWorkflow({ ...aiWorkflow, details: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 font-semibold px-1">
+                  ⚡ Technician & Semen auto-fill across all cows in this batch for rapid single-click entry.
+                </p>
+
+                {/* Actions: 1-Click Skip vs Save Insemination & Next */}
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleAIStepSkip}
+                    className="py-4 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 shadow-sm"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>Insemination Not Done</span>
+                    </div>
+                    <span className="text-[9px] text-rose-500 font-bold lowercase">1-click skip • logs nothing</span>
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="py-4 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1 shadow-lg shadow-emerald-600/25"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Check className="w-4 h-4 text-white" />
+                      <span>{aiWorkflow.currentAnimalIndex === totalAnimals - 1 ? 'Save & Finish AI' : 'Save & Next Cow'}</span>
+                    </div>
+                    <span className="text-[9px] text-emerald-100 font-bold lowercase">records repro event</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* AI Batch Completion Summary Modal */}
+      {aiSummaryModal && (
+        <div className="fixed inset-0 z-[230] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-100 space-y-6 text-center">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-3xl mx-auto flex items-center justify-center shadow-lg shadow-emerald-100">
+              <Check className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded-full text-[10px] font-black uppercase tracking-wider">
+                Step Completed
+              </span>
+              <h3 className="text-2xl font-black text-slate-800">
+                Batch AI Finished!
+              </h3>
+              <p className="text-xs text-slate-500 font-bold">
+                {aiSummaryModal.templateName}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="text-center">
+                <span className="text-[10px] font-black text-slate-400 uppercase">Evaluated</span>
+                <p className="text-xl font-black text-slate-800">{aiSummaryModal.totalCount}</p>
+              </div>
+              <div className="text-center">
+                <span className="text-[10px] font-black text-emerald-600 uppercase">Inseminated</span>
+                <p className="text-xl font-black text-emerald-600">{aiSummaryModal.inseminatedCount}</p>
+              </div>
+              <div className="text-center">
+                <span className="text-[10px] font-black text-rose-500 uppercase">Skipped</span>
+                <p className="text-xl font-black text-rose-500">{aiSummaryModal.skippedCount}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+              All <strong>{aiSummaryModal.inseminatedCount}</strong> recorded inseminations have been automatically added to the <strong>Reproduction Ledger</strong> and animal profiles.
+            </p>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAiSummaryModal(null);
+                  setView('repro');
+                }}
+                className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-slate-200 transition-all"
+              >
+                View Repro Ledger
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiSummaryModal(null)}
+                className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/30"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       
       <FormModal title={editingHealthId ? "Edit Clinical Record" : "Clinical Discovery & Treatments"} isOpen={isHealthFormOpen} onClose={() => { setIsHealthFormOpen(false); setHealthAnimalSearch(''); setSelectedMultipleAnimals([]); }}>
@@ -9541,10 +10454,129 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
         />
       )}
 
+      {/* Date Checks Modal for Sticky Notes */}
+      {selectedBadgeDate && (
+        <FormModal
+          title={`Pregnancy Checks — ${formatDateReadable(selectedBadgeDate)}`}
+          isOpen={!!selectedBadgeDate}
+          onClose={() => setSelectedBadgeDate(null)}
+        >
+          <div className="space-y-6">
+            {(() => {
+              const checks = pdChecks.filter(c => c.date === selectedBadgeDate);
+              const pregnantCount = checks.filter(c => c.pregnancyResult === 'Pregnant').length;
+              const openCount = checks.filter(c => c.pregnancyResult === 'Open').length;
+
+              return (
+                <>
+                  <div className="grid grid-cols-3 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Checks</p>
+                      <p className="text-xl font-black text-slate-800">{checks.length}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Pregnant (+ve)</p>
+                      <p className="text-xl font-black text-emerald-600">{pregnantCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-rose-600">Open (-ve)</p>
+                      <p className="text-xl font-black text-rose-600">{openCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5 max-h-[55vh] overflow-y-auto pr-1">
+                    {checks.length === 0 ? (
+                      <p className="text-center py-8 text-sm text-slate-400 font-bold">No diagnosis records found for this date.</p>
+                    ) : (
+                      checks.map(c => {
+                        const a = animals.find(anim => anim.id === c.animalId);
+                        const isPregnant = c.pregnancyResult === 'Pregnant';
+                        return (
+                          <div
+                            key={c.id}
+                            className="p-4 bg-white border border-slate-200 rounded-2xl flex items-center justify-between shadow-xs hover:border-blue-300 transition-all"
+                          >
+                            <div className="flex items-center gap-3.5">
+                              <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs ${isPregnant ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                                {isPregnant ? '+VE' : '-VE'}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (a) {
+                                        setSelectedBadgeDate(null);
+                                        setSelectedAnimal(a);
+                                      }
+                                    }}
+                                    className="text-sm font-black text-slate-800 hover:text-blue-600 cursor-pointer"
+                                  >
+                                    Cow {a?.tag || 'Unknown'}
+                                  </button>
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${isPregnant ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                    {c.pregnancyResult || 'Diagnosed'}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                                  {a?.breed || 'Dairy'} &bull; {c.daysInCalf ? `${c.daysInCalf} days in calf` : 'Days unspec.'} {c.technician ? `&bull; Tech: ${c.technician}` : ''}
+                                </p>
+                                {c.notes && <p className="text-[11px] text-slate-600 font-medium mt-1 italic">&ldquo;{c.notes}&rdquo;</p>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {a && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedBadgeDate(null);
+                                    setSelectedAnimal(a);
+                                  }}
+                                  className="px-3.5 py-1.5 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-xl text-xs font-black transition-all border border-slate-200 cursor-pointer"
+                                >
+                                  View Cow
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = selectedBadgeDate;
+                        setSelectedBadgeDate(null);
+                        setPdStartDate(d);
+                        setPdEndDate(d);
+                        setView('pd-check');
+                      }}
+                      className="px-4 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Open in PD Check Bay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBadgeDate(null)}
+                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </FormModal>
+      )}
+
       {/* Mobile Quick Actions Modal */}
       <QuickActionModal
-        isOpen={isMobileQuickActionsOpen}
-        onClose={() => setIsMobileQuickActionsOpen(false)}
+        isOpen={isMobileQuickActionOpen}
+        onClose={() => setIsMobileQuickActionOpen(false)}
         onAddAnimal={() => {
           setEditingAnimalId(null);
           setNewAnimal({ tag: '', breed: 'Holstein', sex: 'Female', herd: 'Main Herd', dob: dateUtils.today() });
@@ -9629,6 +10661,20 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
       <datalist id="all-medicines">
         {medicines.map(m => (
           <option key={m.id} value={m.name}>{m.name} ({m.category})</option>
+        ))}
+      </datalist>
+
+      {/* Datalist for all technicians */}
+      <datalist id="all-technicians">
+        {(settings.technicians || []).map(t => (
+          <option key={t} value={t}>{t}</option>
+        ))}
+      </datalist>
+
+      {/* Datalist for all semen catalog straws */}
+      <datalist id="all-semen">
+        {(settings.semenCatalog || []).map(s => (
+          <option key={s} value={s}>{s}</option>
         ))}
       </datalist>
 

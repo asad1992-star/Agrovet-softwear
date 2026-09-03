@@ -25,15 +25,13 @@ export const useFarm = (currentUserEmail?: string) => {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [purchases, setPurchases] = useState<MedicinePurchase[]>([]);
   const [enrollments, setEnrollments] = useState<ProtocolEnrollment[]>([]);
-  const [customProtocols, setCustomProtocols] = useState<ProtocolTemplate[]>([]);
+  const [protocols, setProtocols] = useState<ProtocolTemplate[]>(PREDEFINED_PROTOCOLS);
   const [settings, setSettings] = useState<FarmSettings>(DEFAULT_SETTINGS);
   const [dismissedAlertIds, setDismissedAlertIds] = useState<string[]>([]);
   const [penMovements, setPenMovements] = useState<PenMovement[]>([]);
   const [loading, setLoading] = useState(true);
 
   const isDataLoaded = useRef(false);
-
-  const allTemplates = useMemo(() => [...PREDEFINED_PROTOCOLS, ...customProtocols], [customProtocols]);
 
   const loadData = useCallback(async (emailToUse?: string) => {
     const targetEmail = emailToUse || currentUserEmail;
@@ -48,7 +46,7 @@ export const useFarm = (currentUserEmail?: string) => {
       setMedicines(workspace.medicines);
       setPurchases(workspace.purchases);
       setEnrollments(workspace.enrollments);
-      setCustomProtocols(workspace.customProtocols);
+      setProtocols(workspace.protocols && workspace.protocols.length > 0 ? workspace.protocols : PREDEFINED_PROTOCOLS);
       setSettings(workspace.settings);
       setDismissedAlertIds(workspace.dismissedAlertIds || []);
       setPenMovements(workspace.penMovements || []);
@@ -106,9 +104,9 @@ export const useFarm = (currentUserEmail?: string) => {
 
   useEffect(() => {
     if (isDataLoaded.current && !loading) {
-      storageService.saveCustomProtocols(customProtocols, currentUserEmail);
+      storageService.saveProtocols(protocols, currentUserEmail);
     }
-  }, [customProtocols, loading, currentUserEmail]);
+  }, [protocols, loading, currentUserEmail]);
 
   useEffect(() => {
     if (isDataLoaded.current && !loading) {
@@ -204,8 +202,8 @@ export const useFarm = (currentUserEmail?: string) => {
   }, [animals, reproEvents, healthEvents, enrollments, settings]);
 
   const allAlerts = useMemo(() => {
-    return generateAlerts(animals, reproEvents, healthEvents, enrollments, allTemplates, settings, penMovements);
-  }, [animals, reproEvents, healthEvents, enrollments, allTemplates, settings, penMovements]);
+    return generateAlerts(animals, reproEvents, healthEvents, enrollments, protocols, settings, penMovements);
+  }, [animals, reproEvents, healthEvents, enrollments, protocols, settings, penMovements]);
 
   // Filtered active alerts (excluding dismissed ones)
   const alerts = useMemo(() => {
@@ -388,9 +386,31 @@ export const useFarm = (currentUserEmail?: string) => {
   const updateEnrollment = (updated: ProtocolEnrollment) => setEnrollments(prev => prev.map(e => e.id === updated.id ? updated : e));
   const deleteEnrollment = (id: string) => setEnrollments(prev => prev.filter(e => e.id !== id));
 
-  const addCustomProtocol = (p: ProtocolTemplate) => setCustomProtocols(prev => [p, ...prev]);
-  const updateCustomProtocol = (updated: ProtocolTemplate) => setCustomProtocols(prev => prev.map(p => p.id === updated.id ? updated : p));
-  const deleteProtocolTemplate = (id: string) => setCustomProtocols(prev => prev.filter(p => p.id !== id));
+  const addProtocolTemplate = (p: ProtocolTemplate) => setProtocols(prev => [p, ...prev]);
+  
+  const updateProtocolTemplate = (updated: ProtocolTemplate) => {
+    setProtocols(prev => prev.map(p => p.id === updated.id ? updated : p));
+    // 1-Update existing active groups enrolled in this template
+    setEnrollments(prev => prev.map(en => {
+      if (en.templateId === updated.id && en.status === 'Active') {
+        const sanitizedCompleted = (en.completedStepIndices || []).filter(idx => idx < updated.steps.length);
+        const isNowCompleted = updated.steps.length > 0 && sanitizedCompleted.length === updated.steps.length;
+        return {
+          ...en,
+          completedStepIndices: sanitizedCompleted,
+          status: isNowCompleted ? 'Completed' : en.status
+        };
+      }
+      return en;
+    }));
+  };
+
+  const deleteProtocolTemplate = (id: string) => {
+    setProtocols(prev => prev.filter(p => p.id !== id));
+  };
+
+  const addCustomProtocol = addProtocolTemplate;
+  const updateCustomProtocol = updateProtocolTemplate;
 
   const updateSettings = (s: FarmSettings) => setSettings(s);
 
@@ -418,8 +438,9 @@ export const useFarm = (currentUserEmail?: string) => {
     medicines,
     purchases,
     enrollments,
-    protocols: allTemplates,
-    customProtocols,
+    protocols,
+    customProtocols: protocols,
+    allTemplates: protocols,
     alerts,
     dismissedAlerts,
     allAlerts,
@@ -449,6 +470,8 @@ export const useFarm = (currentUserEmail?: string) => {
     addEnrollment,
     updateEnrollment,
     deleteEnrollment,
+    addProtocolTemplate,
+    updateProtocolTemplate,
     addCustomProtocol,
     updateCustomProtocol,
     deleteProtocolTemplate,

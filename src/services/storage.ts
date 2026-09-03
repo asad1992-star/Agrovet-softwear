@@ -223,7 +223,10 @@ export const storageService = {
   getEnrollments: (email?: string) => getScopedData<ProtocolEnrollment[]>('enrollments', [], email),
   saveEnrollments: (data: ProtocolEnrollment[], email?: string) => saveScopedData('enrollments', data, email),
 
-  getCustomProtocols: (email?: string) => getScopedData<ProtocolTemplate[]>('protocols', [], email),
+  getProtocols: (email?: string) => getScopedData<ProtocolTemplate[]>('protocols', PREDEFINED_PROTOCOLS, email),
+  saveProtocols: (data: ProtocolTemplate[], email?: string) => saveScopedData('protocols', data, email),
+
+  getCustomProtocols: (email?: string) => getScopedData<ProtocolTemplate[]>('protocols', PREDEFINED_PROTOCOLS, email),
   saveCustomProtocols: (data: ProtocolTemplate[], email?: string) => saveScopedData('protocols', data, email),
 
   getMedicines: (email?: string) => getScopedData<Medicine[]>('medicines', MOCK_MEDICINES, email),
@@ -250,14 +253,14 @@ export const storageService = {
 
   // Clear or load fresh workspace for switched account
   loadUserWorkspace: async (userEmail: string) => {
-    const [animals, reproEvents, healthEvents, medicines, purchases, enrollments, customProtocols, settings, dismissedAlertIds, penMovements] = await Promise.all([
+    const [animals, reproEvents, healthEvents, medicines, purchases, enrollments, protocols, settings, dismissedAlertIds, penMovements] = await Promise.all([
       storageService.getAnimals(userEmail),
       storageService.getReproEvents(userEmail),
       storageService.getHealthEvents(userEmail),
       storageService.getMedicines(userEmail),
       storageService.getPurchases(userEmail),
       storageService.getEnrollments(userEmail),
-      storageService.getCustomProtocols(userEmail),
+      storageService.getProtocols(userEmail),
       storageService.getSettings(userEmail),
       storageService.getDismissedAlertIds(userEmail),
       storageService.getPenMovements(userEmail)
@@ -270,7 +273,8 @@ export const storageService = {
       medicines,
       purchases,
       enrollments,
-      customProtocols,
+      protocols: protocols && protocols.length > 0 ? protocols : PREDEFINED_PROTOCOLS,
+      customProtocols: protocols && protocols.length > 0 ? protocols : PREDEFINED_PROTOCOLS,
       settings,
       dismissedAlertIds: dismissedAlertIds || [],
       penMovements: penMovements || []
