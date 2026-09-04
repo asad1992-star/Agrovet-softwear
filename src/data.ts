@@ -145,6 +145,9 @@ export const MOCK_ALERTS: Alert[] = [
 ];
 
 export const MOCK_MEDICINES: Medicine[] = [
+  { id: 'm-ketoject', name: 'Ketoject', category: 'Injection', unit: 'ml', packs: 5, loose: 60, loosePerPack: 100, minStockLevel: 80 },
+  { id: 'm-ketop', name: 'KetoP', category: 'Injection', unit: 'ml', packs: 4, loose: 30, loosePerPack: 50, minStockLevel: 50 },
+  { id: 'm-ketoprofen', name: 'Ketoprofen 10%', category: 'Injection', unit: 'ml', packs: 3, loose: 85, loosePerPack: 100, minStockLevel: 100 },
   { id: 'm1', name: 'Oxytetracycline LA', category: 'Injection', unit: 'ml', packs: 3, loose: 40, loosePerPack: 100, minStockLevel: 100 },
   { id: 'm2', name: 'Penicillin G', category: 'Injection', unit: 'ml', packs: 5, loose: 15, loosePerPack: 100, minStockLevel: 120 },
   { id: 'm3', name: 'Masti-Clear Syringe', category: 'Liquid', unit: 'dose', packs: 10, loose: 4, loosePerPack: 12, minStockLevel: 24 },

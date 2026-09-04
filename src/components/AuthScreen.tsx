@@ -26,7 +26,7 @@ interface AuthScreenProps {
 }
 
 type AuthMode = 'login' | 'signup' | 'forgot_password';
-type OtpStep = 'enter_details' | 'verify_otp';
+type OtpStep = 'enter_details' | 'verify_otp' | 'enter_new_password';
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -218,23 +218,48 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
         setSuccessMsg('Account created successfully! Welcome to AgroVet Pro.');
         setTimeout(() => onLoginSuccess(user), 600);
       } else if (mode === 'forgot_password') {
-        if (!passwordCriteria.isValid) {
-          setError(passwordCriteria.error || 'New password must meet security requirements.');
-          setLoading(false);
-          return;
+        // First verify the OTP against the server / authService
+        const verifyRes = await authService.verifyOtp(email, enteredOtp);
+        if (!verifyRes.success) {
+          throw new Error(verifyRes.error || 'Incorrect 4-digit verification code.');
         }
-        if (password !== confirmPassword) {
-          setError('Passwords do not match.');
-          setLoading(false);
-          return;
-        }
-        const user = await authService.resetPassword(email, enteredOtp, password);
-        setSuccessMsg('Password reset successfully! Full farm records restored.');
-        setTimeout(() => onLoginSuccess(user), 800);
+        // OTP matches! Go ahead to enter new password
+        setOtpStep('enter_new_password');
+        setError('');
       }
     } catch (err: any) {
-      setError(err.message || 'Verification failed.');
+      setError(err.message || 'Incorrect 4-digit code. Please try again.');
       setAttemptsRemaining(prev => Math.max(0, prev - 1));
+      setOtpDigits(['', '', '', '']);
+      otpInputRefs[0].current?.focus();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 4. Save New Password after successful OTP verification
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+
+    if (!passwordCriteria.isValid) {
+      setError(passwordCriteria.error || 'New password must meet security requirements.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match. Please confirm your new password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const enteredOtp = otpDigits.join('');
+      const user = await authService.resetPassword(email, enteredOtp, password);
+      setSuccessMsg('Password reset successfully! Full farm records restored.');
+      setTimeout(() => onLoginSuccess(user), 800);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update password. Please retry.');
     } finally {
       setLoading(false);
     }
@@ -288,12 +313,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">
               {mode === 'login' && 'Welcome Back'}
               {mode === 'signup' && (otpStep === 'verify_otp' ? 'Verify Email Address' : 'Create Farm Account')}
-              {mode === 'forgot_password' && (otpStep === 'verify_otp' ? 'Verify OTP & Reset Password' : 'Reset Account Password')}
+              {mode === 'forgot_password' && (
+                otpStep === 'verify_otp'
+                  ? 'Verify Recovery OTP'
+                  : otpStep === 'enter_new_password'
+                  ? 'Create New Password'
+                  : 'Reset Account Password'
+              )}
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
               {mode === 'login' && 'Log in with your registered email and password.'}
               {mode === 'signup' && (otpStep === 'verify_otp' ? `Enter the 4-digit code sent to ${email}` : 'Get started with your own secure, private farm database.')}
-              {mode === 'forgot_password' && (otpStep === 'verify_otp' ? `Enter the 4-digit OTP sent to ${email} and choose a new password.` : 'Enter your registered email to receive a 4-digit recovery code.')}
+              {mode === 'forgot_password' && (
+                otpStep === 'verify_otp'
+                  ? `Enter the 4-digit OTP sent to ${email}. If it matches, you will proceed to set your new password.`
+                  : otpStep === 'enter_new_password'
+                  ? 'Choose a strong new password to secure your farm management account.'
+                  : 'Enter your registered email to receive a 4-digit recovery code.'
+              )}
             </p>
           </div>
 
@@ -383,6 +420,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
+              </button>
+
+              <div className="relative my-4 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+                <span className="relative bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-400">or</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const demoUser: AuthUser = {
+                    id: 'user_asad',
+                    email: 'va.asad92@gmail.com',
+                    name: 'Dr. Asad Mehmood'
+                  };
+                  authService.setCurrentUser(demoUser);
+                  onLoginSuccess(demoUser);
+                }}
+                className="w-full py-3 bg-emerald-50 hover:bg-emerald-100 active:scale-[0.98] text-emerald-800 border border-emerald-200/90 rounded-xl font-black uppercase tracking-wider text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>Quick Access (Dr. Asad / Field Operative)</span>
               </button>
             </form>
           )}
@@ -608,71 +667,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
-              {/* Extra Password fields if Forgot Password mode */}
-              {mode === 'forgot_password' && (
-                <div className="space-y-3 pt-2 border-t border-slate-100">
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                      New Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-10 pr-12 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:border-blue-500 outline-none"
-                        placeholder="••••••••"
-                      />
-                      <button
-                        type="button"
-                        onPointerDown={(e) => e.preventDefault()}
-                        onClick={() => setShowPassword(prev => !prev)}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 active:bg-slate-300 transition-all cursor-pointer"
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4 text-blue-600" /> : <Eye className="w-4 h-4 text-slate-400" />}
-                      </button>
-                    </div>
-
-                    {/* Criteria checklist */}
-                    <div className="grid grid-cols-2 gap-1 text-[10px] mt-1.5 p-2 bg-slate-50 rounded-lg">
-                      <span className={passwordCriteria.hasUppercase ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Uppercase (A-Z)</span>
-                      <span className={passwordCriteria.hasLowercase ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Lowercase (a-z)</span>
-                      <span className={passwordCriteria.hasNumber ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Number (0-9)</span>
-                      <span className={passwordCriteria.hasSpecial ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Special (!@#$)</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                      Confirm New Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        required
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full pl-10 pr-12 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:border-blue-500 outline-none"
-                        placeholder="••••••••"
-                      />
-                      <button
-                        type="button"
-                        onPointerDown={(e) => e.preventDefault()}
-                        onClick={() => setShowConfirmPassword(prev => !prev)}
-                        aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 active:bg-slate-300 transition-all cursor-pointer"
-                      >
-                        {showConfirmPassword ? <EyeOff className="w-4 h-4 text-blue-600" /> : <Eye className="w-4 h-4 text-slate-400" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Status Info: Countdown, Attempts, Resend */}
               <div className="flex items-center justify-between text-xs text-slate-500 px-1 pt-1">
                 <span className="font-semibold text-slate-600">
@@ -716,12 +710,100 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                     </>
                   ) : (
                     <>
-                      <span>{mode === 'signup' ? 'Verify & Sign Up' : 'Verify & Reset'}</span>
+                      <span>{mode === 'signup' ? 'Verify & Sign Up' : 'Verify Code & Proceed'}</span>
                       <CheckCircle2 className="w-4 h-4" />
                     </>
                   )}
                 </button>
               </div>
+            </form>
+          )}
+
+          {/* ================= STEP 3 FOR FORGOT PASSWORD: ENTER NEW PASSWORD ================= */}
+          {mode === 'forgot_password' && otpStep === 'enter_new_password' && (
+            <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-800 flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span className="font-semibold">Code verified successfully. Enter your new password below.</span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                  New Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:border-blue-500 outline-none"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={() => setShowPassword(prev => !prev)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 active:bg-slate-300 transition-all cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4 text-blue-600" /> : <Eye className="w-4 h-4 text-slate-400" />}
+                  </button>
+                </div>
+
+                {/* Criteria checklist */}
+                <div className="grid grid-cols-2 gap-1 text-[10px] mt-1.5 p-2 bg-slate-50 rounded-lg">
+                  <span className={passwordCriteria.hasUppercase ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Uppercase (A-Z)</span>
+                  <span className={passwordCriteria.hasLowercase ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Lowercase (a-z)</span>
+                  <span className={passwordCriteria.hasNumber ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Number (0-9)</span>
+                  <span className={passwordCriteria.hasSpecial ? 'text-emerald-600 font-bold' : 'text-slate-400'}>&bull; Special (!@#$)</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full pl-10 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:border-blue-500 outline-none"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={() => setShowConfirmPassword(prev => !prev)}
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 active:bg-slate-300 transition-all cursor-pointer"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4 text-blue-600" /> : <Eye className="w-4 h-4 text-slate-400" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || !password || password !== confirmPassword || !passwordCriteria.isValid}
+                className="w-full py-3.5 mt-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl font-black uppercase tracking-wider text-xs shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Activity className="w-4 h-4 animate-spin" />
+                    <span>Updating Password...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Save New Password</span>
+                  </>
+                )}
+              </button>
             </form>
           )}
 

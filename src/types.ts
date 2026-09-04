@@ -93,6 +93,17 @@ export interface PenMapping {
   sucklingCalves?: string;
 }
 
+export interface NavigationTabsConfig {
+  dashboard: boolean;
+  animals: boolean;      // Herd Hub
+  repro: boolean;        // Reproduction
+  'pd-check': boolean;   // PD Check
+  health: boolean;       // Health Bay
+  protocols: boolean;    // Protocol Lab
+  reports: boolean;      // Report Center
+  settings: boolean;     // Configurations
+}
+
 export interface FarmSettings {
   gestationDays: number;
   closeupDays: number;
@@ -109,6 +120,7 @@ export interface FarmSettings {
   lastBackupDate?: string;
   penMapping?: PenMapping;
   autoMoveHeiferOnPD?: boolean;
+  navigationTabs?: NavigationTabsConfig;
 }
 
 export interface Animal {
@@ -231,3 +243,5 @@ export interface MedicinePurchase {
   notes?: string;
   recordedBy?: string;
 }
+
+export type ViewState = 'dashboard' | 'animals' | 'repro' | 'health' | 'protocols' | 'settings' | 'pd-check' | 'reports';

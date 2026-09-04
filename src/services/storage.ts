@@ -1,4 +1,4 @@
-import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, Medicine, MedicinePurchase, PenMovement, PenMapping } from '../types';
+import { Animal, ReproductionEvent, HealthEvent, FarmSettings, ProtocolEnrollment, ProtocolTemplate, Medicine, MedicinePurchase, PenMovement, PenMapping, NavigationTabsConfig } from '../types';
 import { MOCK_ANIMALS, MOCK_REPRO_EVENTS, MOCK_HEALTH_EVENTS, PREDEFINED_PROTOCOLS, MOCK_MEDICINES, MOCK_MEDICINE_PURCHASES } from '../data';
 import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -16,6 +16,17 @@ export const DEFAULT_PEN_MAPPING: PenMapping = {
   growingHeifers: 'Growing Heifers',
   postWeanedHeifers: 'Post Weaned Heifers',
   sucklingCalves: 'Suckling Calves'
+};
+
+export const DEFAULT_NAVIGATION_TABS: NavigationTabsConfig = {
+  dashboard: true,
+  animals: true,
+  repro: true,
+  'pd-check': true,
+  health: true,
+  protocols: true,
+  reports: true,
+  settings: true
 };
 
 export const DEFAULT_SETTINGS: FarmSettings = {
@@ -42,7 +53,8 @@ export const DEFAULT_SETTINGS: FarmSettings = {
   semenCatalog: [],
   autoBackupEnabled: true,
   penMapping: DEFAULT_PEN_MAPPING,
-  autoMoveHeiferOnPD: true
+  autoMoveHeiferOnPD: true,
+  navigationTabs: DEFAULT_NAVIGATION_TABS
 };
 
 export type SyncState = 'synced' | 'pending' | 'syncing' | 'offline' | 'error';
@@ -229,7 +241,15 @@ export const storageService = {
   getCustomProtocols: (email?: string) => getScopedData<ProtocolTemplate[]>('protocols', PREDEFINED_PROTOCOLS, email),
   saveCustomProtocols: (data: ProtocolTemplate[], email?: string) => saveScopedData('protocols', data, email),
 
-  getMedicines: (email?: string) => getScopedData<Medicine[]>('medicines', MOCK_MEDICINES, email),
+  getMedicines: async (email?: string): Promise<Medicine[]> => {
+    const list = await getScopedData<Medicine[]>('medicines', MOCK_MEDICINES, email);
+    const existingNames = new Set(list.map(m => m.name.toLowerCase()));
+    const missingMocks = MOCK_MEDICINES.filter(m => !existingNames.has(m.name.toLowerCase()));
+    if (missingMocks.length > 0) {
+      return [...list, ...missingMocks];
+    }
+    return list;
+  },
   saveMedicines: (data: Medicine[], email?: string) => saveScopedData('medicines', data, email),
 
   getPurchases: (email?: string) => getScopedData<MedicinePurchase[]>('purchases', MOCK_MEDICINE_PURCHASES, email),
@@ -246,7 +266,8 @@ export const storageService = {
     return {
       ...DEFAULT_SETTINGS,
       ...raw,
-      statusColors: { ...DEFAULT_SETTINGS.statusColors, ...(raw?.statusColors || {}) }
+      statusColors: { ...DEFAULT_SETTINGS.statusColors, ...(raw?.statusColors || {}) },
+      navigationTabs: { ...DEFAULT_NAVIGATION_TABS, ...(raw?.navigationTabs || {}) }
     };
   },
   saveSettings: (data: FarmSettings, email?: string) => saveScopedData('settings', data, email),

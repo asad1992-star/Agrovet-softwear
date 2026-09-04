@@ -72,7 +72,8 @@ import {
   ArrowRightLeft,
   Warehouse,
   Sprout,
-  Lock
+  Lock,
+  LogOut
 } from 'lucide-react';
 import {
   BarChart,
@@ -99,7 +100,8 @@ import {
   ProtocolTemplate,
   ProtocolStep,
   Medicine,
-  MedicinePurchase
+  MedicinePurchase,
+  NavigationTabsConfig
 } from './types';
 import { PregnancyCheckModal } from './components/PregnancyCheckModal';
 import { QuickActionModal } from './components/QuickActionModal';
@@ -111,6 +113,7 @@ import { QuickRestockModal } from './components/QuickRestockModal';
 import { QuickDispenseModal } from './components/QuickDispenseModal';
 import { BackupSettingsSection } from './components/BackupSettingsSection';
 import { PenSettingsSection } from './components/PenSettingsSection';
+import { SettingsHub } from './components/SettingsHub';
 import { DailyActionSheetModal } from './components/DailyActionSheetModal';
 import { generateDailyActionSheet } from './services/dailyActionSheetService';
 import { FertilityAnalyticsModal } from './components/FertilityAnalyticsModal';
@@ -187,8 +190,11 @@ import { auth } from './services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { AuthScreen } from './components/AuthScreen';
 import { WhatsAppFooter } from './components/WhatsAppFooter';
+import { WhatsNewPopup, WhatsNewHistoryModal } from './components/WhatsNewModal';
+import { hasUnseenAppUpdate, markAppUpdateAsSeen, CURRENT_APP_VERSION } from './data/updatesData';
 import { authService, AuthUser } from './services/authService';
 import { AGROVET_LOGO_BASE64 } from './utils/logoBase64';
+import { MedicineAutocomplete } from './components/MedicineAutocomplete';
 
 const StatCard = ({ title, value, icon: Icon, colorClass, trend, onClick }: any) => (
   <div
@@ -281,7 +287,32 @@ const getBadgeStyleForDate = (dateStr: string) => {
   };
 };
 
-function App({ user, onLogout, previewMode = 'desktop' }: any) {
+function App({ user: propUser, onLogout: propOnLogout, previewMode = 'desktop' }: any) {
+  // Current Authenticated User state
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    if (propUser) return propUser;
+    const stored = authService.getCurrentUser();
+    if (stored) return stored;
+    // Default logged-in operator session on initial load
+    const defaultUser: AuthUser = {
+      id: 'user_asad',
+      email: 'va.asad92@gmail.com',
+      name: 'Dr. Asad Mehmood'
+    };
+    authService.setCurrentUser(defaultUser);
+    return defaultUser;
+  });
+
+  const handleSignOut = () => {
+    authService.logout();
+    setCurrentUser(null);
+    if (propOnLogout) {
+      try {
+        propOnLogout();
+      } catch (e) {}
+    }
+  };
+
   const {
     loading,
     animals,
@@ -330,7 +361,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     dismissAlert,
     restoreAlert,
     clearAllDismissedAlerts
-  } = useFarm(user?.email);
+  } = useFarm(currentUser?.email);
 
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
 
@@ -346,7 +377,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
   const isSimulated = false;
 
   const [view, setView] = useState<ViewState>('dashboard');
-  const [herdViewMode, setHerdViewMode] = useState<HerdViewMode>('medium');
+  const [herdViewMode, setHerdViewMode] = useState<HerdViewMode>('list');
   const [herdTab, setHerdTab] = useState<HerdTab>('adults');
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -366,6 +397,48 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
   const [isEnrollmentFormOpen, setIsEnrollmentFormOpen] = useState(false);
   const [isTemplateFormOpen, setIsTemplateFormOpen] = useState(false);
   const [selectedEnrollmentDetail, setSelectedEnrollmentDetail] = useState<ProtocolEnrollment | null>(null);
+
+  // Fallback to active view if current tab is toggled OFF in Customize Navigation
+  useEffect(() => {
+    if (settings.navigationTabs && view !== 'settings') {
+      const isCurrentViewEnabled = settings.navigationTabs[view as keyof NavigationTabsConfig] ?? true;
+      if (!isCurrentViewEnabled) {
+        const tabKeys: ViewState[] = ['dashboard', 'animals', 'repro', 'pd-check', 'health', 'protocols', 'reports', 'settings'];
+        const firstEnabled = tabKeys.find((tab) => (settings.navigationTabs?.[tab as keyof NavigationTabsConfig] ?? true));
+        if (firstEnabled) {
+          setView(firstEnabled);
+        } else {
+          setView('settings');
+        }
+      }
+    }
+  }, [settings.navigationTabs, view]);
+
+  // What's New System State & Version Tracking
+  const [isWhatsNewPopupOpen, setIsWhatsNewPopupOpen] = useState(false);
+  const [isWhatsNewHistoryOpen, setIsWhatsNewHistoryOpen] = useState(false);
+  const [hasUnseenUpdate, setHasUnseenUpdate] = useState(false);
+
+  useEffect(() => {
+    // Only check if user has not seen the current version update
+    if (hasUnseenAppUpdate()) {
+      setIsWhatsNewPopupOpen(true);
+      setHasUnseenUpdate(true);
+    }
+  }, []);
+
+  const handleDismissWhatsNew = () => {
+    markAppUpdateAsSeen();
+    setIsWhatsNewPopupOpen(false);
+    setHasUnseenUpdate(false);
+  };
+
+  const handleOpenWhatsNewHistory = () => {
+    markAppUpdateAsSeen();
+    setIsWhatsNewPopupOpen(false);
+    setHasUnseenUpdate(false);
+    setIsWhatsNewHistoryOpen(true);
+  };
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -457,7 +530,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
 
   // Medicine Inventory & Usage states
   const [healthSubTab, setHealthSubTab] = useState<'treatments' | 'inventory' | 'reports'>('treatments');
-  const [medicineViewMode, setMedicineViewMode] = useState<HerdViewMode>('medium');
+  const [medicineViewMode, setMedicineViewMode] = useState<HerdViewMode>('list');
   const [medicineStockFilter, setMedicineStockFilter] = useState<'All' | 'In Stock' | 'Low Stock' | 'Out of Stock'>('All');
   const [isMedicineFormOpen, setIsMedicineFormOpen] = useState(false);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
@@ -1949,8 +2022,10 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     setPdNotes('');
     setIsNewPdFormOpen(false);
 
-    // Return to dashboard!
-    setView('dashboard');
+    // If not already on PD Check hub, return to dashboard
+    if (view !== 'pd-check') {
+      setView('dashboard');
+    }
   };
 
   const handleSaveOldPdCheck = (e: React.FormEvent) => {
@@ -2760,6 +2835,20 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
     </button>
   );
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+        <AuthScreen
+          onLoginSuccess={(loggedInUser) => {
+            authService.setCurrentUser(loggedInUser);
+            setCurrentUser(loggedInUser);
+            setToastMessage(`Welcome back, ${loggedInUser.name || loggedInUser.email}!`);
+          }}
+        />
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-inter p-6 text-center">
@@ -2796,7 +2885,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
               <div className="flex items-center gap-1.5">
                 <h1 className="text-2xl font-black text-slate-800 tracking-tighter">AgroVet<span className="text-emerald-600">Pro</span></h1>
                 <span className="text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-md border border-emerald-200 uppercase">
-                  V2.5
+                  v{CURRENT_APP_VERSION}
                 </span>
               </div>
               <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mt-0.5">
@@ -2805,15 +2894,70 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
             </div>
           </div>
 
-          <nav className="flex-1 space-y-3">
-            <NavItem icon={LayoutDashboard} label="Dashboard" id="dashboard" />
-            <NavItem icon={Users} label="Herd Hub" id="animals" />
-            <NavItem icon={CalendarRange} label="Reproduction" id="repro" />
-            <NavItem icon={CheckCircle2} label="PD Check" id="pd-check" />
-            <NavItem icon={Stethoscope} label="Health Bay" id="health" />
-            <NavItem icon={FlaskConical} label="Protocol Lab" id="protocols" />
-            <NavItem icon={FileText} label="Report Center" id="reports" />
-            <NavItem icon={SettingsIcon} label="Configurations" id="settings" />
+          <nav className="flex-1 space-y-2.5 overflow-y-auto pr-1">
+            {(settings.navigationTabs?.dashboard ?? true) && (
+              <NavItem icon={LayoutDashboard} label="Dashboard" id="dashboard" />
+            )}
+            {(settings.navigationTabs?.animals ?? true) && (
+              <NavItem icon={Users} label="Herd Hub" id="animals" />
+            )}
+            {(settings.navigationTabs?.repro ?? true) && (
+              <NavItem icon={CalendarRange} label="Reproduction" id="repro" />
+            )}
+            {(settings.navigationTabs?.['pd-check'] ?? true) && (
+              <NavItem icon={CheckCircle2} label="PD Check" id="pd-check" />
+            )}
+            {(settings.navigationTabs?.health ?? true) && (
+              <NavItem icon={Stethoscope} label="Health Bay" id="health" />
+            )}
+            {(settings.navigationTabs?.protocols ?? true) && (
+              <NavItem icon={FlaskConical} label="Protocol Lab" id="protocols" />
+            )}
+            {(settings.navigationTabs?.reports ?? true) && (
+              <NavItem icon={FileText} label="Report Center" id="reports" />
+            )}
+            {(settings.navigationTabs?.settings ?? true) && (
+              <NavItem icon={SettingsIcon} label="Configurations" id="settings" />
+            )}
+
+            {/* What's New Menu Entry with Update Notification Dot */}
+            <div className="pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  handleOpenWhatsNewHistory();
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-5 py-3.5 rounded-[1.5rem] transition-all duration-300 group cursor-pointer ${
+                  hasUnseenUpdate
+                    ? 'bg-amber-50/80 hover:bg-amber-100/90 text-amber-900 border border-amber-200/80 shadow-xs'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-blue-600'
+                }`}
+                title="View software release notes and updates"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <Sparkles className={`w-5 h-5 ${hasUnseenUpdate ? 'text-amber-600 animate-bounce' : 'text-slate-400 group-hover:text-blue-600'} transition-colors`} />
+                    {hasUnseenUpdate && (
+                      <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-bold text-sm tracking-tight">What's New</span>
+                </div>
+                {hasUnseenUpdate ? (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-500 text-white shadow-xs">
+                    UPDATE
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black text-slate-400">
+                    v{CURRENT_APP_VERSION}
+                  </span>
+                )}
+              </button>
+            </div>
           </nav>
 
           <div className="mt-auto p-6 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden">
@@ -2824,11 +2968,24 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-black text-slate-800 truncate leading-tight mb-0.5">{settings.farmName}</p>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{user?.email || 'Field Operative'}</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{currentUser?.email || 'Field Operative'}</p>
               </div>
+              <button
+                type="button"
+                onClick={() => { setView('settings'); setIsSidebarOpen(false); }}
+                className="p-2.5 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-white hover:shadow-xs transition-all cursor-pointer"
+                title="Open Configurations & Customize Navigation"
+              >
+                <SettingsIcon className="w-5 h-5" />
+              </button>
             </div>
-            <button onClick={onLogout} className="w-full py-3.5 bg-white border border-slate-200 text-slate-600 text-[11px] font-black rounded-[1.25rem] uppercase tracking-widest hover:bg-slate-100 hover:text-slate-800 transition-all shadow-sm">
-              Secure Sign Out
+            <button 
+              type="button"
+              onClick={handleSignOut} 
+              className="w-full py-3.5 bg-white border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-[11px] font-black rounded-[1.25rem] uppercase tracking-widest transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+            >
+              <LogOut className="w-4 h-4 text-rose-500" />
+              <span>Secure Sign Out</span>
             </button>
           </div>
         </div>
@@ -2875,10 +3032,16 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
               <div className="flex items-center gap-2 sm:gap-4">
                 <button
                   onClick={() => setIsSidebarOpen(true)}
-                  className={`min-w-[44px] min-h-[44px] p-2.5 bg-slate-100/90 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-2xl flex items-center justify-center transition-all shadow-xs ${isDesktop ? 'hidden' : 'flex'}`}
+                  className={`relative min-w-[44px] min-h-[44px] p-2.5 bg-slate-100/90 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-2xl flex items-center justify-center transition-all shadow-xs ${isDesktop ? 'hidden' : 'flex'}`}
                   title="Open Menu"
                 >
                   <Menu className="w-5 h-5 text-slate-700 stroke-[2.5]" />
+                  {hasUnseenUpdate && (
+                    <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                    </span>
+                  )}
                 </button>
                 <div className="flex items-center gap-2 sm:gap-3">
                   <img
@@ -2999,6 +3162,32 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                   {alerts.length > 0 && (
                     <span className="absolute top-2 right-2 w-3 h-3 bg-rose-500 rounded-full border-2 border-white shadow-sm shadow-rose-200 animate-pulse"></span>
                   )}
+                </button>
+
+                {/* What's New Header Action */}
+                <button
+                  type="button"
+                  onClick={handleOpenWhatsNewHistory}
+                  className="relative min-w-[44px] min-h-[44px] px-3 py-2 bg-amber-50 hover:bg-amber-100 active:scale-95 text-amber-900 border border-amber-200/80 rounded-2xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer group"
+                  title="What's New & Release Updates"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
+                  <span className="hidden xl:inline text-xs font-black tracking-tight">What's New</span>
+                  <span className="text-[10px] font-black bg-amber-200/80 px-1.5 py-0.5 rounded-md text-amber-900">v{CURRENT_APP_VERSION}</span>
+                  {hasUnseenUpdate && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white animate-ping"></span>
+                  )}
+                </button>
+
+                {/* Header User / Sign Out Action */}
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="min-w-[44px] min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 active:scale-95 text-slate-700 border border-slate-200/60 rounded-2xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer group"
+                  title={`Signed in as ${currentUser?.email || 'User'}. Click to Sign Out.`}
+                >
+                  <LogOut className="w-4 h-4 text-slate-500 group-hover:text-rose-600 group-hover:scale-110 transition-all" />
+                  <span className="hidden md:inline text-xs font-black tracking-tight">Sign Out</span>
                 </button>
               </div>
             </>
@@ -3264,53 +3453,59 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                 </div>
               </section>
 
-              {/* FEATURE 4: Date Badges (Sticky Notes) */}
+              {/* Recent Pregnancy Checks by Date - Clean Executive Cards */}
               {dateBadges.length > 0 && (
-                <section className="space-y-6">
+                <section className="space-y-4">
                   <div className="flex items-center justify-between px-2">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-indigo-600 rounded-xl shadow-md shadow-indigo-100">
-                        <CalendarIcon className="w-5 h-5 text-white" />
+                      <div className="p-2.5 bg-indigo-600 rounded-2xl shadow-md shadow-indigo-100 text-white">
+                        <CalendarIcon className="w-5 h-5" />
                       </div>
                       <div>
                         <h3 className="text-xl font-black text-slate-800 tracking-tight">Recent Pregnancy Checks by Date</h3>
-                        <p className="text-xs text-slate-400 font-bold mt-0.5">Click a sticky badge to see all animal checks recorded on that date</p>
+                        <p className="text-xs text-slate-400 font-bold mt-0.5">Click any exam batch card to view recorded diagnoses</p>
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-6 overflow-x-auto pb-4 pt-1 snap-x scrollbar-thin scrollbar-thumb-slate-200">
-                    {dateBadges.map((badge) => (
-                      <div
-                        key={badge.date}
-                        onClick={() => setSelectedBadgeDate(badge.date)}
-                        className={`flex-shrink-0 snap-start cursor-pointer group relative w-48 h-48 rounded-[2rem] border p-6 flex flex-col justify-between shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1 hover:rotate-1 ${badge.bg}`}
-                      >
-                        {/* Decorative tape / accent on sticky note */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1.5 w-12 h-4 bg-white/40 backdrop-blur-sm rounded-b-md border border-white/20 shadow-[0_2px_4px_rgba(0,0,0,0.02)]" />
-                        
-                        <div className="flex items-start justify-between">
-                          <span className="text-[10px] font-black uppercase tracking-widest bg-white/60 backdrop-blur-sm px-2 py-1 rounded-lg border border-white/40">
-                            {badge.badgeNum}
-                          </span>
-                          <span className="text-2xl filter drop-shadow-sm group-hover:scale-125 transition-transform duration-300">{badge.icon}</span>
-                        </div>
-                        
-                        <div className="space-y-1">
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Check Date</p>
-                          <p className="text-base font-black tracking-tight leading-tight group-hover:text-blue-700 transition-colors">
-                            {formatDateReadable(badge.date)}
-                          </p>
-                        </div>
-                        
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-500/10">
-                          <span className="text-[10px] font-bold">Checks: {badge.checks.length}</span>
-                          <div className="flex items-center gap-2 text-[10px] font-black">
-                            <span className="text-emerald-700"> {badge.checks.filter(e => e.pregnancyResult === 'Pregnant').length}</span>
-                            <span className="text-rose-700"> {badge.checks.filter(e => e.pregnancyResult !== 'Pregnant').length}</span>
+                  <div className="flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-thin scrollbar-thumb-slate-200">
+                    {dateBadges.map((badge) => {
+                      const pregCount = badge.checks.filter(e => e.pregnancyResult === 'Pregnant').length;
+                      const openCount = badge.checks.filter(e => e.pregnancyResult !== 'Pregnant').length;
+                      return (
+                        <div
+                          key={badge.date}
+                          onClick={() => setSelectedBadgeDate(badge.date)}
+                          className="flex-shrink-0 snap-start cursor-pointer group bg-white w-56 rounded-2xl border border-slate-200/80 p-5 flex flex-col justify-between shadow-xs hover:shadow-md hover:border-indigo-300 transition-all active:scale-[0.98]"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200">
+                              {badge.badgeNum}
+                            </span>
+                            <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg">
+                              {badge.checks.length} check{badge.checks.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 mb-4">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Exam Date</p>
+                            <p className="text-base font-black text-slate-800 tracking-tight group-hover:text-indigo-600 transition-colors">
+                              {formatDateReadable(badge.date)}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs font-black">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              <span className="text-emerald-700">{pregCount} Pregnant</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                              <span className="text-rose-700">{openCount} Open</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               )}
@@ -3773,27 +3968,6 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full lg:w-auto">
-                    <div className="flex p-1 bg-slate-100 rounded-2xl shadow-inner shrink-0">
-                      {[
-                        { id: 'list', icon: LayoutList },
-                        { id: 'small', icon: LayoutGrid },
-                        { id: 'medium', icon: Grid2X2 },
-                        { id: 'large', icon: Square },
-                      ].map((mode) => (
-                        <button
-                          key={mode.id}
-                          onClick={() => setHerdViewMode(mode.id as HerdViewMode)}
-                          className={`p-2.5 sm:p-3 rounded-xl transition-all ${herdViewMode === mode.id
-                            ? 'bg-white text-blue-600 shadow-sm'
-                            : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                          title={`${mode.id.charAt(0).toUpperCase() + mode.id.slice(1)} View`}
-                        >
-                          <mode.icon className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
-                      ))}
-                    </div>
-
                     <button
                       id="move-to-pen-header-btn"
                       onClick={() => {
@@ -3984,7 +4158,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                   </div>
                 </div>
               ) : herdTab === 'calves' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                <div className={herdViewMode === 'list' ? 'flex flex-col gap-3' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6'}>
                   {calfAnimals.length === 0 ? (
                     <div className="col-span-full py-20 text-center">
                       <p className="text-slate-400 font-black uppercase tracking-widest text-sm">No calves recorded yet</p>
@@ -3992,6 +4166,87 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                     </div>
                   ) : calfAnimals.map((calf, index) => {
                     const mother = animals.find(a => a.id === calf.motherId);
+                    if (herdViewMode === 'list') {
+                      return (
+                        <div
+                          key={calf.id}
+                          onClick={() => setSelectedAnimal(calf)}
+                          className="group bg-white px-6 py-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-4">
+                            <span className="text-[10px] font-black text-slate-300 w-4">#{index + 1}</span>
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                              {calf.tag.slice(-2)}
+                            </div>
+                            <div>
+                              <p className="font-black text-slate-800 group-hover:text-emerald-600 flex items-center gap-2">
+                                <span>{calf.tag}</span>
+                                <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                  {calf.sex} Calf
+                                </span>
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">
+                                {calf.breed || 'Calf'} • Born: {calf.dob || 'N/A'} {calf.herd ? `• Pen: ${calf.herd}` : ''}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-6 justify-between md:justify-end">
+                            {mother && (
+                              <div className="hidden lg:flex flex-col items-end">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Dam (Mother)</span>
+                                <span className="text-xs font-black text-slate-700">Cow {mother.tag}</span>
+                              </div>
+                            )}
+                            {calf.fatherId && (
+                              <div className="hidden xl:flex flex-col items-end">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sire (Bull)</span>
+                                <span className="text-xs font-black text-indigo-600">{calf.fatherId}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const text = generateAnimalShareText(calf, reproEvents, healthEvents);
+                                  shareToWhatsApp(text);
+                                }}
+                                className="p-2 hover:bg-emerald-50 rounded-lg text-slate-400 hover:text-emerald-600 transition-all"
+                                title="Share Calf on WhatsApp"
+                              >
+                                <MessageCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setMoveToPenAnimalId(calf.id);
+                                  setIsMoveToPenModalOpen(true);
+                                }}
+                                className="p-2 hover:bg-indigo-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
+                                title="Move Calf to Pen"
+                              >
+                                <ArrowRightLeft className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => handleEditAnimal(calf, e)}
+                                className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-all"
+                                title="Edit Calf"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteAnimal(calf, e)}
+                                className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
+                                title="Delete Calf"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div
                         key={calf.id}
@@ -5315,32 +5570,6 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                             ))}
                           </div>
 
-                          {/* Herd Hub-Style View Mode Switcher */}
-                          <div className="flex p-1 bg-slate-100 rounded-xl shadow-inner">
-                            {[
-                              { id: 'list', icon: LayoutList, label: 'List View' },
-                              { id: 'small', icon: LayoutGrid, label: 'Compact Grid' },
-                              { id: 'medium', icon: Grid2X2, label: 'Cards' },
-                              { id: 'large', icon: Square, label: 'Expanded' },
-                            ].map((mode) => {
-                              const IconComponent = mode.icon;
-                              return (
-                                <button
-                                  key={mode.id}
-                                  onClick={() => setMedicineViewMode(mode.id as HerdViewMode)}
-                                  title={mode.label}
-                                  className={`p-2.5 rounded-lg transition-all ${
-                                    medicineViewMode === mode.id
-                                      ? 'bg-white text-rose-600 shadow-sm'
-                                      : 'text-slate-400 hover:text-slate-600'
-                                  }`}
-                                >
-                                  <IconComponent className="w-4 h-4" />
-                                </button>
-                              );
-                            })}
-                          </div>
-
                           {/* Export PDF Button */}
                           <button
                             onClick={() => {
@@ -6404,7 +6633,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                   }
 
                   return (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="flex flex-col gap-4">
                       {filteredBatches.map(batch => {
                         const template = protocols.find(t => t.id === batch.templateId);
                         const progress = ((batch.completedStepIndices || []).length / (template?.steps?.length || 1)) * 100;
@@ -6413,7 +6642,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                         const nextStepDate = nextStep ? dateUtils.addDays(batch.startDate, nextStep.dayOffset) : null;
 
                         return (
-                          <div key={batch.id} onClick={() => setSelectedEnrollmentDetail(batch)} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 flex flex-col group relative overflow-hidden cursor-pointer">
+                          <div key={batch.id} onClick={() => setSelectedEnrollmentDetail(batch)} className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group relative overflow-hidden cursor-pointer">
                             <div className="flex items-start justify-between mb-8">
                               <div className="flex items-center gap-5">
                                 <div className="w-16 h-16 bg-amber-50 rounded-[1.75rem] flex items-center justify-center text-amber-600 shadow-inner group-hover:bg-amber-500 group-hover:text-white transition-all duration-500">
@@ -6576,31 +6805,28 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                       });
 
                       return (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="flex flex-col gap-3">
                           {Object.entries(grouped).map(([templateId, group]) => (
                             <div
                               key={templateId}
-                              className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 cursor-pointer group"
+                              className="bg-white px-6 py-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all cursor-pointer group flex items-center justify-between"
                               onClick={() => setSelectedHistoryProtocolId(templateId)}
                             >
-                              <div className="flex items-start justify-between mb-6">
-                                <div className="flex items-center gap-4">
-                                  <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 shadow-inner">
-                                    <History className="w-7 h-7" />
-                                  </div>
-                                  <div>
-                                    <h5 className="font-black text-slate-800 text-xl group-hover:text-blue-600 transition-colors">{group.template.name}</h5>
-                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{(group.template?.steps || []).length} Steps</p>
-                                  </div>
+                              <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center text-slate-500 shadow-inner">
+                                  <History className="w-6 h-6" />
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-3xl font-black text-slate-600">{group.enrollments.length}</p>
-                                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Records</p>
+                                <div>
+                                  <h5 className="font-black text-slate-800 text-base group-hover:text-blue-600 transition-colors">{group.template.name}</h5>
+                                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{(group.template?.steps || []).length} Steps • {group.template.description || 'Standard synchronization'}</p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 group-hover:text-blue-600 transition-colors mt-6">
-                                <span>Click to view history</span>
-                                <ChevronRight className="w-3.5 h-3.5" />
+                              <div className="flex items-center gap-6">
+                                <div className="text-right">
+                                  <p className="text-xl font-black text-slate-700">{group.enrollments.length}</p>
+                                  <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Records</p>
+                                </div>
+                                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                               </div>
                             </div>
                           ))}
@@ -6641,60 +6867,48 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <div className="flex flex-col gap-3">
                             {protocolEnrollments.map(enrollment => {
                               const animal = animals.find(a => a.id === (enrollment as any).animalId || enrollment.animalIds?.[0]);
                               const progress = (enrollment.completedStepIndices.length / template.steps.length) * 100;
                               return (
-                                <div key={enrollment.id} onClick={() => setSelectedEnrollmentDetail(enrollment)} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer">
-                                  <div className="flex items-start justify-between mb-6">
-                                    <div className="flex items-center gap-4">
-                                      <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-black text-lg border border-slate-100">
-                                        {(animal?.tag || '??').slice(-2)}
-                                      </div>
-                                      <div>
-                                        <h5 className="font-black text-slate-800 text-xl">{(enrollment.animalIds?.length > 1) ? `Batch (${enrollment.animalIds.length})` : animal?.tag || 'Unknown'}</h5>
-                                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Started: {enrollment.startDate}</p>
-                                      </div>
+                                <div key={enrollment.id} onClick={() => setSelectedEnrollmentDetail(enrollment)} className="bg-white px-6 py-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer">
+                                  <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-500 font-black text-xs border border-slate-100">
+                                      {(animal?.tag || '??').slice(-2)}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full ${enrollment.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
-                                        {enrollment.status}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenEditBatch(enrollment);
-                                        }}
-                                        title="Edit Batch"
-                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-black transition-all border border-blue-200 cursor-pointer shadow-xs"
-                                      >
-                                        <Edit3 className="w-3.5 h-3.5" />
-                                        <span className="hidden sm:inline">Edit</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteBatch(enrollment);
-                                        }}
-                                        title="Delete Batch"
-                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-black transition-all border border-rose-200 cursor-pointer shadow-xs"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                        <span className="hidden sm:inline">Delete</span>
-                                      </button>
+                                    <div>
+                                      <h5 className="font-black text-slate-800 text-sm">{(enrollment.animalIds?.length > 1) ? `Batch (${enrollment.animalIds.length} animals)` : `Cow ${animal?.tag || 'Unknown'}`}</h5>
+                                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Started: {enrollment.startDate} • Progress: {Math.round(progress)}%</p>
                                     </div>
                                   </div>
-                                  <div className="space-y-3 mb-4">
-                                    <div className="flex items-center justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                      <span>Progress: {enrollment.completedStepIndices.length}/{template.steps.length} steps</span>
-                                      <span>{Math.round(progress)}%</span>
-                                    </div>
-                                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                                      <div className="h-full bg-slate-400 transition-all" style={{ width: `${progress}%` }}></div>
-                                    </div>
+                                  <div className="flex items-center gap-3 justify-between sm:justify-end">
+                                    <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full ${enrollment.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                                      {enrollment.status}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenEditBatch(enrollment);
+                                      }}
+                                      title="Edit Batch"
+                                      className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-black transition-all border border-blue-200 cursor-pointer shadow-xs"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                      <span className="hidden sm:inline">Edit</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteBatch(enrollment);
+                                      }}
+                                      title="Delete Batch"
+                                      className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
                                   </div>
                                 </div>
                               );
@@ -6736,80 +6950,45 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                     <Plus className="w-4 h-4" /> + Create Protocol Template
                   </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="flex flex-col gap-3.5">
                   {protocols.map(p => (
-                    <div key={p.id} className="bg-white p-7 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between relative group">
-                      <div>
-                        {/* Header: Title, Type Badge & Always-Visible Action Buttons */}
-                        <div className="flex items-start justify-between gap-3 mb-5">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-3 rounded-2xl shrink-0 ${p.isPredefined ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'}`}>
-                              <FlaskConical className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <h5 className="font-black text-slate-800 text-lg leading-snug group-hover:text-blue-600 transition-colors">{p.name}</h5>
-                              <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md inline-block mt-0.5 ${
-                                p.isPredefined ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-blue-50 text-blue-700 border border-blue-100'
-                              }`}>
-                                {p.isPredefined ? 'Standard Protocol' : 'Custom Protocol'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Always-Visible Edit and Delete Action Buttons */}
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditTemplate(p)}
-                              title="Edit Protocol Template"
-                              className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-black transition-all border border-blue-200 shadow-xs"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                              <span>Edit</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTemplate(p)}
-                              title="Delete Protocol Template"
-                              className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-black transition-all border border-rose-200 shadow-xs"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
-                          </div>
+                    <div key={p.id} className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative group">
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className={`p-3 rounded-2xl shrink-0 ${p.isPredefined ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'}`}>
+                          <FlaskConical className="w-5 h-5" />
                         </div>
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <h5 className="font-black text-slate-800 text-base leading-snug group-hover:text-blue-600 transition-colors">{p.name}</h5>
+                            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md inline-block ${
+                              p.isPredefined ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-blue-50 text-blue-700 border border-blue-100'
+                            }`}>
+                              {p.isPredefined ? 'Standard Protocol' : 'Custom Protocol'}
+                            </span>
+                            <span className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-black text-slate-600 uppercase tracking-wider">
+                              {p.steps.length} Steps • {p.steps[p.steps.length - 1]?.dayOffset || 0} Days
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 font-semibold line-clamp-1">
+                            {p.description || 'Standard reproductive synchronization protocol.'}
+                          </p>
 
-                        <p className="text-xs text-slate-500 font-semibold mb-5 line-clamp-2">
-                          {p.description || 'Standard reproductive synchronization protocol.'}
-                        </p>
-
-                        <div className="space-y-2 mb-6">
-                          {p.steps.map((step, idx) => (
-                            <div key={idx} className="flex items-center gap-2 text-[10px] text-slate-600 font-bold bg-slate-50 p-2 rounded-xl border border-slate-100">
-                              <span className="w-8 h-5 bg-white border border-slate-200 rounded text-center leading-5 font-black text-slate-700 flex-shrink-0">
-                                D{step.dayOffset}
-                              </span>
-                              <span className="truncate flex-1 font-black text-slate-700">{step.action}</span>
-                              {step.isAI && (
-                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300/70 rounded text-[8px] font-black uppercase">
-                                  AI Step
-                                </span>
-                              )}
-                              {step.time && <span className="text-slate-400 flex-shrink-0">@ {step.time}</span>}
-                            </div>
-                          ))}
+                          {/* Steps timeline in list view */}
+                          <div className="flex items-center gap-1.5 flex-wrap pt-2">
+                            {p.steps.map((step, idx) => (
+                              <div key={idx} className="flex items-center gap-1 text-[10px] text-slate-600 font-bold bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                                <span className="font-black text-slate-700">D{step.dayOffset}:</span>
+                                <span className="text-slate-600 font-semibold">{step.action}</span>
+                                {step.isAI && (
+                                  <span className="px-1 py-0.2 bg-amber-100 text-amber-800 rounded text-[8px] font-black">AI</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-auto">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tighter">
-                            {p.steps.length} Steps
-                          </span>
-                          <span className="px-2.5 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tighter">
-                            {p.steps[p.steps.length - 1]?.dayOffset || 0} Days
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-2 justify-end shrink-0 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100">
                         <button
                           type="button"
                           onClick={() => {
@@ -6817,10 +6996,28 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                             setProtocolAnimalSearch('');
                             setIsEnrollmentFormOpen(true);
                           }}
-                          className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-500/20"
+                          className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-500/20"
                         >
                           <Zap className="w-3.5 h-3.5" />
                           <span>Enroll Cows</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditTemplate(p)}
+                          title="Edit Protocol Template"
+                          className="flex items-center gap-1 px-3 py-2.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-black transition-all border border-blue-200 shadow-xs"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(p)}
+                          title="Delete Protocol Template"
+                          className="flex items-center gap-1 px-3 py-2.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-xs font-black transition-all border border-rose-200 shadow-xs"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
                         </button>
                       </div>
                     </div>
@@ -7087,364 +7284,30 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
           )}
 
           {view === 'settings' && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto space-y-10">
-              <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm">
-                <div className="flex items-center gap-6 mb-12">
-                  <div className="bg-blue-600 p-4 rounded-[1.5rem] shadow-xl shadow-blue-100">
-                    <SettingsIcon className="w-8 h-8 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-black text-slate-800 tracking-tight">System Parameters</h3>
-                    <p className="text-xs text-slate-400 font-black uppercase tracking-[0.2em]">Reproduction Bio-Settings</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Average Gestation (Days)</label>
-                    <input
-                      type="number"
-                      className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                      value={settings.gestationDays}
-                      onChange={(e) => updateSettings({ ...settings, gestationDays: parseInt(e.target.value) || 283 })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Preg Check Window (Days)</label>
-                    <input
-                      type="number"
-                      className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                      value={settings.pregnancyCheckDays}
-                      onChange={(e) => updateSettings({ ...settings, pregnancyCheckDays: parseInt(e.target.value) || 30 })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Dry Period (Days)</label>
-                    <input
-                      type="number"
-                      className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                      value={settings.dryPeriodDays}
-                      onChange={(e) => updateSettings({ ...settings, dryPeriodDays: parseInt(e.target.value) || 60 })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Closeup Phase (Days)</label>
-                    <input
-                      type="number"
-                      className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                      value={settings.closeupDays}
-                      onChange={(e) => updateSettings({ ...settings, closeupDays: parseInt(e.target.value) || 21 })}
-                    />
-                  </div>
-                </div>
-                <div className="mt-10 space-y-6">
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Farm Identity</h4>
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Farm Name</label>
-                    <input
-                      type="text"
-                      className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                      value={settings.farmName}
-                      onChange={(e) => updateSettings({ ...settings, farmName: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="mt-10 space-y-6">
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Status Color Palette</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {([
-                      { key: 'active', label: 'Active' },
-                      { key: 'pregnant', label: 'Pregnant' },
-                      { key: 'sick', label: 'Sick' },
-                      { key: 'dry', label: 'Dry' },
-                      { key: 'closeup', label: 'Closeup' },
-                      { key: 'inProtocol', label: 'In Protocol' },
-                      { key: 'inseminated', label: 'Inseminated' },
-                      { key: 'observation', label: 'Observation' },
-                    ] as const).map(({ key, label }) => (
-                      <div key={key} className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div className="w-10 h-10 rounded-xl border-2 border-slate-200 overflow-hidden shadow-inner">
-                          <input
-                            type="color"
-                            className="w-12 h-12 -m-1 cursor-pointer border-none"
-                            value={settings.statusColors[key]}
-                            onChange={(e) => updateSettings({ ...settings, statusColors: { ...settings.statusColors, [key]: e.target.value } })}
-                          />
-                        </div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-12 pt-10 border-t border-slate-100 flex items-center justify-between">
-                  <p className="text-xs text-slate-400 font-bold italic">Auto-Sync via Firebase</p>
-                  <button onClick={() => window.location.reload()} className="flex items-center gap-3 bg-slate-800 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-lg scale-100 hover:scale-[1.02]">
-                    <Save className="w-5 h-5" /> Sync Data
-                  </button>
-                </div>
-                {/* Pen / Housing Category Mapping & Herd Alignment */}
-                <PenSettingsSection
-                  settings={settings}
-                  updateSettings={updateSettings}
-                  animals={animals}
-                  reproEvents={reproEvents}
-                  penMovements={penMovements}
-                  onAnimalsUpdated={(updatedAnimals, newMovements) => {
-                    saveAnimalsDirectly(updatedAnimals);
-                    savePenMovementsDirectly([...newMovements, ...penMovements].slice(0, 200));
-                  }}
-                  onShowToast={(msg) => setToastMessage(msg)}
-                />
-
-                {/* Group Management */}
-                <div className="mt-8 pt-8 border-t border-slate-100">
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-4">Herd Group Management</h4>
-                  <div className="space-y-3">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        placeholder="New group name (e.g. Elite A)"
-                        className="flex-1 px-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                        value={newGroupName}
-                        onChange={e => setNewGroupName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && newGroupName.trim()) {
-                            e.preventDefault();
-                            const groups = settings.customGroups || [];
-                            if (!groups.includes(newGroupName.trim())) {
-                              updateSettings({ ...settings, customGroups: [...groups, newGroupName.trim()] });
-                            }
-                            setNewGroupName('');
-                          }
-                        }}
-                      />
-                      <button
-                        onClick={() => {
-                          if (newGroupName.trim()) {
-                            const groups = settings.customGroups || [];
-                            if (!groups.includes(newGroupName.trim())) {
-                              updateSettings({ ...settings, customGroups: [...groups, newGroupName.trim()] });
-                            }
-                            setNewGroupName('');
-                          }
-                        }}
-                        className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(settings.customGroups || []).map((group, idx) => (
-                        <div key={group} className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
-                          <span className="text-[10px] font-black text-slate-300">#{idx + 1}</span>
-                          <span className="text-xs font-black text-slate-700">{group}</span>
-                          <button
-                            onClick={() => updateSettings({ ...settings, customGroups: (settings.customGroups || []).filter(g => g !== group) })}
-                            className="text-slate-300 hover:text-rose-500 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                      {(!settings.customGroups || settings.customGroups.length === 0) && (
-                        <p className="text-xs text-slate-300 font-bold italic">No custom groups yet. Add one above.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Farm Technicians & Doctors Management */}
-                <div className="mt-8 pt-8 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Farm Technicians & Doctors</h4>
-                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg">Quick-Select Dropdowns</span>
-                  </div>
-                  <p className="text-xs text-slate-400 font-medium mb-4">
-                    Configure fixed technician/doctor names (e.g. Asad, Faisal Sb). Variations in spelling and capitalization will be automatically merged to these fixed names. Removing a name only removes it from the active dropdown list; historical entries are safely preserved.
-                  </p>
-                  <div className="space-y-3">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        placeholder="New technician or doctor (e.g. Asad, Faisal Sb, Dr. Waqas)"
-                        className="flex-1 px-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                        value={newTechnicianName}
-                        onChange={e => setNewTechnicianName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && newTechnicianName.trim()) {
-                            e.preventDefault();
-                            const current = settings.technicians || ['Asad', 'Faisal Sb'];
-                            const trimmed = newTechnicianName.trim();
-                            if (!current.some(t => t.toLowerCase() === trimmed.toLowerCase())) {
-                              updateSettings({ ...settings, technicians: [...current, trimmed] });
-                            }
-                            setNewTechnicianName('');
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newTechnicianName.trim()) {
-                            const current = settings.technicians || ['Asad', 'Faisal Sb'];
-                            const trimmed = newTechnicianName.trim();
-                            if (!current.some(t => t.toLowerCase() === trimmed.toLowerCase())) {
-                              updateSettings({ ...settings, technicians: [...current, trimmed] });
-                            }
-                            setNewTechnicianName('');
-                          }
-                        }}
-                        className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(settings.technicians || ['Asad', 'Faisal Sb']).map((tech, idx) => (
-                        <div key={tech} className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
-                          <span className="text-[10px] font-black text-slate-300">#{idx + 1}</span>
-                          <span className="text-xs font-black text-slate-700">{tech}</span>
-                          <button
-                            type="button"
-                            title="Remove from active dropdown (historical logs preserved)"
-                            onClick={() => {
-                              const current = settings.technicians || ['Asad', 'Faisal Sb'];
-                              updateSettings({ ...settings, technicians: current.filter(t => t !== tech) });
-                            }}
-                            className="text-slate-300 hover:text-rose-500 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Semen Stock / Catalogue Management */}
-                <div className="mt-8 pt-8 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Semen Stock / Catalogue</h4>
-                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg">Quick-Select Dropdowns</span>
-                  </div>
-                  <p className="text-xs text-slate-400 font-medium mb-4">
-                    Manage active semen stock names and codes for fast selection during insemination entries. Removing out-of-stock semen only removes it from active dropdowns; all historical breeding entries remain untouched.
-                  </p>
-                  <div className="space-y-3">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        placeholder="New semen code or bull name (e.g. Captain, AltaRobson, CRV-542)"
-                        className="flex-1 px-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-black shadow-inner focus:ring-2 focus:ring-blue-600/20"
-                        value={newSemenName}
-                        onChange={e => setNewSemenName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && newSemenName.trim()) {
-                            e.preventDefault();
-                            const current = settings.semenCatalog || [];
-                            const trimmed = newSemenName.trim();
-                            if (!current.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
-                              updateSettings({ ...settings, semenCatalog: [...current, trimmed] });
-                            }
-                            setNewSemenName('');
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newSemenName.trim()) {
-                            const current = settings.semenCatalog || [];
-                            const trimmed = newSemenName.trim();
-                            if (!current.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
-                              updateSettings({ ...settings, semenCatalog: [...current, trimmed] });
-                            }
-                            setNewSemenName('');
-                          }
-                        }}
-                        className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(settings.semenCatalog || []).map((semen, idx) => (
-                        <div key={semen} className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
-                          <span className="text-[10px] font-black text-slate-300">#{idx + 1}</span>
-                          <span className="text-xs font-black text-slate-700">{semen}</span>
-                          <button
-                            type="button"
-                            title="Remove from active dropdown (historical logs preserved)"
-                            onClick={() => {
-                              const current = settings.semenCatalog || [];
-                              updateSettings({ ...settings, semenCatalog: current.filter(s => s !== semen) });
-                            }}
-                            className="text-slate-300 hover:text-rose-500 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                      {(!settings.semenCatalog || settings.semenCatalog.length === 0) && (
-                        <p className="text-xs text-slate-300 font-bold italic">No semen stock registered yet. Add one above.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Farm Data Protection & Auto-Backup */}
-                <BackupSettingsSection
-                  settings={settings}
-                  updateSettings={updateSettings}
-                  animals={animals}
-                  reproEvents={reproEvents}
-                  healthEvents={healthEvents}
-                  enrollments={enrollments}
-                  customProtocols={customProtocols}
-                  medicines={medicines}
-                  purchases={purchases}
-                  onShowToast={(msg) => setToastMessage(msg)}
-                  setConfirmDialog={setConfirmDialog}
-                />
-
-                {/* AgroVet Pro Brand & Developer Profile */}
-                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 rounded-[3rem] text-white shadow-xl border border-slate-700/50 relative overflow-hidden">
-                  <div className="flex flex-col sm:flex-row items-center gap-6">
-                    <img
-                      src={AGROVET_LOGO_BASE64}
-                      alt="AgroVet Pro"
-                      className="w-20 h-20 rounded-3xl object-cover shadow-2xl border border-white/20 shrink-0"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="space-y-1 text-center sm:text-left flex-1">
-                      <div className="flex items-center justify-center sm:justify-start gap-2">
-                        <h4 className="text-xl font-black tracking-tight">AgroVet<span className="text-emerald-400">Pro</span></h4>
-                        <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-400/30 uppercase">
-                          V2.5 Stable
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 font-medium">
-                        Dairy &amp; Cattle Farm Reproduction, Diagnostics &amp; Clinical Health System
-                      </p>
-                      <p className="text-xs text-emerald-400 font-bold">
-                        Developed by Asad Mehmood
-                      </p>
-                      <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-3">
-                        <a
-                          href="https://wa.me/923136451992?text=Hello%20Asad%20Mehmood,%20I%20need%20assistance%20with%20my%20AgroVet%20Pro%20system."
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md transition-colors"
-                        >
-                          <MessageCircle className="w-4 h-4 fill-white" />
-                          <span>WhatsApp Support: +92 313 6451992</span>
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <SettingsHub
+                settings={settings}
+                updateSettings={updateSettings}
+                animals={animals}
+                reproEvents={reproEvents}
+                healthEvents={healthEvents}
+                enrollments={enrollments}
+                customProtocols={customProtocols}
+                medicines={medicines}
+                purchases={purchases}
+                penMovements={penMovements}
+                currentUser={currentUser}
+                onAnimalsUpdated={(updatedAnimals, newMovements) => {
+                  saveAnimalsDirectly(updatedAnimals);
+                  savePenMovementsDirectly([...newMovements, ...penMovements].slice(0, 200));
+                }}
+                onShowToast={(msg) => setToastMessage(msg)}
+                setConfirmDialog={setConfirmDialog}
+                onNavigateToView={(newView) => setView(newView)}
+                onSignOut={handleSignOut}
+                onOpenWhatsNew={handleOpenWhatsNewHistory}
+              />
+            </div>          )}
 
           {view === 'pd-check' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-10 max-w-6xl mx-auto">
@@ -7464,8 +7327,9 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
               {/* Quick Actions Panel */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <button
-                  onClick={() => setView('pd-check')}
-                  className="p-6 bg-emerald-50 border border-emerald-100 hover:border-emerald-300 hover:bg-emerald-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-emerald-50"
+                  type="button"
+                  onClick={() => setIsNewPdFormOpen(true)}
+                  className="p-6 bg-emerald-50 border border-emerald-100 hover:border-emerald-300 hover:bg-emerald-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-emerald-50 cursor-pointer active:scale-95"
                 >
                   <div className="p-4 bg-emerald-500 text-white rounded-2xl group-hover:scale-110 transition-transform">
                     <Plus className="w-6 h-6" />
@@ -7477,8 +7341,9 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setIsOldPdFormOpen(true)}
-                  className="p-6 bg-blue-50 border border-blue-100 hover:border-blue-300 hover:bg-blue-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-blue-50"
+                  className="p-6 bg-blue-50 border border-blue-100 hover:border-blue-300 hover:bg-blue-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-blue-50 cursor-pointer active:scale-95"
                 >
                   <div className="p-4 bg-blue-500 text-white rounded-2xl group-hover:scale-110 transition-transform">
                     <CalendarIcon className="w-6 h-6" />
@@ -7490,8 +7355,9 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setIsMultiPdFormOpen(true)}
-                  className="p-6 bg-indigo-50 border border-indigo-100 hover:border-indigo-300 hover:bg-indigo-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-indigo-50"
+                  className="p-6 bg-indigo-50 border border-indigo-100 hover:border-indigo-300 hover:bg-indigo-100/50 rounded-[2rem] transition-all flex items-center gap-4 text-left group shadow-sm shadow-indigo-50 cursor-pointer active:scale-95"
                 >
                   <div className="p-4 bg-indigo-500 text-white rounded-2xl group-hover:scale-110 transition-transform">
                     <ClipboardList className="w-6 h-6" />
@@ -7517,7 +7383,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
 
                 <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
                   <div className="p-4 bg-emerald-50 text-emerald-600 rounded-[1.25rem]">
-                    <span className="text-xl"></span>
+                    <Check className="w-6 h-6" />
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pregnant Checks</p>
@@ -7529,7 +7395,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
 
                 <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
                   <div className="p-4 bg-rose-50 text-rose-600 rounded-[1.25rem]">
-                    <span className="text-xl"></span>
+                    <X className="w-6 h-6" />
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Open Checks</p>
@@ -7548,19 +7414,39 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                       <h4 className="text-xl font-black text-slate-800 tracking-tight">Recorded Diagnosis Registry</h4>
                       <p className="text-xs text-slate-400 font-bold mt-1">Full chronological audit trail of reproductive examinations</p>
                     </div>
-                    {/* PDF Export Button */}
-                    <button
-                      onClick={() => {
-                        const label = (pdStartDate || pdEndDate) 
-                          ? `${formatDateReadable(pdStartDate) || 'Start'} to ${formatDateReadable(pdEndDate) || 'End'}` 
-                          : 'Full Record';
-                        generatePdCheckSectionReport(filteredPdChecks, animals, settings, label);
-                      }}
-                      className="flex items-center gap-2 px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-md shadow-indigo-100 self-start md:self-auto"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Export Registry PDF</span>
-                    </button>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {/* WhatsApp Share Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const label = (pdStartDate || pdEndDate) 
+                            ? `${formatDateReadable(pdStartDate) || 'Start'} to ${formatDateReadable(pdEndDate) || 'End'}` 
+                            : 'Full Record';
+                          const text = generatePdCheckShareText(filteredPdChecks, animals, label, settings?.farmName);
+                          shareToWhatsApp(text);
+                        }}
+                        className="flex items-center gap-2 px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-md shadow-emerald-100 cursor-pointer active:scale-95"
+                        title="Share diagnosis summary via WhatsApp"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        <span>Share on WhatsApp</span>
+                      </button>
+
+                      {/* PDF Export Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const label = (pdStartDate || pdEndDate) 
+                            ? `${formatDateReadable(pdStartDate) || 'Start'} to ${formatDateReadable(pdEndDate) || 'End'}` 
+                            : 'Full Record';
+                          generatePdCheckSectionReport(filteredPdChecks, animals, settings, label);
+                        }}
+                        className="flex items-center gap-2 px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-md shadow-indigo-100 cursor-pointer active:scale-95"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Export Registry PDF</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Filter controls row */}
@@ -7608,7 +7494,7 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                           setPdEndDate('');
                         }}
                         disabled={!pdSearchTerm && !pdStartDate && !pdEndDate}
-                        className="w-full h-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-wider transition-all disabled:opacity-40 flex items-center justify-center gap-1 animate-in fade-in duration-300"
+                        className="w-full h-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-wider transition-all disabled:opacity-40 flex items-center justify-center gap-1 animate-in fade-in duration-300 cursor-pointer"
                         title="Clear Filters"
                       >
                         <X className="w-4 h-4" />
@@ -7632,11 +7518,12 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50">
-                          <th className="px-8 py-4">Badge #</th>
-                          <th className="px-8 py-4">Check Date</th>
-                          <th className="px-8 py-4">Animal ID</th>
-                          <th className="px-8 py-4">Examination Result</th>
-                          <th className="px-8 py-4">Notes / Details</th>
+                          <th className="px-6 py-4">Badge #</th>
+                          <th className="px-6 py-4">Check Date</th>
+                          <th className="px-6 py-4">Animal ID</th>
+                          <th className="px-6 py-4">Examination Result</th>
+                          <th className="px-6 py-4">Notes / Details</th>
+                          <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
@@ -7646,26 +7533,59 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
                           const style = getBadgeStyleForDate(check.date);
                           return (
                             <tr key={check.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-8 py-5">
+                              <td className="px-6 py-4">
                                 <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border border-opacity-30 ${style.bg}`}>
                                   {style.badgeNum}
                                 </span>
                               </td>
-                              <td className="px-8 py-5 text-sm font-black text-slate-800">
+                              <td className="px-6 py-4 text-sm font-black text-slate-800">
                                 {formatDateReadable(check.date)}
                               </td>
-                              <td className="px-8 py-5 text-sm font-extrabold text-blue-600">
-                                Cow {animal?.tag || 'Unregistered'}
+                              <td className="px-6 py-4 text-sm font-extrabold text-blue-600">
+                                {animal ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedAnimal(animal)}
+                                    className="text-left font-black text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                                    title="View animal profile"
+                                  >
+                                    Cow {animal.tag}
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400">Unregistered</span>
+                                )}
                               </td>
-                              <td className="px-8 py-5">
+                              <td className="px-6 py-4">
                                 <span className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider ${
                                   isPreg ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
                                 }`}>
                                   {isPreg ? ' Pregnant' : ' Open'}
                                 </span>
                               </td>
-                              <td className="px-8 py-5 text-xs text-slate-500 font-bold max-w-xs truncate">
+                              <td className="px-6 py-4 text-xs text-slate-500 font-bold max-w-xs truncate">
                                 {check.details || '--'}
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {animal && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedAnimal(animal)}
+                                      className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                      title="Open Animal Details"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteRepro(check, e)}
+                                    className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Delete this diagnosis record"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -9827,46 +9747,57 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
             </div>
 
             {(newHealth.treatments || [{ name: '', dose: '' }]).map((treatment, idx) => (
-              <div key={idx} className="flex items-center gap-2 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-                <div className="flex-1">
-                  <input
-                    list="all-medicines"
-                    placeholder="Select or type medicine name..."
-                    className="w-full px-3 py-2 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                    value={treatment.name}
-                    onChange={e => {
-                      const updated = [...(newHealth.treatments || [{ name: '', dose: '' }])];
-                      const matched = medicines.find(m => m.name.toLowerCase() === e.target.value.toLowerCase());
-                      const unit = matched?.unit || 'ml';
-                      updated[idx] = { ...updated[idx], name: e.target.value, dose: updated[idx].dose || `1 ${unit}` };
-                      setNewHealth({ ...newHealth, treatments: updated });
-                    }}
-                  />
+              <div key={idx} className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/90 shadow-xs space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                      Medication Name
+                    </label>
+                    <MedicineAutocomplete
+                      medicines={medicines}
+                      value={treatment.name}
+                      onChange={(medicineName, selectedMed) => {
+                        const updated = [...(newHealth.treatments || [{ name: '', dose: '' }])];
+                        const unit = selectedMed?.unit || 'ml';
+                        const currentDose = updated[idx].dose;
+                        const newDose = (!currentDose || currentDose === '') ? `10 ${unit}` : currentDose;
+                        updated[idx] = { ...updated[idx], name: medicineName, dose: newDose };
+                        setNewHealth({ ...newHealth, treatments: updated });
+                      }}
+                      placeholder="Search medicine (e.g. Oxytetracycline, Keto)..."
+                    />
+                  </div>
+                  <div className="w-28 sm:w-36 shrink-0">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                      Dosage
+                    </label>
+                    <input
+                      placeholder="e.g. 15 ml"
+                      className="w-full px-3 py-2.5 bg-white border border-slate-200/80 rounded-xl text-xs font-black text-slate-800 shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+                      value={treatment.dose}
+                      onChange={e => {
+                        const updated = [...(newHealth.treatments || [{ name: '', dose: '' }])];
+                        updated[idx] = { ...updated[idx], dose: e.target.value };
+                        setNewHealth({ ...newHealth, treatments: updated });
+                      }}
+                    />
+                  </div>
+                  {(newHealth.treatments && newHealth.treatments.length > 1) && (
+                    <div className="pt-5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (newHealth.treatments || []).filter((_, tIdx) => tIdx !== idx);
+                          setNewHealth({ ...newHealth, treatments: updated });
+                        }}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                        title="Remove Medicine"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="w-32">
-                  <input
-                    placeholder="Dosage (e.g. 10 ml)"
-                    className="w-full px-3 py-2 bg-slate-50 border-none rounded-xl text-xs font-black shadow-inner outline-none focus:ring-2 focus:ring-rose-500/20"
-                    value={treatment.dose}
-                    onChange={e => {
-                      const updated = [...(newHealth.treatments || [{ name: '', dose: '' }])];
-                      updated[idx] = { ...updated[idx], dose: e.target.value };
-                      setNewHealth({ ...newHealth, treatments: updated });
-                    }}
-                  />
-                </div>
-                {(newHealth.treatments && newHealth.treatments.length > 1) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const updated = (newHealth.treatments || []).filter((_, tIdx) => tIdx !== idx);
-                      setNewHealth({ ...newHealth, treatments: updated });
-                    }}
-                    className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
               </div>
             ))}
           </div>
@@ -10677,6 +10608,17 @@ function App({ user, onLogout, previewMode = 'desktop' }: any) {
           <option key={s} value={s}>{s}</option>
         ))}
       </datalist>
+
+      {/* What's New Release Notes Popup & Full History Modal */}
+      <WhatsNewPopup
+        isOpen={isWhatsNewPopupOpen}
+        onGotIt={handleDismissWhatsNew}
+        onViewAllUpdates={handleOpenWhatsNewHistory}
+      />
+      <WhatsNewHistoryModal
+        isOpen={isWhatsNewHistoryOpen}
+        onClose={() => setIsWhatsNewHistoryOpen(false)}
+      />
 
       {/* Global Toast Notification */}
       {toastMessage && (

@@ -421,7 +421,7 @@ app.post('/api/auth/login', (req, res) => {
     const user = users[cleanEmail];
 
     // Master account bootstrap check
-    const isMasterEmail = cleanEmail === 'chasad51992@gmail.com' || cleanEmail === 'vetasad1992@gmail.com';
+    const isMasterEmail = cleanEmail === 'chasad51992@gmail.com' || cleanEmail === 'vetasad1992@gmail.com' || cleanEmail === 'va.asad92@gmail.com';
 
     if (!user) {
       if (isMasterEmail && (password === '@Sad1992#.#' || password === 'Asad1992#')) {

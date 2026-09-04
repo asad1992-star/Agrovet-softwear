@@ -1,0 +1,67 @@
+{
+  "settings": {
+    "gestationDays": 283,
+    "closeupDays": 21,
+    "dryPeriodDays": 60,
+    "pregnancyCheckDays": 30,
+    "estrusCycleDays": 21,
+    "pdfTemplate": "Professional",
+    "farmName": "AgroVet Pro Farm",
+    "statusColors": {
+      "active": "#10B981",
+      "youngStock": "#F97316",
+      "pregnant": "#3B82F6",
+      "sick": "#EF4444",
+      "dry": "#64748B",
+      "closeup": "#8B5CF6",
+      "inProtocol": "#F59E0B",
+      "inseminated": "#06B6D4",
+      "observation": "#94A3B8"
+    },
+    "customGroups": [
+      "Main Herd",
+      "Growing Heifers",
+      "Post Weaning",
+      "Suckling",
+      "Elite",
+      "High Group",
+      "Medium Group",
+      "Breeding Heifers",
+      "Breeding Pen",
+      "Dry Cows",
+      "Fresh",
+      "Closeup",
+      "Pregnant"
+    ],
+    "technicians": [
+      "Asad Mehmood",
+      "Faisal Sb"
+    ],
+    "semenCatalog": [],
+    "autoBackupEnabled": true,
+    "penMapping": {
+      "fresh": "Fresh",
+      "highLactating": "High Lactating",
+      "mediumLactating": "Medium Lactating",
+      "lowLactating": "Low Lactating",
+      "dryLactating": "Dry Lactating",
+      "pregnantHeifers": "Pregnant Heifers",
+      "breedableHeifers": "Breedable Heifers",
+      "growingHeifers": "Growing Heifers",
+      "postWeanedHeifers": "Post Weaned Heifers",
+      "sucklingCalves": "Suckling Calves"
+    },
+    "autoMoveHeiferOnPD": true,
+    "navigationTabs": {
+      "dashboard": true,
+      "animals": true,
+      "repro": true,
+      "pd-check": true,
+      "health": true,
+      "protocols": true,
+      "reports": true,
+      "settings": true
+    }
+  },
+  "updatedAt": "2026-09-04T18:02:09.699Z"
+}

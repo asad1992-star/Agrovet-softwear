@@ -107,12 +107,14 @@ export const generateIndividualAnimalReport = (
   if (reproEvents.length > 0) {
     doc.setFontSize(14);
     doc.setTextColor(2, 132, 199);
-    doc.text('Reproduction Log (Filtered)', 14, currentY);
+    doc.text('Reproduction Log (Filtered - Newest First)', 14, currentY);
     
+    const sortedRepros = [...reproEvents].sort((a, b) => b.date.localeCompare(a.date));
+
     autoTable(doc, {
       startY: currentY + 5,
       head: [['Date', 'Type', 'Tech', 'Semen/Bull', 'Result']],
-      body: reproEvents.map(e => {
+      body: sortedRepros.map(e => {
         let result = '-';
         if (e.type === ReproEventType.PREGNANCY_CHECK) {
           result = e.success ? '+ve' : '-ve';
@@ -133,22 +135,24 @@ export const generateIndividualAnimalReport = (
   if (healthEvents.length > 0) {
     doc.setFontSize(14);
     doc.setTextColor(225, 29, 72);
-    doc.text('Health Log (Filtered)', 14, currentY);
+    doc.text('Health Log (Filtered - Newest First)', 14, currentY);
     
+    const sortedHealths = [...healthEvents].sort((a, b) => b.date.localeCompare(a.date));
+
     autoTable(doc, {
       startY: currentY + 5,
       head: [['Date', 'Finding', 'Medication', 'Vet/Tech']],
-    body: healthEvents.map(e => {
-      const medicationDisplay = [
-        e.medication,
-        ...(e.treatments?.map(t => `${t.name} (${t.dose})`) || [])
-      ].filter(Boolean).join(', ') || '-';
-      
-      return [e.date, e.details, medicationDisplay, e.technician || '-'];
-    }),
-    theme: 'grid'
-  });
-}
+      body: sortedHealths.map(e => {
+        const medicationDisplay = [
+          e.medication,
+          ...(e.treatments?.map(t => `${t.name} (${t.dose})`) || [])
+        ].filter(Boolean).join(', ') || '-';
+        
+        return [e.date, e.details, medicationDisplay, e.technician || '-'];
+      }),
+      theme: 'grid'
+    });
+  }
 
 doc.save(`${animal.tag}_Report.pdf`);
 };
@@ -288,10 +292,11 @@ export const generateReproSectionReport = (
 export const generateHealthSectionReport = (events: HealthEvent[], animals: Animal[], settings?: FarmSettings, rangeLabel: string = 'Full Record') => {
 const doc = new jsPDF();
 addHeader(doc, `Health Activity Log | ${rangeLabel}`, settings);
+const sortedEvents = [...events].sort((a, b) => b.date.localeCompare(a.date));
 autoTable(doc, {
   startY: 45,
   head: [['Date', 'Tag', 'Type', 'Medication', 'Vet/Tech', 'Details']],
-  body: events.map(e => {
+  body: sortedEvents.map(e => {
     const animal = animals.find(a => a.id === e.animalId);
     const medicationDisplay = [
       e.medication,
@@ -420,10 +425,12 @@ export const generateTreatmentAnalysisReport = (
   const doc = new jsPDF();
   addHeader(doc, `Treatment & Dosage Usage Report | ${rangeLabel}`, settings);
 
+  const sortedEvents = [...events].sort((a, b) => b.date.localeCompare(a.date));
+
   // Summary Metrics
-  const totalTreatments = events.length;
-  const uniqueMedicines = Array.from(new Set(events.map(e => e.medication).filter(Boolean)));
-  const uniquePatients = Array.from(new Set(events.map(e => e.animalId)));
+  const totalTreatments = sortedEvents.length;
+  const uniqueMedicines = Array.from(new Set(sortedEvents.map(e => e.medication).filter(Boolean)));
+  const uniquePatients = Array.from(new Set(sortedEvents.map(e => e.animalId)));
 
   doc.setFontSize(11);
   doc.setTextColor(51, 65, 85);
@@ -432,7 +439,7 @@ export const generateTreatmentAnalysisReport = (
   autoTable(doc, {
     startY: 47,
     head: [['Date', 'Tag', 'Treatment Type', 'Medication/Dose', 'Vet/Tech', 'Status/Details']],
-    body: events.map(e => {
+    body: sortedEvents.map(e => {
       const animal = animals.find(a => a.id === e.animalId);
       const medicationDisplay = [
         e.medication,

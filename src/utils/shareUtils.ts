@@ -162,12 +162,13 @@ export const generateHealthReportShareText = (
   filterLabel: string = 'Clinical History',
   farmName?: string
 ) => {
+  const sortedEvents = [...events].sort((a, b) => b.date.localeCompare(a.date));
   let text = `*🏥 Clinical & Health Activity Report*\n`;
   if (farmName) text += `🏢 *${farmName}*\n`;
   text += `📅 Scope: *${filterLabel}*\n`;
-  text += `📋 Total Treatments Logged: *${events.length}*\n\n`;
+  text += `📋 Total Treatments Logged: *${sortedEvents.length}*\n\n`;
 
-  events.slice(0, 35).forEach((e, idx) => {
+  sortedEvents.slice(0, 35).forEach((e, idx) => {
     const animal = animals.find(a => a.id === e.animalId);
     const medDetails = [
       e.medication,
@@ -180,8 +181,8 @@ export const generateHealthReportShareText = (
     if (e.technician) text += `   • Vet/Tech: ${e.technician}\n`;
   });
 
-  if (events.length > 35) {
-    text += `\n...and ${events.length - 35} more clinical cases.`;
+  if (sortedEvents.length > 35) {
+    text += `\n...and ${sortedEvents.length - 35} more clinical cases.`;
   }
 
   text += `\n_Generated via AgroVet Pro Management_`;
@@ -227,7 +228,9 @@ export const generatePdCheckShareText = (
   filterLabel: string = 'PD Checks',
   farmName?: string
 ) => {
-  const pdEvents = events.filter(e => e.type === ReproEventType.PREGNANCY_CHECK);
+  const pdEvents = events
+    .filter(e => e.type === ReproEventType.PREGNANCY_CHECK)
+    .sort((a, b) => b.date.localeCompare(a.date));
   const pregCount = pdEvents.filter(e => e.pregnancyResult === 'Pregnant' || e.success === true).length;
   const openCount = pdEvents.filter(e => e.pregnancyResult === 'Non-Pregnant' || (e.success === false && e.pregnancyResult !== 'Pregnant')).length;
 
